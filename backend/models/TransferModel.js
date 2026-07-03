@@ -1,0 +1,124 @@
+const pool = require('../config/database');
+const { generateCode } = require('../utils/helpers');
+
+const TransferModel = {
+  async getAll(filters = {}) {
+    let sql = `
+      SELECT t.*, i.item_code, i.item_name, i.property_tag,
+             u.full_name AS requested_by_name, a.full_name AS approved_by_name,
+             fl.name AS from_location_name, tl.name AS to_location_name,
+             fd.name AS from_department_name, td.name AS to_department_name
+      FROM transfer_requests t
+      JOIN inventory_items i ON t.inventory_item_id = i.id
+      JOIN users u ON t.requested_by = u.id
+      LEFT JOIN users a ON t.approved_by = a.id
+      LEFT JOIN locations fl ON t.from_location_id = fl.id
+      LEFT JOIN locations tl ON t.to_location_id = tl.id
+      LEFT JOIN departments fd ON t.from_department_id = fd.id
+      LEFT JOIN departments td ON t.to_department_id = td.id
+      WHERE 1=1`;
+    const params = [];
+    if (filters.status) { sql += ' AND t.status = ?'; params.push(filters.status); }
+    if (filters.inventory_item_id) { sql += ' AND t.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
+    if (filters.search) {
+      sql += ' AND (t.transaction_code LIKE ? OR i.item_name LIKE ? OR i.property_tag LIKE ?)';
+      const term = `%${filters.search}%`;
+      params.push(term, term, term);
+    }
+    sql += ' ORDER BY t.created_at DESC';
+    const [rows] = await pool.query(sql, params);
+    return rows;
+  },
+
+  async findById(id) {
+    const [rows] = await pool.query(
+      `SELECT t.*, i.item_code, i.item_name, i.property_tag,
+              u.full_name AS requested_by_name, a.full_name AS approved_by_name,
+              fl.name AS from_location_name, tl.name AS to_location_name,
+              fd.name AS from_department_name, td.name AS to_department_name
+       FROM transfer_requests t
+       JOIN inventory_items i ON t.inventory_item_id = i.id
+       JOIN users u ON t.requested_by = u.id
+       LEFT JOIN users a ON t.approved_by = a.id
+       LEFT JOIN locations fl ON t.from_location_id = fl.id
+       LEFT JOIN locations tl ON t.to_location_id = tl.id
+       LEFT JOIN departments fd ON t.from_department_id = fd.id
+       LEFT JOIN departments td ON t.to_department_id = td.id
+       WHERE t.id = ?`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+
+  async create(data) {
+    const code = generateCode('TRF');
+    const requestDate = data.request_date || new Date().toISOString().split('T')[0];
+    const [result] = await pool.query(
+      `INSERT INTO transfer_requests
+       (transaction_code, inventory_item_id, quantity, from_location_id, to_location_id,
+        from_department_id, to_department_id, reason, status, requested_by, notes, request_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)`,
+      [
+        code, data.inventory_item_id, data.quantity || 1,
+        data.from_location_id || null, data.to_location_id || null,
+        data.from_department_id || null, data.to_department_id || null,
+        data.reason, data.requested_by, data.notes || null, requestDate
+      ]
+    );
+    return { id: result.insertId, transaction_code: code };
+  },
+
+  async updateStatus(id, status, approvedBy, extra = {}) {
+    await pool.query(
+      `UPDATE transfer_requests SET status = ?, approved_by = ?, approved_at = NOW(),
+        rejection_reason = COALESCE(?, rejection_reason), notes = COALESCE(?, notes) WHERE id = ?`,
+      [status, approvedBy, extra.rejection_reason, extra.notes, id]
+    );
+  },
+
+  async recordHistory(transfer, approvedBy) {
+    await pool.query(
+      `INSERT INTO transfer_history
+       (transfer_request_id, inventory_item_id, from_department_id, to_department_id,
+        from_location_id, to_location_id, reason, approved_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        transfer.id, transfer.inventory_item_id,
+        transfer.from_department_id, transfer.to_department_id,
+        transfer.from_location_id, transfer.to_location_id,
+        transfer.reason, approvedBy
+      ]
+    );
+  },
+
+  async getHistoryByAsset(inventoryItemId) {
+    const [rows] = await pool.query(
+      `SELECT th.*, fd.name AS from_department_name, td.name AS to_department_name,
+              fl.name AS from_location_name, tl.name AS to_location_name,
+              u.full_name AS approved_by_name, t.transaction_code
+       FROM transfer_history th
+       JOIN transfer_requests t ON th.transfer_request_id = t.id
+       LEFT JOIN departments fd ON th.from_department_id = fd.id
+       LEFT JOIN departments td ON th.to_department_id = td.id
+       LEFT JOIN locations fl ON th.from_location_id = fl.id
+       LEFT JOIN locations tl ON th.to_location_id = tl.id
+       LEFT JOIN users u ON th.approved_by = u.id
+       WHERE th.inventory_item_id = ?
+       ORDER BY th.transfer_date DESC`,
+      [inventoryItemId]
+    );
+    return rows;
+  },
+
+  async countPending() {
+    const [rows] = await pool.query(`SELECT COUNT(*) AS count FROM transfer_requests WHERE status = 'Pending'`);
+    return rows[0].count;
+  },
+
+  async countApproved() {
+    const [rows] = await pool.query(`SELECT COUNT(*) AS count FROM transfer_requests WHERE status IN ('Approved', 'Completed')`);
+    return rows[0].count;
+  }
+};
+
+module.exports = TransferModel;

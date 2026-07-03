@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Departments - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="app-wrapper" id="app"></div>
+
+  <div class="modal-overlay" id="departmentModal">
+    <div class="modal-content-custom">
+      <div class="modal-header-custom">
+        <h3 id="departmentModalTitle">Add Department</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('departmentModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="departmentForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="departmentId">
+          <div class="form-row">
+            <div class="form-group"><label>Department Name *</label><input type="text" class="form-control-custom" id="departmentName" required></div>
+            <div class="form-group"><label>Department Code *</label><input type="text" class="form-control-custom" id="departmentCode" required maxlength="20" placeholder="e.g. ITDEPT"></div>
+          </div>
+          <div class="form-group"><label>Department Head</label><input type="text" class="form-control-custom" id="departmentHead" placeholder="Name of department head"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Custodian Type</label>
+              <select class="form-control-custom" id="departmentCustodianType">
+                <option value="">None</option>
+                <option>Property Custodian</option>
+                <option>Department Custodian</option>
+                <option>Laboratory Custodian</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Assigned Custodian</label>
+              <select class="form-control-custom" id="departmentCustodian">
+                <option value="">Select custodian...</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Status</label>
+              <select class="form-control-custom" id="departmentStatus">
+                <option>Active</option>
+                <option>Inactive</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Description</label><textarea class="form-control-custom" id="departmentDesc" rows="2"></textarea></div>
+          </div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('departmentModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/components/layout.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/pages/manage-departments.js"></script>
+</body>
+</html>

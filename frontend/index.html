@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <img src="/images/cavite-institute-logo.png" alt="Cavite Institute" class="logo-icon">
+        <h1 class="system-brand-name system-brand-login-page">
+          <span>CAVITE INSTITUTE</span>
+          <span class="system-brand-subline">PROPERTY MANAGEMENT SYSTEM</span>
+        </h1>
+      </div>
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" class="form-control-custom" id="username" name="username"
+                 placeholder="Enter username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="password-field-wrap">
+            <input type="password" class="form-control-custom" id="password" name="password"
+                   placeholder="Enter password" autocomplete="current-password" required>
+            <button type="button" class="password-toggle-btn" data-target="password" aria-label="Show password" aria-pressed="false">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div id="loginError" class="login-error" role="alert" style="display:none;"></div>
+        <button type="submit" class="btn-primary-custom btn-login" id="loginBtn">
+          <i class="bi bi-box-arrow-in-right"></i> Sign In
+        </button>
+        <div class="login-links">
+          <a href="/register.html">Create Account</a>
+          <a href="/forgot-password.html">Forgot Password?</a>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/login.js"></script>
+</body>
+</html>

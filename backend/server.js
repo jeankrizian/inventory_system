@@ -1,0 +1,188 @@
+const express = require('express');
+const session = require('express-session');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
+
+const pool = require('./config/database');
+const authRoutes = require('./routes/authRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const borrowRoutes = require('./routes/borrowRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const transferRoutes = require('./routes/transferRoutes');
+const disposalRoutes = require('./routes/disposalRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
+const componentRoutes = require('./routes/componentRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const { runSopMigration } = require('./database/runSopMigration');
+const { runArchiveMigration } = require('./database/runArchiveMigration');
+const { runMaintenanceTransferMigration } = require('./database/runMaintenanceTransferMigration');
+const { runAuthMigration } = require('./database/runAuthMigration');
+const { runClassificationMigration } = require('./database/runClassificationMigration');
+const { runUserArchiveMigration } = require('./database/runUserArchiveMigration');
+const { runDocumentMigration } = require('./database/runDocumentMigration');
+const { runPurchaseMigration } = require('./database/runPurchaseMigration');
+const { runExtendedDocumentMigration } = require('./database/runExtendedDocumentMigration');
+const archiveRoutes = require('./routes/archiveRoutes');
+const userRoutes = require('./routes/userRoutes');
+const documentRoutes = require('./routes/documentRoutes');
+const { startArchiveCleanupScheduler } = require('./utils/archiveCleanup');
+const { requireAuth } = require('./middleware/auth');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const frontendPath = path.join(__dirname, '../frontend');
+
+// Middleware
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Session
+app.use(session({
+  name: 'cavite.sid',
+  secret: process.env.SESSION_SECRET || 'cavite_inventory_secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}));
+
+// Serve frontend static files with caching for assets
+app.use(express.static(frontendPath, {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  index: false
+}));
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/borrow', borrowRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/transfers', transferRoutes);
+app.use('/api/disposals', disposalRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/components', componentRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/archive', archiveRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/documents', documentRoutes);
+
+// Global search endpoint
+app.get('/api/search', requireAuth, async (req, res) => {
+  try {
+    const InventoryModel = require('./models/InventoryModel');
+    const SupplierModel = require('./models/SupplierModel');
+    const BorrowModel = require('./models/BorrowModel');
+    const q = (req.query.q || '').trim();
+
+    if (!q) {
+      return res.json({ success: true, data: { inventory: [], suppliers: [], orders: [] } });
+    }
+
+    const [inventory, suppliers, orders] = await Promise.all([
+      InventoryModel.getAll({ search: q, limit: 5 }),
+      SupplierModel.search(q, 5),
+      BorrowModel.getAll({ search: q, limit: 5 })
+    ]);
+
+    res.json({ success: true, data: { inventory, suppliers, orders } });
+  } catch (err) {
+    console.error('Search error:', err.message);
+    res.status(500).json({ success: false, message: 'Search failed' });
+  }
+});
+
+// Health check with database status
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ success: true, message: 'API and database are running' });
+  } catch (err) {
+    res.status(503).json({ success: false, message: 'Database connection failed', error: err.message });
+  }
+});
+
+// HTML page routes — explicit routes for reliability
+const pages = [
+  'dashboard', 'inventory', 'reports', 'suppliers',
+  'orders', 'maintenance-requests', 'transfer-requests', 'disposal-requests',
+  'manage-departments', 'manage-locations', 'manage-users',
+  'manage-store', 'settings', 'archive', 'documents', 'document-preview'
+];
+
+pages.forEach(page => {
+  app.get(`/pages/${page}.html`, (req, res) => {
+    res.sendFile(path.join(frontendPath, 'pages', `${page}.html`));
+  });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
+
+app.get('/index.html', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
+
+app.get('/register.html', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'register.html'));
+});
+
+app.get('/forgot-password.html', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'forgot-password.html'));
+});
+
+// 404 for unknown API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ success: false, message: 'API endpoint not found' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
+
+async function startServer() {
+  try {
+    await pool.testConnection();
+    console.log('MySQL database connected successfully');
+    await runSopMigration();
+    await runArchiveMigration();
+    await runMaintenanceTransferMigration();
+    await runAuthMigration();
+    await runClassificationMigration();
+    await runUserArchiveMigration();
+    await runDocumentMigration();
+    await runPurchaseMigration();
+    await runExtendedDocumentMigration();
+    startArchiveCleanupScheduler();
+  } catch (err) {
+    console.error('WARNING: Database connection failed:', err.message);
+    console.error('Check your .env file and ensure MySQL is running.');
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Cavite Institute Property Management System running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
+
+module.exports = app;

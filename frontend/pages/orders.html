@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="app-wrapper" id="app"></div>
+
+  <div class="modal-overlay" id="borrowModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Borrow Item</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('borrowModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="borrowForm">
+        <div class="modal-body-custom">
+          <div class="form-row">
+            <div class="form-group"><label>Borrower Name *</label><input type="text" class="form-control-custom" id="borrowerName" required></div>
+            <div class="form-group"><label>Department</label><input type="text" class="form-control-custom" id="borrowerDept"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Borrow Date *</label><input type="date" class="form-control-custom" id="borrowDate" required></div>
+            <div class="form-group"><label>Expected Return</label><input type="date" class="form-control-custom" id="expectedReturn"></div>
+          </div>
+          <div class="form-group"><label>Purpose</label><textarea class="form-control-custom" id="borrowPurpose" rows="2"></textarea></div>
+          <hr>
+          <h4 style="font-size:14px;margin-bottom:12px;">Items to Borrow</h4>
+          <div id="borrowItemsList">
+            <div class="form-row borrow-item-row">
+              <div class="form-group" style="flex:2"><label>Item</label><select class="form-control-custom borrow-item-select" required></select></div>
+              <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
+            </div>
+          </div>
+          <button type="button" class="btn-outline-custom btn-sm-custom mt-2" onclick="addBorrowItemRow()"><i class="bi bi-plus"></i> Add Item</button>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('borrowModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="returnModal">
+    <div class="modal-content-custom">
+      <div class="modal-header-custom">
+        <h3>Return Item</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('returnModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="returnForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="returnBorrowId">
+          <p id="returnBorrowInfo" style="font-size:13px;margin-bottom:16px;"></p>
+          <div class="form-row">
+            <div class="form-group"><label>Return Date *</label><input type="date" class="form-control-custom" id="returnDate" required></div>
+            <div class="form-group"><label>Condition</label>
+              <select class="form-control-custom" id="returnCondition">
+                <option>Good</option><option>Fair</option><option>Damaged</option><option>Lost</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group"><label>Notes</label><textarea class="form-control-custom" id="returnNotes" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('returnModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Process Return</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/components/layout.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/assetClassification.js"></script>
+  <script src="/js/pages/orders.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Arial, Helvetica, sans-serif;
+  background: #f3f4f6;
+  color: #111;
+}
+.preview-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 12px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+.preview-toolbar button {
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.preview-toolbar .btn-primary {
+  background: #1e3a5f;
+  color: #fff;
+  border-color: #1e3a5f;
+}
+.document-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 24px auto;
+  background: #fff;
+  padding: 18mm 16mm;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+}
+.doc-title { text-align: center; font-size: 18px; font-weight: 700; margin: 0; }
+.doc-office { text-align: center; font-size: 13px; font-weight: 700; margin: 4px 0 0; }
+.doc-institution { text-align: center; font-size: 12px; margin: 2px 0 18px; }
+.doc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 14px; font-size: 12px; }
+.doc-meta .right { text-align: right; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; }
+.doc-table th, .doc-table td { border: 1px solid #111; padding: 6px 8px; vertical-align: top; }
+.doc-table th { font-weight: 700; text-align: left; }
+.doc-ack { font-size: 10px; font-style: italic; margin: 12px 0 18px; line-height: 1.45; }
+.signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 40px; margin-top: 10px; }
+.signature-block { font-size: 11px; }
+.signature-line { border-bottom: 1px solid #111; height: 28px; margin: 18px 0 4px; }
+.signature-caption { text-align: center; font-size: 10px; }
+.signature-name { text-align: center; font-weight: 600; min-height: 16px; }
+.doc-footer { margin-top: 24px; font-size: 10px; }
+.loading { text-align: center; padding: 40px; color: #666; }
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .document-sheet { margin: 0; box-shadow: none; width: auto; min-height: auto; }
+}

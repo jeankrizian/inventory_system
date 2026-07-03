@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suppliers - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="app-wrapper" id="app"></div>
+  <div class="modal-overlay" id="supplierModal">
+    <div class="modal-content-custom">
+      <div class="modal-header-custom">
+        <h3 id="supplierModalTitle">Add Supplier</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('supplierModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="supplierForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="supplierId">
+          <div class="form-group"><label>Supplier Name *</label><input type="text" class="form-control-custom" id="supplierName" required></div>
+          <div class="form-row">
+            <div class="form-group"><label>Contact Person</label><input type="text" class="form-control-custom" id="supplierContact"></div>
+            <div class="form-group"><label>Phone</label><input type="text" class="form-control-custom" id="supplierPhone"></div>
+          </div>
+          <div class="form-group"><label>Email</label><input type="email" class="form-control-custom" id="supplierEmail"></div>
+          <div class="form-group"><label>Address</label><textarea class="form-control-custom" id="supplierAddress" rows="3"></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('supplierModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Save Supplier</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/components/layout.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/pages/suppliers.js"></script>
+</body>
+</html>

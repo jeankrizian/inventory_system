@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="app-wrapper" id="app"></div>
+
+  <div class="modal-overlay" id="itemModal">
+    <div class="modal-content-custom">
+      <div class="modal-header-custom">
+        <h3 id="itemModalTitle">Add Item</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('itemModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="itemForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="itemId">
+          <div class="form-row">
+            <div class="form-group"><label>Item Code *</label><input type="text" class="form-control-custom" id="itemCode" required></div>
+            <div class="form-group"><label>Item Name *</label><input type="text" class="form-control-custom" id="itemName" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Category *</label><select class="form-control-custom" id="itemCategory" required></select></div>
+            <div class="form-group"><label>Supplier</label><select class="form-control-custom" id="itemSupplier"></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Brand</label><input type="text" class="form-control-custom" id="itemBrand"></div>
+            <div class="form-group"><label>Model</label><input type="text" class="form-control-custom" id="itemModel"></div>
+          </div>
+          <div class="form-row cols-3">
+            <div class="form-group"><label>Quantity *</label><input type="number" class="form-control-custom" id="itemQuantity" min="0" required></div>
+            <div class="form-group"><label>Available Qty</label><input type="number" class="form-control-custom" id="itemAvailable" min="0"></div>
+            <div class="form-group"><label>Unit</label><input type="text" class="form-control-custom" id="itemUnit" value="pcs"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Location</label><select class="form-control-custom" id="itemLocation"></select></div>
+            <div class="form-group"><label>Purchase Date</label><input type="date" class="form-control-custom" id="itemPurchaseDate"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Purchase Request No. (PR)</label><input type="text" class="form-control-custom" id="itemPR" placeholder="PR number"></div>
+            <div class="form-group"><label>Purchase Order No. (PO)</label><input type="text" class="form-control-custom" id="itemPO" placeholder="PO number"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Invoice Number</label><input type="text" class="form-control-custom" id="itemInvoice" placeholder="Invoice number"></div>
+            <div class="form-group"><label>Acquisition Date</label><input type="date" class="form-control-custom" id="itemAcquisitionDate"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Unit Cost</label><input type="number" class="form-control-custom" id="itemUnitCost" min="0" step="0.01" placeholder="0.00"></div>
+            <div class="form-group"><label>Acquisition Cost</label><input type="number" class="form-control-custom" id="itemAcquisitionCost" min="0" step="0.01" placeholder="Auto-calculated from qty × unit cost"></div>
+          </div>
+          <div class="form-row cols-3">
+            <div class="form-group"><label>Condition</label>
+              <select class="form-control-custom" id="itemCondition">
+                <option>New</option><option selected>Good</option><option>Fair</option><option>Poor</option><option>Damaged</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Low Stock Threshold</label><input type="number" class="form-control-custom" id="itemThreshold" value="5" min="1"></div>
+            <div class="form-group"><label>Status</label>
+              <select class="form-control-custom" id="itemStatus">
+                <option>Available</option><option>Borrowed</option><option>Low Stock</option><option>Out of Stock</option><option>Under Maintenance</option><option>Disposed</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Classification *</label>
+              <select class="form-control-custom" id="itemClassification" required>
+                <option value="">Select classification</option>
+                <option>Consumable</option>
+                <option>Semi-Durable</option>
+                <option>Non-Consumable (Fixed Asset)</option>
+              </select>
+            </div>
+            <div class="form-group" id="propertyTagGroup"><label>Property Tag</label><input type="text" class="form-control-custom" id="itemPropertyTag" placeholder="Required for Non-Consumable (Fixed Asset)"></div>
+          </div>
+          <div class="form-row" id="custodianRow">
+            <div class="form-group"><label>Custodian Type</label>
+              <select class="form-control-custom" id="itemCustodianType">
+                <option value="">None</option>
+                <option>Property Custodian</option><option>Department Custodian</option><option>Laboratory Custodian</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Assigned Custodian</label>
+              <select class="form-control-custom" id="itemCustodian">
+                <option value="">Select custodian...</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" id="maintenanceRow">
+            <div class="form-group"><label>Maintenance Schedule</label>
+              <select class="form-control-custom" id="itemMaintenanceSchedule">
+                <option value="">None</option>
+                <option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Next Maintenance Date</label><input type="date" class="form-control-custom" id="itemNextMaintenance"></div>
+          </div>
+          <div class="form-row" id="serviceProviderRow">
+            <div class="form-group"><label>Service Provider</label><input type="text" class="form-control-custom" id="itemServiceProvider"></div>
+          </div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('itemModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="transferModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Transfer Request</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('transferModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="transferForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="transferItemId">
+          <div class="form-row">
+            <div class="form-group"><label>Asset</label><input type="text" class="form-control-custom" id="transferAssetName" readonly></div>
+            <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="transferPropertyTag" readonly></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Current Department</label><input type="text" class="form-control-custom" id="transferCurrentDept" readonly></div>
+            <div class="form-group"><label>Current Location</label><input type="text" class="form-control-custom" id="transferCurrentLocation" readonly></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Destination Department *</label><select class="form-control-custom" id="transferDepartment" required></select></div>
+            <div class="form-group"><label>Destination Location *</label><select class="form-control-custom" id="transferLocation" required></select></div>
+          </div>
+          <div class="form-group"><label>Reason for Transfer *</label><textarea class="form-control-custom" id="transferReason" rows="3" required></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('transferModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Submit Transfer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="disposalModal">
+    <div class="modal-content-custom">
+      <div class="modal-header-custom">
+        <h3>Disposal Request</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('disposalModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="disposalForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="disposalItemId">
+          <div class="form-group"><label>Quantity</label><input type="number" class="form-control-custom" id="disposalQuantity" min="1" value="1"></div>
+          <div class="form-group"><label>Reason *</label><textarea class="form-control-custom" id="disposalReason" rows="3" required></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('disposalModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="maintenanceModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Maintenance Request</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('maintenanceModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="maintenanceForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="maintenanceItemId">
+          <div class="form-row">
+            <div class="form-group"><label>Asset</label><input type="text" class="form-control-custom" id="maintenanceAssetName" readonly></div>
+            <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="maintenancePropertyTag" readonly></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Department</label><input type="text" class="form-control-custom" id="maintenanceDepartment" readonly></div>
+            <div class="form-group"><label>Current Location</label><input type="text" class="form-control-custom" id="maintenanceLocation" readonly></div>
+          </div>
+          <div class="form-group"><label>Reported Problem *</label><textarea class="form-control-custom" id="maintenanceProblem" rows="2" required></textarea></div>
+          <div class="form-row">
+            <div class="form-group"><label>Maintenance Type *</label>
+              <select class="form-control-custom" id="maintenanceType" required>
+                <option value="Preventive">Preventive</option>
+                <option value="Corrective">Corrective</option>
+                <option value="Emergency">Emergency</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Priority *</label>
+              <select class="form-control-custom" id="maintenancePriority" required>
+                <option value="Low">Low</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="High">High</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Scheduled Maintenance Date *</label><input type="date" class="form-control-custom" id="maintenanceDate" required></div>
+            <div class="form-group"><label>Requested Date</label><input type="date" class="form-control-custom" id="maintenanceRequestedDate" readonly></div>
+          </div>
+          <div class="form-group"><label>Notes</label><textarea class="form-control-custom" id="maintenanceNotes" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('maintenanceModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="componentModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Component Replacement</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('componentModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="componentForm">
+        <div class="modal-body-custom">
+          <input type="hidden" id="componentParentId">
+          <div class="form-row">
+            <div class="form-group"><label>Parent Asset</label><input type="text" class="form-control-custom" id="componentParentName" readonly></div>
+            <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="componentPropertyTag" readonly></div>
+          </div>
+          <div class="form-group"><label>Old / Defective Component *</label><input type="text" class="form-control-custom" id="componentOldName" required placeholder="e.g. Motherboard (defective)"></div>
+          <div class="form-row">
+            <div class="form-group"><label>New Part from Inventory</label>
+              <select class="form-control-custom" id="componentNewItem">
+                <option value="">Manual entry / not in stock</option>
+              </select>
+              <small style="font-size:12px;color:var(--text-muted);">Optional — select a Semi-Durable or Consumable part to link to this asset</small>
+            </div>
+            <div class="form-group"><label>New Component Name</label><input type="text" class="form-control-custom" id="componentNewName" placeholder="If not selected from inventory"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Replacement Date *</label><input type="date" class="form-control-custom" id="componentDate" required></div>
+            <div class="form-group"><label>Notes</label><input type="text" class="form-control-custom" id="componentNotes" placeholder="Optional remarks"></div>
+          </div>
+          <p style="font-size:0.875rem;color:var(--text-muted);margin:0;">
+            The parent asset record, property tag, and PAR remain unchanged. Dispose the old component separately if needed.
+          </p>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('componentModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Record Replacement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="assetDetailModal">
+    <div class="modal-content-custom" style="max-width:900px;">
+      <div class="modal-header-custom">
+        <h3 id="assetDetailTitle">Asset Details</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('assetDetailModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="modal-body-custom">
+        <div id="assetDetailInfo"></div>
+        <hr>
+        <div class="nav-tabs-custom" style="margin-bottom:16px;">
+          <button type="button" class="nav-tab-custom active" data-detail-tab="maintenance" onclick="switchAssetDetailTab('maintenance')">Maintenance Schedule</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="transfers" onclick="switchAssetDetailTab('transfers')">Transfer History</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="components" onclick="switchAssetDetailTab('components')">Components</button>
+        </div>
+        <div id="assetDetailMaintenance"></div>
+        <div id="assetDetailTransfers" style="display:none;"></div>
+        <div id="assetDetailComponents" style="display:none;"></div>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn-outline-custom" onclick="closeModal('assetDetailModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/components/layout.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/assetClassification.js"></script>
+  <script src="/js/pages/inventory.js"></script>
+</body>
+</html>

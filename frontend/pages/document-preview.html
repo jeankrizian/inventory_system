@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Preview - Cavite Institute Property Management System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="/css/document-preview.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="preview-toolbar no-print">
+    <button class="btn-outline" onclick="window.print()">Print</button>
+    <button class="btn-primary" id="downloadPdfBtn">Download PDF</button>
+    <button class="btn-outline" onclick="window.close()">Close</button>
+  </div>
+  <div class="document-sheet" id="documentSheet">
+    <div class="loading">Loading document...</div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/pages/document-preview.js"></script>
+</body>
+</html>
