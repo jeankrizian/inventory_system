@@ -1,7 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const DepartmentController = require('../controllers/DepartmentController');
-const { requireAuth, validate } = require('../middleware/auth');
+const { requireAuth, requireSystemManage, validate } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -15,8 +15,8 @@ const departmentValidation = [
 
 router.get('/', DepartmentController.getAll);
 router.get('/:id', DepartmentController.getById);
-router.post('/', departmentValidation, DepartmentController.create);
-router.put('/:id', departmentValidation, DepartmentController.update);
-router.delete('/:id', DepartmentController.remove);
+router.post('/', requireSystemManage, departmentValidation, DepartmentController.create);
+router.put('/:id', requireSystemManage, departmentValidation, DepartmentController.update);
+router.delete('/:id', requireSystemManage, DepartmentController.remove);
 
 module.exports = router;

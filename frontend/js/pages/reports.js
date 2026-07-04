@@ -1,7 +1,7 @@
 const REPORTS = [
   { type: 'inventory', title: 'Inventory Report', desc: 'Complete list of all inventory items with stock levels and status', icon: 'bi-box-seam' },
   { type: 'borrow', title: 'Borrow Report', desc: 'All borrow transactions with borrower details and status', icon: 'bi-cart3' },
-  { type: 'return', title: 'Return Report', desc: 'All return transactions with condition and notes', icon: 'bi-arrow-return-left' },
+  { type: 'return', title: 'Process Return Report', desc: 'All process return transactions with condition and notes', icon: 'bi-arrow-return-left' },
   { type: 'low-stock', title: 'Low Stock Report', desc: 'Items below their low stock threshold', icon: 'bi-exclamation-triangle' },
   { type: 'supplier', title: 'Supplier Report', desc: 'Complete supplier directory with contact information', icon: 'bi-truck' },
   { type: 'transfers', title: 'Transfer Report', desc: 'Asset movement and transfer request history', icon: 'bi-arrow-left-right' },
@@ -82,7 +82,7 @@ function renderReportTable(type, data) {
       rows = data.map(b => [b.transaction_code, b.borrower_name, b.borrower_department, b.borrow_date, b.status]);
       break;
     case 'return':
-      headers = ['Code','Borrow Code','Returned By','Date','Condition'];
+      headers = ['Code','Borrow Code','Processed By','Process Return Date','Condition'];
       rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition]);
       break;
     case 'low-stock':

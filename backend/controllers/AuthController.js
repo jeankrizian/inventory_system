@@ -3,6 +3,7 @@ const UserModel = require('../models/UserModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
+const { buildSessionUser } = require('../utils/roleHelpers');
 const { requestPasswordReset } = require('../utils/passwordResetService');
 
 const REGISTRATION_ROLES = [
@@ -43,14 +44,7 @@ const AuthController = {
 
       await UserModel.updateLastLogin(user.id);
 
-      req.session.user = {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name,
-        role: user.role_name,
-        profile_image: user.profile_image
-      };
+      req.session.user = buildSessionUser(user);
 
       await logActivity(user.id, 'LOGIN', 'Auth', `${user.full_name} logged in`, req.ip);
 
@@ -60,7 +54,10 @@ const AuthController = {
         full_name: user.full_name,
         email: user.email,
         role: user.role_name,
-        profile_image: user.profile_image
+        role_name: user.role_name,
+        profile_image: user.profile_image,
+        assigned_department_id: user.assigned_department_id ?? null,
+        assigned_location_id: user.assigned_location_id ?? null
       }, 'Login successful');
     } catch (err) {
       sendError(res, err.message, 500);
@@ -87,15 +84,23 @@ const AuthController = {
       if (!req.session.user) {
         return sendError(res, 'Not authenticated', 401);
       }
-      // Return session user directly — avoids extra DB query on every page load
+      const user = await UserModel.findById(req.session.user.id);
+      if (!user) {
+        return sendError(res, 'Not authenticated', 401);
+      }
+      req.session.user = buildSessionUser(user);
       sendSuccess(res, {
-        id: req.session.user.id,
-        username: req.session.user.username,
-        email: req.session.user.email,
-        full_name: req.session.user.full_name,
-        role: req.session.user.role,
-        role_name: req.session.user.role,
-        profile_image: req.session.user.profile_image
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role_name,
+        role_name: user.role_name,
+        profile_image: user.profile_image,
+        assigned_department_id: user.assigned_department_id ?? null,
+        assigned_location_id: user.assigned_location_id ?? null,
+        assigned_department_name: user.assigned_department_name ?? null,
+        assigned_location_name: user.assigned_location_name ?? null
       });
     } catch (err) {
       sendError(res, err.message, 500);

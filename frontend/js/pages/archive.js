@@ -22,7 +22,7 @@ async function initArchivePage() {
           <option value="user">User</option>
         </select>
       </div>
-      <div id="archiveList">
+      <div class="table-responsive" id="archiveList">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
       </div>
       <div class="content-card-header" id="archivePagination" style="margin-top:20px;margin-bottom:0;"></div>

@@ -1,6 +1,7 @@
 let currentUser = null;
 let records = [];
 let pendingAction = null;
+let maintainableItems = [];
 
 async function initMaintenanceRequestsPage() {
   currentUser = await initLayout('maintenance-requests');
@@ -14,6 +15,7 @@ async function initMaintenanceRequestsPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Requests</h3>
+        ${canSubmitMaintenance(currentUser) ? `<button class="btn-primary-custom" onclick="openSubmitModal()"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search requests...">
@@ -23,14 +25,85 @@ async function initMaintenanceRequestsPage() {
           <option>Ongoing</option><option>Completed</option><option>Cancelled</option>
         </select>
       </div>
-      <div id="maintenanceContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
+      <div class="table-responsive" id="maintenanceContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
     </div>
   `;
 
   document.getElementById('searchInput').addEventListener('input', debounce(loadRecords, 300));
   document.getElementById('filterStatus').addEventListener('change', loadRecords);
   document.getElementById('actionForm').addEventListener('submit', submitAction);
+  document.getElementById('submitForm')?.addEventListener('submit', submitCreate);
+  document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
+
+  if (canSubmitMaintenance(currentUser)) await loadMaintainableItems();
   await loadRecords();
+}
+
+async function loadMaintainableItems() {
+  try {
+    const res = await API.getInventory();
+    maintainableItems = (res?.data || []).filter(i =>
+      i.status !== 'Disposed' && canMaintainAsset(i.asset_classification)
+    );
+  } catch (err) {
+    showToast(err.message, 'error');
+    maintainableItems = [];
+  }
+}
+
+function onSubmitAssetChange() {
+  const item = maintainableItems.find(i => i.id === parseInt(document.getElementById('submitAssetId').value, 10));
+  document.getElementById('submitPropertyTag').value = item?.property_tag || '-';
+  document.getElementById('submitDepartment').value = item?.department_name || item?.category_name || '-';
+  document.getElementById('submitLocation').value = item?.location_name || '-';
+}
+
+async function openSubmitModal() {
+  if (!canSubmitMaintenance(currentUser)) return;
+  await loadMaintainableItems();
+  const select = document.getElementById('submitAssetId');
+  populateSelect(
+    select,
+    maintainableItems,
+    'id',
+    'item_name',
+    maintainableItems.length ? 'Select asset...' : 'No maintainable assets in your scope'
+  );
+  document.getElementById('submitPropertyTag').value = '';
+  document.getElementById('submitDepartment').value = '';
+  document.getElementById('submitLocation').value = '';
+  document.getElementById('submitProblem').value = '';
+  document.getElementById('submitType').value = 'Preventive';
+  document.getElementById('submitPriority').value = 'Medium';
+  document.getElementById('submitDate').value = '';
+  document.getElementById('submitRequestedDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('submitNotes').value = '';
+  openModal('submitModal');
+}
+
+async function submitCreate(e) {
+  e.preventDefault();
+  if (!canSubmitMaintenance(currentUser)) return;
+  const assetId = parseInt(document.getElementById('submitAssetId').value, 10);
+  if (!assetId) return showToast('Please select an asset', 'error');
+
+  try {
+    await API.createMaintenance({
+      inventory_item_id: assetId,
+      reported_problem: document.getElementById('submitProblem').value,
+      maintenance_type: document.getElementById('submitType').value,
+      priority: document.getElementById('submitPriority').value,
+      scheduled_date: document.getElementById('submitDate').value,
+      requested_date: document.getElementById('submitRequestedDate').value,
+      notes: document.getElementById('submitNotes').value,
+      description: document.getElementById('submitNotes').value
+    });
+    showToast('Maintenance request submitted');
+    closeModal('submitModal');
+    loadRecords();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 async function loadRecords() {
@@ -49,8 +122,8 @@ async function loadRecords() {
   }
 }
 
-function isAdmin() {
-  return isAdminUser(currentUser);
+function canOperateMaintenanceActions() {
+  return canOperateMaintenance(currentUser);
 }
 
 function renderRecords() {
@@ -61,7 +134,6 @@ function renderRecords() {
   }
 
   el.innerHTML = `
-    <div class="table-responsive">
       <table class="data-table">
         <thead>
           <tr>
@@ -81,17 +153,17 @@ function renderRecords() {
               <td>${getStatusBadge(r.status)}</td>
               <td style="white-space:nowrap;">
                 <button class="btn-icon" onclick="viewRecord(${r.id})" title="View"><i class="bi bi-eye"></i></button>
-                ${isAdmin() && r.status === 'Pending' ? `
+                ${canOperateMaintenanceActions() && r.status === 'Pending' ? `
                   <button class="btn-success-custom btn-sm-custom" onclick="openAction(${r.id}, 'approve')">Approve</button>
                   <button class="btn-danger-custom btn-sm-custom" onclick="openAction(${r.id}, 'reject')">Reject</button>
                 ` : ''}
-                ${isAdmin() && ['Pending', 'Approved', 'Scheduled'].includes(r.status) ? `
+                ${canOperateMaintenanceActions() && ['Pending', 'Approved', 'Scheduled'].includes(r.status) ? `
                   <button class="btn-outline-custom btn-sm-custom" onclick="openAction(${r.id}, 'reschedule')">Reschedule</button>
                 ` : ''}
-                ${isAdmin() && ['Approved', 'Scheduled'].includes(r.status) ? `
+                ${canOperateMaintenanceActions() && ['Approved', 'Scheduled'].includes(r.status) ? `
                   <button class="btn-primary-custom btn-sm-custom" onclick="openAction(${r.id}, 'start')">Start</button>
                 ` : ''}
-                ${isAdmin() && ['Ongoing', 'In Progress', 'Approved', 'Scheduled'].includes(r.status) ? `
+                ${canOperateMaintenanceActions() && ['Ongoing', 'In Progress', 'Approved', 'Scheduled'].includes(r.status) ? `
                   <button class="btn-success-custom btn-sm-custom" onclick="openAction(${r.id}, 'complete')">Complete</button>
                 ` : ''}
               </td>
@@ -99,7 +171,6 @@ function renderRecords() {
           `).join('')}
         </tbody>
       </table>
-    </div>
   `;
 }
 

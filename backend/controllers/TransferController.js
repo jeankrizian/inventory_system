@@ -3,17 +3,20 @@ const InventoryModel = require('../models/InventoryModel');
 const DepartmentModel = require('../models/DepartmentModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyAdmins, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
 const { canTransfer, isSemiDurable } = require('../utils/assetClassification');
+const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
 
 const TransferController = {
   async getAll(req, res) {
     try {
+      const scope = getAccessScope(req.session.user);
       const data = await TransferModel.getAll({
         status: req.query.status,
         search: req.query.search,
-        inventory_item_id: req.query.inventory_item_id
+        inventory_item_id: req.query.inventory_item_id,
+        scope
       });
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
@@ -23,12 +26,27 @@ const TransferController = {
     try {
       const transfer = await TransferModel.findById(req.params.id);
       if (!transfer) return sendError(res, 'Transfer not found', 404);
+
+      const item = await InventoryModel.findById(transfer.inventory_item_id);
+      const scope = getAccessScope(req.session.user);
+      if (item && !itemMatchesScope(item, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
       sendSuccess(res, transfer);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getHistoryByAsset(req, res) {
     try {
+      const item = await InventoryModel.findById(req.params.inventoryItemId);
+      if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
       const data = await TransferModel.getHistoryByAsset(req.params.inventoryItemId);
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
@@ -38,6 +56,12 @@ const TransferController = {
     try {
       const item = await InventoryModel.findById(req.body.inventory_item_id);
       if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Item is outside your assigned scope', 403);
+      }
+
       if (!canTransfer(item.asset_classification)) {
         return sendError(res, 'Consumable items cannot be transferred', 400);
       }
@@ -51,7 +75,7 @@ const TransferController = {
       });
 
       await logActivity(req.session.user.id, 'CREATE', 'Transfer', `Transfer request ${result.transaction_code}`, req.ip);
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'New Transfer Request',
         message: `New transfer request ${result.transaction_code} for ${item.item_name}.`,
         type: 'transfer_request',

@@ -202,17 +202,17 @@ function bindInventoryActionsListeners() {
   document.getElementById('inventoryTable')?.addEventListener('scroll', closeAllInventoryActionsMenus, true);
 }
 
-function renderInventoryActionsCell(item, classification, isAdmin) {
+function renderInventoryActionsCell(item, classification, permissions) {
   const id = item.id;
   const isDisposed = item.status === 'Disposed';
-  const showBorrow = !isDisposed && showBorrowInInventoryMenu(classification);
-  const showTransfer = !isDisposed && canTransferAsset(classification);
-  const showMaintain = !isDisposed && canMaintainAsset(classification);
-  const showReplace = !isDisposed && canReplaceComponent(classification);
-  const showDispose = !isDisposed;
+  const showBorrow = permissions.canSubmitBorrow && !isDisposed && showBorrowInInventoryMenu(classification);
+  const showTransfer = permissions.canSubmitTransfer && !isDisposed && canTransferAsset(classification);
+  const showMaintain = permissions.canSubmitMaintenance && !isDisposed && canMaintainAsset(classification);
+  const showReplace = permissions.canManageInventory && !isDisposed && canReplaceComponent(classification);
+  const showDispose = permissions.canSubmitDisposal && !isDisposed;
   const documentOptions = getInventoryDocumentOptions(item, classification);
   const hasOverflowItems = showBorrow || showTransfer || showMaintain || showReplace || showDispose ||
-    documentOptions.length || isAdmin;
+    documentOptions.length || permissions.canArchiveInventory;
 
   const overflowItems = [
     showBorrow ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openBorrowForItem(${id}))"><i class="bi bi-box-arrow-right"></i> Borrow</button>` : '',
@@ -241,7 +241,7 @@ function renderInventoryActionsCell(item, classification, isAdmin) {
       </div>
     ` : '',
     showDispose ? `<button type="button" role="menuitem" class="danger" onclick="runInventoryAction(event, () => openDisposalModal(${id}))"><i class="bi bi-trash3"></i> Dispose</button>` : '',
-    isAdmin ? `<button type="button" role="menuitem" class="danger" onclick="runInventoryAction(event, () => archiveItem(${id}))"><i class="bi bi-archive"></i> Archive</button>` : ''
+    permissions.canArchiveInventory ? `<button type="button" role="menuitem" class="danger" onclick="runInventoryAction(event, () => archiveItem(${id}))"><i class="bi bi-archive"></i> Archive</button>` : ''
   ].filter(Boolean);
 
   const menuHtml = hasOverflowItems ? `
@@ -264,17 +264,32 @@ function renderInventoryActionsCell(item, classification, isAdmin) {
       <button type="button" class="btn-icon" onclick="viewAssetDetails(${id})" title="View" aria-label="View">
         <i class="bi bi-eye"></i>
       </button>
+      ${permissions.canManageInventory ? `
       <button type="button" class="btn-icon" onclick="editItem(${id})" title="Edit" aria-label="Edit">
         <i class="bi bi-pencil"></i>
       </button>
+      ` : ''}
       ${menuHtml}
     </div>
   `;
 }
 
+function getInventoryPermissions(user) {
+  return {
+    canManageInventory: canManageInventory(user),
+    canSubmitBorrow: canSubmitBorrow(user),
+    canSubmitTransfer: canSubmitTransfer(user),
+    canSubmitMaintenance: canSubmitMaintenance(user),
+    canSubmitDisposal: canSubmitDisposal(user),
+    canArchiveInventory: canManageInventory(user)
+  };
+}
+
 async function initInventoryPage() {
   currentUser = await initLayout('inventory');
   if (!currentUser) return;
+
+  const permissions = getInventoryPermissions(currentUser);
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -284,7 +299,7 @@ async function initInventoryPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Items</h3>
-        <button class="btn-primary-custom" onclick="openAddModal()"><i class="bi bi-plus-lg"></i> Add Item</button>
+        ${permissions.canManageInventory ? `<button class="btn-primary-custom" onclick="openAddModal()"><i class="bi bi-plus-lg"></i> Add Item</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search items...">
@@ -336,21 +351,26 @@ async function initInventoryPage() {
 }
 
 async function loadDropdowns() {
-  const [catRes, supRes, locRes, userRes] = await Promise.all([
-    API.getCategories(), API.getSuppliers(), API.getLocations(), API.getUsers()
-  ]);
-  categories = catRes?.data || [];
-  suppliers = supRes?.data || [];
-  locations = locRes?.data || [];
-  users = userRes?.data || [];
+  const requests = [API.getCategories(), API.getLocations()];
+  if (canManageInventory(currentUser)) {
+    requests.push(API.getSuppliers(), API.getUsers());
+  }
+
+  const results = await Promise.all(requests);
+  categories = results[0]?.data || [];
+  locations = results[1]?.data || [];
+  suppliers = canManageInventory(currentUser) ? (results[2]?.data || []) : [];
+  users = canManageInventory(currentUser) ? (results[3]?.data || []) : [];
 
   populateSelect(document.getElementById('filterCategory'), categories);
   populateSelect(document.getElementById('itemCategory'), categories);
-  populateSelect(document.getElementById('itemSupplier'), suppliers);
+  if (canManageInventory(currentUser)) {
+    populateSelect(document.getElementById('itemSupplier'), suppliers);
+    populateSelect(document.getElementById('itemCustodian'), users, 'id', 'full_name', 'Select custodian...');
+  }
   populateSelect(document.getElementById('itemLocation'), locations);
   populateSelect(document.getElementById('transferLocation'), locations);
   populateSelect(document.getElementById('transferDepartment'), categories);
-  populateSelect(document.getElementById('itemCustodian'), users, 'id', 'full_name', 'Select custodian...');
 }
 
 async function loadItems() {
@@ -379,7 +399,7 @@ async function loadItems() {
 
 function renderTable() {
   const el = document.getElementById('inventoryTable');
-  const isAdmin = isAdminUser(currentUser);
+  const permissions = getInventoryPermissions(currentUser);
 
   if (!items.length) {
     el.innerHTML = '<div class="empty-state"><i class="bi bi-box"></i>No items found</div>';
@@ -407,7 +427,7 @@ function renderTable() {
             <td>${item.available_quantity}</td>
             <td>${item.location_name || '-'}</td>
             <td>${getStatusBadge(item.status)}</td>
-            <td class="inventory-actions-td">${renderInventoryActionsCell(item, classification, isAdmin)}</td>
+            <td class="inventory-actions-td">${renderInventoryActionsCell(item, classification, permissions)}</td>
           </tr>
         `;
         }).join('')}

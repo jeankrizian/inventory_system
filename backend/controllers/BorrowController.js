@@ -4,18 +4,39 @@ const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { generateCode } = require('../utils/helpers');
-const { notifyAdmins, notifyUser } = require('../utils/notificationService');
-const { canBorrow } = require('../utils/assetClassification');
+const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
+const { getBorrowListScope, borrowTransactionMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
 
 const BorrowController = {
   async getAll(req, res) {
     try {
-      const transactions = await BorrowModel.getAll({
+      const scope = getBorrowListScope(req.session.user);
+      const filters = {
         status: req.query.status,
         search: req.query.search
-      });
+      };
+
+      if (scope.type === 'own') {
+        filters.borrower_id = scope.userId;
+      } else if (scope.type === 'none') {
+        return sendSuccess(res, []);
+      } else if (scope.type !== 'all') {
+        filters.scope = scope;
+      }
+
+      const transactions = await BorrowModel.getAll(filters);
       sendSuccess(res, transactions);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async getBorrowableItems(req, res) {
+    try {
+      const search = req.query.search || '';
+      const items = await InventoryModel.getBorrowableItems(search);
+      sendSuccess(res, items);
     } catch (err) {
       sendError(res, err.message, 500);
     }
@@ -25,6 +46,15 @@ const BorrowController = {
     try {
       const transaction = await BorrowModel.findById(req.params.id);
       if (!transaction) return sendError(res, 'Transaction not found', 404);
+
+      const scope = getBorrowListScope(req.session.user);
+      if (scope.type === 'none') {
+        return sendError(res, 'Access denied', 403);
+      }
+      if (!borrowTransactionMatchesScope(transaction, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
       sendSuccess(res, transaction);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -33,18 +63,21 @@ const BorrowController = {
 
   async create(req, res) {
     try {
-      const { borrower_name, borrower_department, purpose, borrow_date, expected_return_date, notes, items } = req.body;
+      const borrower_name = req.session.user.full_name;
+      if (!borrower_name) {
+        return sendError(res, 'Authenticated user name is required', 400);
+      }
+
+      const { borrower_department, purpose, borrow_date, expected_return_date, notes, items } = req.body;
 
       if (!items || items.length === 0) {
         return sendError(res, 'At least one item is required', 400);
       }
 
-      // Validate availability
       for (const item of items) {
-        const inv = await InventoryModel.findById(item.inventory_item_id);
-        if (!inv) return sendError(res, `Item ID ${item.inventory_item_id} not found`, 400);
-        if (!canBorrow(inv.asset_classification)) {
-          return sendError(res, `Borrowing is not available for ${inv.item_name}`, 400);
+        const inv = await InventoryModel.findBorrowableById(item.inventory_item_id);
+        if (!inv) {
+          return sendError(res, `Item ID ${item.inventory_item_id} is not available to borrow`, 400);
         }
         if (inv.available_quantity < item.quantity) {
           return sendError(res, `Insufficient stock for ${inv.item_name}`, 400);
@@ -68,7 +101,7 @@ const BorrowController = {
       const transaction = await BorrowModel.findById(id);
 
       const itemNames = transaction.items.map(i => i.item_name).join(', ');
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'New Borrow Request',
         message: `${borrower_name} submitted a borrow request (${transactionCode}) for ${itemNames}.`,
         type: 'borrow_request',
@@ -90,7 +123,6 @@ const BorrowController = {
         return sendError(res, 'Only pending transactions can be approved', 400);
       }
 
-      // Deduct inventory
       for (const item of transaction.items) {
         const success = await InventoryModel.adjustQuantity(item.inventory_item_id, -item.quantity);
         if (!success) {
@@ -156,7 +188,7 @@ const BorrowController = {
       const transaction = await BorrowModel.findById(req.params.id);
       if (!transaction) return sendError(res, 'Transaction not found', 404);
       if (!['Borrowed', 'Approved', 'Overdue'].includes(transaction.status)) {
-        return sendError(res, 'Transaction cannot be returned in current status', 400);
+        return sendError(res, 'Transaction cannot be processed for return in current status', 400);
       }
 
       const returnCode = generateCode('RTN');
@@ -169,26 +201,26 @@ const BorrowController = {
         notes: req.body.notes
       });
 
-      await logActivity(req.session.user.id, 'RETURN', 'Return', `Processed return ${returnCode}`, req.ip);
+      await logActivity(req.session.user.id, 'PROCESS_RETURN', 'Process Return', `Process Return ${returnCode}`, req.ip);
 
       const itemNames = (transaction.items || []).map(i => i.item_name).join(', ');
-      await notifyAdmins({
-        title: 'Item Returned',
-        message: `${transaction.borrower_name} returned items (${returnCode}): ${itemNames}.`,
+      await notifyPropertyManagers({
+        title: 'Process Return Completed',
+        message: `Process Return ${returnCode} completed for ${transaction.borrower_name}: ${itemNames}.`,
         type: 'borrow_returned',
         reference_id: transaction.id,
         link_url: '/pages/orders.html'
       });
 
       await notifyUser(transaction.borrower_id, {
-        title: 'Return Recorded',
+        title: 'Process Return Recorded',
         message: `Your returned item (${returnCode}) has been successfully processed.`,
         type: 'return_recorded',
         reference_id: transaction.id,
         link_url: '/pages/orders.html'
       });
 
-      sendSuccess(res, { id: returnId, transaction_code: returnCode }, 'Item returned successfully');
+      sendSuccess(res, { id: returnId, transaction_code: returnCode }, 'Process Return completed successfully');
     } catch (err) {
       sendError(res, err.message, 500);
     }
@@ -196,7 +228,17 @@ const BorrowController = {
 
   async getReturns(req, res) {
     try {
-      const returns = await ReturnModel.getAll();
+      const scope = getBorrowListScope(req.session.user);
+      if (scope.type === 'none') {
+        return sendSuccess(res, []);
+      }
+
+      const filters = {};
+      if (scope.type !== 'all') {
+        filters.scope = scope;
+      }
+
+      const returns = await ReturnModel.getAll(filters);
       sendSuccess(res, returns);
     } catch (err) {
       sendError(res, err.message, 500);

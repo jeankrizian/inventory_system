@@ -92,6 +92,10 @@ const API = {
   deleteLocation: (id) => API.delete(`/locations/${id}`),
   archiveLocation: (id) => API.delete(`/locations/${id}`),
 
+  getBorrowableItems: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return API.get(`/borrow/borrowable-items${query ? '?' + query : ''}`);
+  },
   getBorrows: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return API.get(`/borrow${query ? '?' + query : ''}`);

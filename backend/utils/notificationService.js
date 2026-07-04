@@ -1,14 +1,30 @@
 const pool = require('../config/database');
 const NotificationModel = require('../models/NotificationModel');
 const MaintenanceModel = require('../models/MaintenanceModel');
+const { isAdministrator, isPropertyManager } = require('./roleHelpers');
 
-async function getAdminUserIds() {
+async function getUserIdsByRoles(roleNames) {
+  if (!roleNames.length) return [];
+  const placeholders = roleNames.map(() => '?').join(', ');
   const [rows] = await pool.query(
     `SELECT u.id FROM users u
      JOIN roles r ON u.role_id = r.id
-     WHERE r.name = 'admin' AND u.is_active = 1`
+     WHERE r.name IN (${placeholders}) AND u.is_active = 1`,
+    roleNames
   );
   return rows.map(r => r.id);
+}
+
+async function getAdministratorIds() {
+  return getUserIdsByRoles(['admin']);
+}
+
+async function getPropertyManagerIds() {
+  return getUserIdsByRoles(['Property Manager']);
+}
+
+async function getOperationalManagerIds() {
+  return getPropertyManagerIds();
 }
 
 async function notifyUser(userId, payload) {
@@ -21,9 +37,22 @@ async function notifyUser(userId, payload) {
   await NotificationModel.create({ user_id: userId, title, message, type, reference_id, link_url });
 }
 
-async function notifyAdmins(payload) {
-  const adminIds = await getAdminUserIds();
+/** Notify Property Managers for operational workflow events */
+async function notifyPropertyManagers(payload) {
+  const managerIds = await getPropertyManagerIds();
+  await Promise.all(managerIds.map(id => notifyUser(id, payload)));
+}
+
+/** Notify system administrators for governance / visibility events */
+async function notifyAdministrators(payload) {
+  const adminIds = await getAdministratorIds();
   await Promise.all(adminIds.map(id => notifyUser(id, payload)));
+}
+
+/** Notify Property Managers and Administrators where both need visibility */
+async function notifyAdmins(payload) {
+  const ids = [...new Set([...(await getPropertyManagerIds()), ...(await getAdministratorIds())])];
+  await Promise.all(ids.map(id => notifyUser(id, payload)));
 }
 
 async function checkDueDateReminders(userId) {
@@ -66,10 +95,12 @@ async function checkDueDateReminders(userId) {
 }
 
 async function checkMaintenanceReminders(userId) {
-  const isAdmin = (await pool.query(
+  const [userRoleRow] = await pool.query(
     `SELECT r.name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?`,
     [userId]
-  ))[0][0]?.name === 'admin';
+  );
+  const roleName = userRoleRow[0]?.name;
+  const receivesMaintenanceDue = isAdministrator(roleName) || isPropertyManager(roleName);
 
   const upcoming = await MaintenanceModel.getUpcomingOnItems();
 
@@ -81,7 +112,7 @@ async function checkMaintenanceReminders(userId) {
     const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
 
     if (diffDays <= 7 && diffDays >= 0) {
-      if (isAdmin) {
+      if (receivesMaintenanceDue) {
         await notifyUser(userId, {
           title: 'Maintenance Due',
           message: `${item.item_name} (${item.item_code}) maintenance is due on ${item.next_maintenance_date}.`,
@@ -105,4 +136,11 @@ async function checkMaintenanceReminders(userId) {
   }
 }
 
-module.exports = { notifyUser, notifyAdmins, checkDueDateReminders, checkMaintenanceReminders };
+module.exports = {
+  notifyUser,
+  notifyAdmins,
+  notifyPropertyManagers,
+  notifyAdministrators,
+  checkDueDateReminders,
+  checkMaintenanceReminders
+};

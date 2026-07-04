@@ -7,6 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node database/seed.js",
+    "seed:test-accounts": "node database/seed-test-accounts.js",
+    "seed:sample-data": "node database/seed-sample-data.js",
     "setup": "node database/setup.js",
     "migrate:sop": "node database/runSopMigration.js",
     "migrate:archive": "node database/runArchiveMigration.js"

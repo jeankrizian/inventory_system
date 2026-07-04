@@ -1,7 +1,8 @@
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyAdmins } = require('../utils/notificationService');
+const { notifyPropertyManagers } = require('../utils/notificationService');
+const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const {
   sanitizeInventoryByClassification,
   validateInventoryClassification,
@@ -64,7 +65,7 @@ function hasDepartmentAssignmentChanged(before, after) {
 
 async function notifyLowStockIfNeeded(item) {
   if (item && item.available_quantity <= item.low_stock_threshold) {
-    await notifyAdmins({
+    await notifyPropertyManagers({
       title: 'Low Stock Alert',
       message: `${item.item_name} (${item.item_code}) is now low in stock (${item.available_quantity} remaining).`,
       type: 'low_stock',
@@ -78,6 +79,7 @@ async function notifyLowStockIfNeeded(item) {
 const InventoryController = {
   async getAll(req, res) {
     try {
+      const scope = getAccessScope(req.session.user);
       const filters = {
         search: req.query.search,
         department_id: req.query.department_id || req.query.category_id,
@@ -85,8 +87,10 @@ const InventoryController = {
         status: req.query.status,
         location_id: req.query.location_id,
         parent_asset_id: req.query.parent_asset_id,
-        low_stock: req.query.low_stock === 'true'
+        low_stock: req.query.low_stock === 'true',
+        scope
       };
+
       const items = await InventoryModel.getAll(filters);
       sendSuccess(res, items);
     } catch (err) {
@@ -98,6 +102,12 @@ const InventoryController = {
     try {
       const item = await InventoryModel.findById(req.params.id);
       if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
       sendSuccess(res, item);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -119,7 +129,7 @@ const InventoryController = {
       await logActivity(req.session.user.id, 'CREATE', 'Inventory', `Added item ${body.item_code}`, req.ip);
       const item = await InventoryModel.findById(id);
 
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'New Inventory Item',
         message: `A new inventory item has been added: ${item.item_name} (${item.item_code}).`,
         type: 'inventory_added',
@@ -187,7 +197,7 @@ const InventoryController = {
       await logActivity(req.session.user.id, 'UPDATE', 'Inventory', `Updated item ${item.item_code}`, req.ip);
       const updated = await InventoryModel.findById(req.params.id);
 
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'Inventory Updated',
         message: `Inventory item ${updated.item_name} (${updated.item_code}) has been updated.`,
         type: 'inventory_updated',
@@ -246,7 +256,7 @@ const InventoryController = {
 
       await logActivity(req.session.user.id, 'ARCHIVE', 'Inventory', `Archived item ${item.item_code}`, req.ip);
 
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'Inventory Archived',
         message: `Inventory item ${item.item_name} (${item.item_code}) has been archived.`,
         type: 'inventory_archived',

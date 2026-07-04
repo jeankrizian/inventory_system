@@ -1,10 +1,20 @@
 const DashboardModel = require('../models/DashboardModel');
 const { sendSuccess, sendError } = require('../utils/response');
+const { getAccessScope, getBorrowListScope } = require('../utils/roleHelpers');
+
+function getDashboardScopes(user) {
+  return {
+    inventoryScope: getAccessScope(user),
+    borrowScope: getBorrowListScope(user),
+    user
+  };
+}
 
 const DashboardController = {
   async getStats(req, res) {
     try {
-      const stats = await DashboardModel.getStats();
+      const scopes = getDashboardScopes(req.session.user);
+      const stats = await DashboardModel.getStats(scopes);
       sendSuccess(res, stats);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -13,7 +23,8 @@ const DashboardController = {
 
   async getCharts(req, res) {
     try {
-      const charts = await DashboardModel.getCharts();
+      const scopes = getDashboardScopes(req.session.user);
+      const charts = await DashboardModel.getCharts(scopes);
       sendSuccess(res, charts);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -22,7 +33,8 @@ const DashboardController = {
 
   async getTables(req, res) {
     try {
-      const tables = await DashboardModel.getTables();
+      const scopes = getDashboardScopes(req.session.user);
+      const tables = await DashboardModel.getTables(scopes);
       sendSuccess(res, tables);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -31,12 +43,14 @@ const DashboardController = {
 
   async getAll(req, res) {
     try {
+      const scopes = getDashboardScopes(req.session.user);
+      const dashboardModules = DashboardModel.getDashboardModules(scopes);
       const [stats, charts, tables] = await Promise.all([
-        DashboardModel.getStats(),
-        DashboardModel.getCharts(),
-        DashboardModel.getTables()
+        DashboardModel.getStats(scopes),
+        DashboardModel.getCharts(scopes),
+        DashboardModel.getTables(scopes)
       ]);
-      sendSuccess(res, { stats, charts, tables });
+      sendSuccess(res, { stats, charts, tables, dashboardModules });
     } catch (err) {
       sendError(res, err.message, 500);
     }

@@ -2,16 +2,34 @@ const MaintenanceModel = require('../models/MaintenanceModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyAdmins, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
 const { canMaintain } = require('../utils/assetClassification');
+const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
+
+async function getScopedRecord(req, res) {
+  const record = await MaintenanceModel.findById(req.params.id);
+  if (!record) {
+    sendError(res, 'Maintenance request not found', 404);
+    return null;
+  }
+  const item = await InventoryModel.findById(record.inventory_item_id);
+  const scope = getAccessScope(req.session.user);
+  if (item && !itemMatchesScope(item, scope)) {
+    sendError(res, 'Access denied', 403);
+    return null;
+  }
+  return record;
+}
 
 const MaintenanceController = {
   async getAll(req, res) {
     try {
+      const scope = getAccessScope(req.session.user);
       const data = await MaintenanceModel.getAll({
         inventory_item_id: req.query.inventory_item_id,
         status: req.query.status,
-        search: req.query.search
+        search: req.query.search,
+        scope
       });
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
@@ -19,14 +37,22 @@ const MaintenanceController = {
 
   async getById(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       sendSuccess(res, record);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getByAsset(req, res) {
     try {
+      const item = await InventoryModel.findById(req.params.inventoryItemId);
+      if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
       const data = await MaintenanceModel.getByAsset(req.params.inventoryItemId);
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
@@ -36,6 +62,12 @@ const MaintenanceController = {
     try {
       const item = await InventoryModel.findById(req.body.inventory_item_id);
       if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Item is outside your assigned scope', 403);
+      }
+
       if (!canMaintain(item.asset_classification)) {
         return sendError(res, 'Maintenance is only available for Non-Consumable (Fixed Asset) items', 400);
       }
@@ -50,7 +82,7 @@ const MaintenanceController = {
       });
 
       await logActivity(req.session.user.id, 'CREATE', 'Maintenance', `Maintenance request ${result.transaction_code}`, req.ip);
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'New Maintenance Request',
         message: `New maintenance request ${result.transaction_code} for ${item.item_name}.`,
         type: 'maintenance_request',
@@ -64,8 +96,8 @@ const MaintenanceController = {
 
   async approve(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       if (record.status !== 'Pending') return sendError(res, 'Only pending requests can be approved', 400);
 
       await MaintenanceModel.approve(req.params.id, req.session.user.id, req.body.admin_remarks);
@@ -93,8 +125,8 @@ const MaintenanceController = {
 
   async reject(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       if (record.status !== 'Pending') return sendError(res, 'Only pending requests can be rejected', 400);
 
       await MaintenanceModel.reject(req.params.id, req.session.user.id, req.body.rejection_reason || req.body.reason);
@@ -113,8 +145,8 @@ const MaintenanceController = {
 
   async reschedule(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       if (!['Pending', 'Approved', 'Scheduled'].includes(record.status)) {
         return sendError(res, 'This request cannot be rescheduled', 400);
       }
@@ -128,8 +160,8 @@ const MaintenanceController = {
 
   async start(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       if (!['Approved', 'Scheduled'].includes(record.status)) {
         return sendError(res, 'Only approved or scheduled maintenance can be started', 400);
       }
@@ -142,8 +174,8 @@ const MaintenanceController = {
 
   async complete(req, res) {
     try {
-      const record = await MaintenanceModel.findById(req.params.id);
-      if (!record) return sendError(res, 'Maintenance request not found', 404);
+      const record = await getScopedRecord(req, res);
+      if (!record) return;
       if (!['Ongoing', 'In Progress', 'Scheduled', 'Approved'].includes(record.status)) {
         return sendError(res, 'This maintenance cannot be completed', 400);
       }

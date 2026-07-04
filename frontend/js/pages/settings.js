@@ -23,19 +23,6 @@ async function initSettingsPage() {
       </div>
       <div class="form-group"><label>Last Login</label><input type="text" class="form-control-custom" value="${user.last_login ? formatDate(user.last_login) : 'N/A'}" disabled></div>
     </div>
-    <div class="content-card">
-      <h3 style="font-size:16px;margin-bottom:12px;">System Information</h3>
-      <div class="table-responsive">
-      <table class="data-table">
-        <tbody>
-          <tr><td style="font-weight:500;">System Name</td><td>Cavite Institute Property Management System</td></tr>
-          <tr><td style="font-weight:500;">Version</td><td>1.0.0</td></tr>
-          <tr><td style="font-weight:500;">Database</td><td>MySQL</td></tr>
-          <tr><td style="font-weight:500;">Backend</td><td>Node.js + Express.js</td></tr>
-        </tbody>
-      </table>
-      </div>
-    </div>
   `;
 }
 

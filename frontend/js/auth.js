@@ -119,17 +119,212 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-/** Map registered roles to navigation permission groups */
+/** Map user role to navigation permission group */
 function normalizeNavRole(user) {
-  const role = (user?.role_name || user?.role || '').toLowerCase();
-  if (role === 'admin' || role === 'property manager') return 'admin';
-  return 'staff';
+  return getRoleKey(user?.role_name || user?.role);
 }
 
-/** Check if user has admin-level access */
+function getRoleKey(role) {
+  const normalized = (role || '').toLowerCase().trim();
+  if (normalized === 'admin') return 'administrator';
+  if (normalized === 'property manager') return 'property_manager';
+  if (normalized === 'department custodian' || normalized === 'laboratory custodian') return 'custodian';
+  return 'employee';
+}
+
+function getUserRoleName(user) {
+  return (user?.role_name || user?.role || '').toLowerCase().trim();
+}
+
+function isAdministrator(user) {
+  const role = getUserRoleName(user);
+  return role === 'admin' || role === 'administrator';
+}
+
+function isPropertyManager(user) {
+  return getUserRoleName(user) === 'property manager';
+}
+
+function isDepartmentCustodian(user) {
+  return getUserRoleName(user) === 'department custodian';
+}
+
+function isLaboratoryCustodian(user) {
+  return getUserRoleName(user) === 'laboratory custodian';
+}
+
+function isCustodian(user) {
+  return isDepartmentCustodian(user) || isLaboratoryCustodian(user);
+}
+
+function isEmployee(user) {
+  const role = getUserRoleName(user);
+  return role === 'staff' || role === 'employee';
+}
+
+/** @deprecated Use isAdministrator or isPropertyManager — former admin tier */
 function isAdminUser(user) {
-  const role = (user?.role_name || user?.role || '').toLowerCase();
-  return role === 'admin' || role === 'property manager';
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canApproveBorrow(user) {
+  return isPropertyManager(user);
+}
+
+function canProcessReturn(user) {
+  return isPropertyManager(user);
+}
+
+function canManageInventory(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canViewInventory(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canSubmitBorrow(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user) || isEmployee(user);
+}
+
+function canSubmitTransfer(user) {
+  return isCustodian(user) || isPropertyManager(user);
+}
+
+function canSubmitMaintenance(user) {
+  return isCustodian(user) || isPropertyManager(user);
+}
+
+function canOperateTransfers(user) {
+  return isPropertyManager(user);
+}
+
+function canOperateMaintenance(user) {
+  return isPropertyManager(user);
+}
+
+function canOperateDisposal(user) {
+  return isPropertyManager(user);
+}
+
+function canAccessReports(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canAccessArchive(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canManageSystem(user) {
+  return isAdministrator(user);
+}
+
+function canManageSuppliers(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canViewReturnHistory(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewAllBorrows(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewTransfers(user) {
+  return canSubmitTransfer(user) || canOperateTransfers(user);
+}
+
+function canViewMaintenance(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewDisposal(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canSubmitDisposal(user) {
+  return isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewPersonalBorrowStats(user) {
+  return isEmployee(user);
+}
+
+function canViewInventoryDashboard(user) {
+  return !isEmployee(user);
+}
+
+function canViewUsersDashboard(user) {
+  return isAdministrator(user);
+}
+
+function canViewTransferDashboard(user) {
+  return isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewMaintenanceDashboard(user) {
+  return isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewDisposalDashboard(user) {
+  return isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewPendingApprovalsDashboard(user) {
+  return isPropertyManager(user);
+}
+
+function canViewOperationalDashboard(user) {
+  return canViewTransferDashboard(user) || canViewMaintenanceDashboard(user);
+}
+
+function canViewPersonalDashboardOnly(user) {
+  return isEmployee(user);
+}
+
+function canViewDashboardCharts(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canViewLowStockDashboard(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canViewAssetsNeedingAttention(user) {
+  return isCustodian(user);
+}
+
+function canViewRecentBorrowsDashboard(user) {
+  return isEmployee(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewRecentReturnsDashboard(user) {
+  return isEmployee(user) || isPropertyManager(user) || isCustodian(user);
+}
+
+function canViewDashboardActivities(user) {
+  return isAdministrator(user) || isPropertyManager(user) || isEmployee(user);
+}
+
+function canViewDashboardModule(user, module) {
+  const modules = {
+    personalBorrowStats: canViewPersonalBorrowStats(user),
+    inventoryStats: canViewInventoryDashboard(user),
+    usersStats: canViewUsersDashboard(user),
+    pendingApprovals: canViewPendingApprovalsDashboard(user),
+    transferStats: canViewTransferDashboard(user),
+    maintenanceStats: canViewMaintenanceDashboard(user),
+    disposalStats: canViewDisposalDashboard(user),
+    charts: canViewDashboardCharts(user),
+    recentInventory: canViewInventoryDashboard(user),
+    lowStock: canViewLowStockDashboard(user),
+    assetsNeedingAttention: canViewAssetsNeedingAttention(user),
+    recentBorrows: canViewRecentBorrowsDashboard(user),
+    recentReturns: canViewRecentReturnsDashboard(user),
+    activities: canViewDashboardActivities(user)
+  };
+  return modules[module] !== false;
 }
 
 /** Validate Cavite Institute school email */

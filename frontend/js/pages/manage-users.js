@@ -1,5 +1,7 @@
 let users = [];
 let roles = [];
+let departments = [];
+let locations = [];
 let currentUser = null;
 
 async function initManageUsers() {
@@ -37,9 +39,44 @@ async function initManageUsers() {
   document.getElementById('filterRole').addEventListener('change', loadUsers);
   document.getElementById('filterStatus').addEventListener('change', loadUsers);
   document.getElementById('userForm').addEventListener('submit', saveUser);
+  document.getElementById('userRole').addEventListener('change', updateAssignmentFields);
 
-  await loadRoles();
+  await Promise.all([loadRoles(), loadDepartments(), loadLocations()]);
   await loadUsers();
+}
+
+async function loadDepartments() {
+  try {
+    const res = await API.getCategories();
+    departments = res?.data || [];
+    populateSelect(document.getElementById('userAssignedDepartment'), departments, 'id', 'name', 'Select department...');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function loadLocations() {
+  try {
+    const res = await API.getLocations();
+    locations = res?.data || [];
+    populateSelect(document.getElementById('userAssignedLocation'), locations, 'id', 'name', 'Select location...');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function updateAssignmentFields() {
+  const role = (document.getElementById('userRole').value || '').toLowerCase().trim();
+  const assignmentFields = document.getElementById('assignmentFields');
+  const deptGroup = document.getElementById('departmentAssignmentGroup');
+  const locGroup = document.getElementById('locationAssignmentGroup');
+
+  const showDept = role === 'department custodian';
+  const showLoc = role === 'laboratory custodian';
+
+  assignmentFields.style.display = (showDept || showLoc) ? 'flex' : 'none';
+  deptGroup.style.display = showDept ? 'block' : 'none';
+  locGroup.style.display = showLoc ? 'block' : 'none';
 }
 
 async function loadRoles() {
@@ -117,6 +154,7 @@ function openAddUser() {
   document.getElementById('userPassword').required = true;
   document.getElementById('passwordLabel').textContent = 'Password *';
   document.getElementById('passwordHint').style.display = 'none';
+  updateAssignmentFields();
   openModal('userModal');
 }
 
@@ -129,11 +167,14 @@ function editUser(id) {
   document.getElementById('userUsername').value = u.username;
   document.getElementById('userEmail').value = u.email;
   document.getElementById('userRole').value = u.role_name || '';
+  document.getElementById('userAssignedDepartment').value = u.assigned_department_id || '';
+  document.getElementById('userAssignedLocation').value = u.assigned_location_id || '';
   document.getElementById('userStatus').value = u.is_active ? 'Active' : 'Inactive';
   document.getElementById('userPassword').value = '';
   document.getElementById('userPassword').required = false;
   document.getElementById('passwordLabel').textContent = 'Password';
   document.getElementById('passwordHint').style.display = 'block';
+  updateAssignmentFields();
   openModal('userModal');
 }
 
@@ -145,7 +186,9 @@ async function saveUser(e) {
     username: document.getElementById('userUsername').value,
     email: document.getElementById('userEmail').value,
     role: document.getElementById('userRole').value,
-    is_active: document.getElementById('userStatus').value
+    is_active: document.getElementById('userStatus').value,
+    assigned_department_id: document.getElementById('userAssignedDepartment').value || null,
+    assigned_location_id: document.getElementById('userAssignedLocation').value || null
   };
   const password = document.getElementById('userPassword').value;
   if (password) data.password = password;

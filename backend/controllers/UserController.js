@@ -3,6 +3,33 @@ const UserModel = require('../models/UserModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
+const {
+  isDepartmentCustodian,
+  isLaboratoryCustodian,
+  normalizeRoleName
+} = require('../utils/roleHelpers');
+
+function parseAssignmentId(value) {
+  if (value === '' || value === undefined || value === null) return null;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function resolveRoleAssignments(roleName, body) {
+  const normalized = normalizeRoleName(roleName);
+  const updates = {
+    assigned_department_id: null,
+    assigned_location_id: null
+  };
+
+  if (isDepartmentCustodian(normalized)) {
+    updates.assigned_department_id = parseAssignmentId(body.assigned_department_id);
+  } else if (isLaboratoryCustodian(normalized)) {
+    updates.assigned_location_id = parseAssignmentId(body.assigned_location_id);
+  }
+
+  return updates;
+}
 
 const UserController = {
   async getRoles(req, res) {
@@ -84,6 +111,9 @@ const UserController = {
         full_name: full_name.trim()
       });
 
+      const assignmentUpdates = resolveRoleAssignments(role, req.body);
+      await UserModel.update(id, assignmentUpdates);
+
       if (is_active === false || is_active === 0 || is_active === 'Inactive') {
         await UserModel.update(id, { is_active: 0 });
       }
@@ -132,6 +162,9 @@ const UserController = {
         const roleRecord = await UserModel.findRoleByName(role);
         if (!roleRecord) return sendError(res, 'Selected role is not available', 400);
         updates.role_id = roleRecord.id;
+        Object.assign(updates, resolveRoleAssignments(role, req.body));
+      } else if (req.body.assigned_department_id !== undefined || req.body.assigned_location_id !== undefined) {
+        Object.assign(updates, resolveRoleAssignments(user.role_name, req.body));
       }
       if (is_active !== undefined) {
         updates.is_active = is_active === true || is_active === 1 || is_active === 'Active';

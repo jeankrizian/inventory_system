@@ -1,10 +1,24 @@
 const pool = require('../config/database');
 const { archiveRecord } = require('../utils/archiveService');
 
+const USER_SELECT = `
+  u.id, u.username, u.email, u.full_name, u.profile_image, u.is_active,
+  u.last_login, u.created_at, u.role_id, u.assigned_department_id, u.assigned_location_id,
+  r.name AS role_name,
+  d.name AS assigned_department_name,
+  l.name AS assigned_location_name`;
+
+const USER_JOINS = `
+  JOIN roles r ON u.role_id = r.id
+  LEFT JOIN departments d ON u.assigned_department_id = d.id
+  LEFT JOIN locations l ON u.assigned_location_id = l.id`;
+
 const UserModel = {
   async findByUsername(username) {
     const [rows] = await pool.query(
-      `SELECT u.*, r.name AS role_name FROM users u
+      `SELECT u.*, r.name AS role_name,
+              u.assigned_department_id, u.assigned_location_id
+       FROM users u
        JOIN roles r ON u.role_id = r.id
        WHERE LOWER(u.username) = LOWER(?) AND u.is_active = 1
          AND (u.is_archived = 0 OR u.is_archived IS NULL)`,
@@ -82,10 +96,9 @@ const UserModel = {
 
   async findById(id, { includeArchived = false } = {}) {
     let sql = `
-      SELECT u.id, u.username, u.email, u.full_name, u.profile_image, u.is_active,
-             u.last_login, u.created_at, u.role_id, r.name AS role_name
+      SELECT ${USER_SELECT}
       FROM users u
-      JOIN roles r ON u.role_id = r.id
+      ${USER_JOINS}
       WHERE u.id = ?`;
     if (!includeArchived) {
       sql += ' AND (u.is_archived = 0 OR u.is_archived IS NULL)';
@@ -100,10 +113,9 @@ const UserModel = {
 
   async getAll(filters = {}) {
     let sql = `
-      SELECT u.id, u.username, u.email, u.full_name, u.is_active, u.last_login, u.created_at,
-             u.role_id, r.name AS role_name
+      SELECT ${USER_SELECT}
       FROM users u
-      JOIN roles r ON u.role_id = r.id
+      ${USER_JOINS}
       WHERE (u.is_archived = 0 OR u.is_archived IS NULL)`;
     const params = [];
 
@@ -166,6 +178,14 @@ const UserModel = {
     if (data.password_hash) {
       fields.push('password_hash = ?');
       values.push(data.password_hash);
+    }
+    if (data.assigned_department_id !== undefined) {
+      fields.push('assigned_department_id = ?');
+      values.push(data.assigned_department_id || null);
+    }
+    if (data.assigned_location_id !== undefined) {
+      fields.push('assigned_location_id = ?');
+      values.push(data.assigned_location_id || null);
     }
 
     if (!fields.length) return false;

@@ -28,11 +28,18 @@ const { runUserArchiveMigration } = require('./database/runUserArchiveMigration'
 const { runDocumentMigration } = require('./database/runDocumentMigration');
 const { runPurchaseMigration } = require('./database/runPurchaseMigration');
 const { runExtendedDocumentMigration } = require('./database/runExtendedDocumentMigration');
+const { runRbacAssignmentMigration } = require('./database/runRbacAssignmentMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const { startArchiveCleanupScheduler } = require('./utils/archiveCleanup');
 const { requireAuth } = require('./middleware/auth');
+const {
+  getAccessScope,
+  getBorrowListScope,
+  canViewInventory,
+  canManageSuppliers
+} = require('./utils/roleHelpers');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -89,15 +96,34 @@ app.get('/api/search', requireAuth, async (req, res) => {
     const SupplierModel = require('./models/SupplierModel');
     const BorrowModel = require('./models/BorrowModel');
     const q = (req.query.q || '').trim();
+    const role = req.session.user?.role;
+    const borrowScope = getBorrowListScope(req.session.user);
 
     if (!q) {
       return res.json({ success: true, data: { inventory: [], suppliers: [], orders: [] } });
     }
 
+    const inventoryScope = getAccessScope(req.session.user);
+    const inventoryPromise = canViewInventory(role)
+      ? InventoryModel.getAll({ search: q, limit: 5, scope: inventoryScope })
+      : Promise.resolve([]);
+    const suppliersPromise = canManageSuppliers(role)
+      ? SupplierModel.search(q, 5)
+      : Promise.resolve([]);
+    const borrowFilters = { search: q, limit: 5 };
+    if (borrowScope.type === 'own') {
+      borrowFilters.borrower_id = borrowScope.userId;
+    } else if (borrowScope.type !== 'all' && borrowScope.type !== 'none') {
+      borrowFilters.scope = borrowScope;
+    }
+    const ordersPromise = borrowScope.type === 'none'
+      ? Promise.resolve([])
+      : BorrowModel.getAll(borrowFilters);
+
     const [inventory, suppliers, orders] = await Promise.all([
-      InventoryModel.getAll({ search: q, limit: 5 }),
-      SupplierModel.search(q, 5),
-      BorrowModel.getAll({ search: q, limit: 5 })
+      inventoryPromise,
+      suppliersPromise,
+      ordersPromise
     ]);
 
     res.json({ success: true, data: { inventory, suppliers, orders } });
@@ -172,6 +198,7 @@ async function startServer() {
     await runDocumentMigration();
     await runPurchaseMigration();
     await runExtendedDocumentMigration();
+    await runRbacAssignmentMigration();
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);

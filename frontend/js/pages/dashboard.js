@@ -1,117 +1,168 @@
 let inventoryChart = null;
 let categoryChart = null;
 
+function renderStatsCard(id, title, cols = 4) {
+  const colClass = cols === 2 ? 'cols-2' : '';
+  return `
+    <div class="stats-card">
+      <div class="stats-card-title">${title}</div>
+      <div class="stats-inner ${colClass}" id="${id}">
+        <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
+      </div>
+    </div>`;
+}
+
+function chunkPairs(items) {
+  const rows = [];
+  for (let i = 0; i < items.length; i += 2) {
+    rows.push(items.slice(i, i + 2));
+  }
+  return rows;
+}
+
+function buildStatsRows(user) {
+  const statModules = [
+    { key: 'personalBorrowStats', id: 'personalBorrowStats', title: 'My Borrow Summary', cols: 4 },
+    { key: 'pendingApprovals', id: 'pendingApprovalsStats', title: 'Pending Approvals', cols: 4 },
+    { key: 'inventoryStats', id: 'inventoryStats', title: 'Inventory Summary', cols: 4 },
+    { key: 'usersStats', id: 'usersStats', title: 'Users Summary', cols: 2 },
+    { key: 'transferStats', id: 'transferStats', title: 'Transfer Summary', cols: 2 },
+    { key: 'maintenanceStats', id: 'maintenanceStats', title: 'Maintenance Summary', cols: 2 },
+    { key: 'disposalStats', id: 'disposalStats', title: 'Disposal Summary', cols: 2 },
+    { key: 'assetsNeedingAttention', id: 'attentionStats', title: 'Assets Needing Attention', cols: 2 }
+  ];
+
+  const statCards = statModules
+    .filter(({ key }) => canViewDashboardModule(user, key))
+    .map(({ id, title, cols }) => renderStatsCard(id, title, cols));
+
+  return chunkPairs(statCards).map(pair => `
+    <div class="stats-row">
+      ${pair.join('')}
+    </div>`).join('');
+}
+
+function buildDashboardHtml(user) {
+  const statsRows = buildStatsRows(user);
+
+  const chartsHtml = canViewDashboardModule(user, 'charts') ? `
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h3>Inventory Overview</h3>
+          <button class="chart-period-btn">Monthly</button>
+        </div>
+        <div class="chart-container">
+          <canvas id="inventoryChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h3>Category Distribution</h3>
+        </div>
+        <div class="chart-container small">
+          <canvas id="categoryChart"></canvas>
+        </div>
+      </div>
+    </div>` : '';
+
+  const tableCards = [];
+
+  if (canViewDashboardModule(user, 'recentInventory')) {
+    tableCards.push(`
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>Recent Inventory</h3>
+          <a href="/pages/inventory.html" class="see-all-link">See All</a>
+        </div>
+        <div class="table-responsive" id="recentInventoryTable">
+          <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
+        </div>
+      </div>`);
+  }
+
+  if (canViewDashboardModule(user, 'lowStock')) {
+    tableCards.push(`
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>Low Stock Items</h3>
+          <a href="/pages/inventory.html?low_stock=true" class="see-all-link">See All</a>
+        </div>
+        <ul class="low-stock-list" id="lowStockList">
+          <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>
+        </ul>
+      </div>`);
+  }
+
+  if (canViewDashboardModule(user, 'recentBorrows')) {
+    const borrowTitle = isEmployee(user) ? 'My Borrow History' : 'Recent Borrow Transactions';
+    tableCards.push(`
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>${borrowTitle}</h3>
+          <a href="/pages/orders.html" class="see-all-link">See All</a>
+        </div>
+        <div class="table-responsive" id="recentBorrowTable">
+          <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
+        </div>
+      </div>`);
+  }
+
+  if (canViewDashboardModule(user, 'recentReturns')) {
+    const returnTitle = isEmployee(user) ? 'My Returned Items' : 'Recent Process Return Transactions';
+    const returnsSeeAllHref = canViewReturnHistory(user)
+      ? '/pages/orders.html?tab=returns'
+      : '/pages/orders.html';
+    tableCards.push(`
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>${returnTitle}</h3>
+          <a href="${returnsSeeAllHref}" class="see-all-link">See All</a>
+        </div>
+        <div class="table-responsive" id="recentReturnTable">
+          <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
+        </div>
+      </div>`);
+  }
+
+  const tablesRows = chunkPairs(tableCards).map(pair => `
+    <div class="tables-row">
+      ${pair.join('')}
+    </div>`).join('');
+
+  const activitiesHtml = canViewDashboardModule(user, 'activities') ? `
+    <div class="table-card">
+      <div class="table-card-header">
+        <h3>${isEmployee(user) ? 'My Recent Activity' : 'Recent Activities'}</h3>
+      </div>
+      <ul class="activity-list" id="activityList">
+        <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>
+      </ul>
+    </div>` : '';
+
+  return `
+    <div class="dashboard-grid">
+      ${statsRows}
+      ${chartsHtml}
+      ${tablesRows}
+      ${activitiesHtml}
+    </div>
+  `;
+}
+
 async function initDashboard() {
   const user = await initLayout('dashboard');
   if (!user) return;
 
   const pageContent = document.getElementById('pageContent');
-  pageContent.innerHTML = `
-    <div class="dashboard-grid">
-      <div class="stats-row">
-        <div class="stats-card">
-          <div class="stats-card-title">Inventory Summary</div>
-          <div class="stats-inner" id="inventoryStats">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
-          </div>
-        </div>
-        <div class="stats-card">
-          <div class="stats-card-title">Users Summary</div>
-          <div class="stats-inner cols-2" id="usersStats">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i></div>
-          </div>
-        </div>
-      </div>
+  pageContent.innerHTML = buildDashboardHtml(user);
 
-      <div class="stats-row">
-        <div class="stats-card">
-          <div class="stats-card-title">Supplier Summary</div>
-          <div class="stats-inner cols-2" id="supplierStats">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i></div>
-          </div>
-        </div>
-        <div class="stats-card">
-          <div class="stats-card-title">Category Summary</div>
-          <div class="stats-inner cols-2" id="categoryStats">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i></div>
-          </div>
-        </div>
-      </div>
+  loadDashboardData(user);
+}
 
-      <div class="charts-row">
-        <div class="chart-card">
-          <div class="chart-card-header">
-            <h3>Inventory Overview</h3>
-            <button class="chart-period-btn">Monthly</button>
-          </div>
-          <div class="chart-container">
-            <canvas id="inventoryChart"></canvas>
-          </div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-card-header">
-            <h3>Category Distribution</h3>
-          </div>
-          <div class="chart-container small">
-            <canvas id="categoryChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="tables-row">
-        <div class="table-card">
-          <div class="table-card-header">
-            <h3>Recent Inventory</h3>
-            <a href="/pages/inventory.html" class="see-all-link">See All</a>
-          </div>
-          <div class="table-responsive" id="recentInventoryTable">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
-          </div>
-        </div>
-        <div class="table-card">
-          <div class="table-card-header">
-            <h3>Low Stock Items</h3>
-            <a href="/pages/inventory.html?low_stock=true" class="see-all-link">See All</a>
-          </div>
-          <ul class="low-stock-list" id="lowStockList">
-            <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="tables-row">
-        <div class="table-card">
-          <div class="table-card-header">
-            <h3>Recent Borrow Transactions</h3>
-            <a href="/pages/orders.html" class="see-all-link">See All</a>
-          </div>
-          <div class="table-responsive" id="recentBorrowTable">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i></div>
-          </div>
-        </div>
-        <div class="table-card">
-          <div class="table-card-header">
-            <h3>Recent Return Transactions</h3>
-            <a href="/pages/orders.html?tab=returns" class="see-all-link">See All</a>
-          </div>
-          <div class="table-responsive" id="recentReturnTable">
-            <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="table-card">
-        <div class="table-card-header">
-          <h3>Recent Activities</h3>
-        </div>
-        <ul class="activity-list" id="activityList">
-          <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>
-        </ul>
-      </div>
-    </div>
-  `;
-
-  loadDashboardData();
+function statValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function renderStatItem(icon, iconClass, value, label) {
@@ -119,44 +170,93 @@ function renderStatItem(icon, iconClass, value, label) {
     <div class="stat-item">
       <div class="stat-icon ${iconClass}"><i class="bi ${icon}"></i></div>
       <div>
-        <div class="stat-value">${value}</div>
+        <div class="stat-value">${statValue(value)}</div>
         <div class="stat-label">${label}</div>
       </div>
     </div>
   `;
 }
 
-async function loadDashboardData() {
+async function loadDashboardData(user) {
   try {
     const res = await API.getDashboard();
     if (!res?.data) return;
 
-    const { stats, charts, tables } = res.data;
+    const { stats: rawStats, charts, tables, dashboardModules } = res.data;
+    const stats = rawStats || {};
+    const modules = dashboardModules || {};
 
-    document.getElementById('inventoryStats').innerHTML = `
-      ${renderStatItem('bi-box-seam', 'blue', stats.total_items, 'Total Assets')}
-      ${renderStatItem('bi-arrow-left-right', 'purple', stats.borrowed_items, 'Borrowed')}
-      ${renderStatItem('bi-arrow-return-left', 'green', stats.returned_items, 'Returned')}
-      ${renderStatItem('bi-exclamation-triangle', 'red', stats.low_stock, 'Low Stock')}
-    `;
+    const show = (key) => modules[key] !== false && canViewDashboardModule(user, key);
 
-    document.getElementById('usersStats').innerHTML = `
-      ${renderStatItem('bi-people', 'blue', stats.total_users, 'Total Users')}
-      ${renderStatItem('bi-trash', 'orange', stats.disposed || 0, 'Disposed')}
-    `;
+    if (show('personalBorrowStats') && document.getElementById('personalBorrowStats')) {
+      document.getElementById('personalBorrowStats').innerHTML = `
+        ${renderStatItem('bi-box-arrow-in-right', 'blue', stats.current_borrowed, 'Currently Borrowed')}
+        ${renderStatItem('bi-hourglass-split', 'orange', stats.pending_borrows, 'Pending Requests')}
+        ${renderStatItem('bi-check-circle', 'green', stats.approved_borrows, 'Approved')}
+        ${renderStatItem('bi-arrow-return-left', 'purple', stats.returned_items, 'Returned')}
+        ${renderStatItem('bi-alarm', 'teal', stats.due_soon_borrows, 'Due Soon')}
+        ${renderStatItem('bi-exclamation-triangle', 'red', stats.overdue_borrows, 'Overdue')}
+      `;
+    }
 
-    document.getElementById('supplierStats').innerHTML = `
-      ${renderStatItem('bi-truck', 'orange', stats.pending_transfers ?? 0, 'Pending Transfers')}
-      ${renderStatItem('bi-check-circle', 'green', stats.approved_transfers ?? 0, 'Approved Transfers')}
-    `;
+    if (show('pendingApprovals') && document.getElementById('pendingApprovalsStats')) {
+      document.getElementById('pendingApprovalsStats').innerHTML = `
+        ${renderStatItem('bi-hourglass-split', 'orange', stats.pending_borrows, 'Pending Borrows')}
+        ${renderStatItem('bi-arrow-left-right', 'purple', stats.pending_transfers, 'Pending Transfers')}
+        ${renderStatItem('bi-wrench', 'blue', stats.pending_maintenance, 'Pending Maintenance')}
+        ${renderStatItem('bi-trash3', 'red', stats.pending_disposals, 'Pending Disposals')}
+      `;
+    }
 
-    document.getElementById('categoryStats').innerHTML = `
-      ${renderStatItem('bi-wrench', 'purple', stats.pending_maintenance ?? 0, 'Pending Maintenance')}
-      ${renderStatItem('bi-tools', 'teal', stats.ongoing_maintenance ?? stats.under_maintenance ?? 0, 'Ongoing Maintenance')}
-    `;
+    if (show('inventoryStats') && document.getElementById('inventoryStats')) {
+      document.getElementById('inventoryStats').innerHTML = `
+        ${renderStatItem('bi-box-seam', 'blue', stats.total_items, 'Total Assets')}
+        ${renderStatItem('bi-arrow-left-right', 'purple', stats.borrowed_items, 'Borrowed')}
+        ${renderStatItem('bi-arrow-return-left', 'green', stats.returned_items, 'Returned')}
+        ${renderStatItem('bi-exclamation-triangle', 'red', stats.low_stock, 'Low Stock')}
+      `;
+    }
 
-    renderCharts(charts);
-    renderTables(tables);
+    if (show('usersStats') && document.getElementById('usersStats')) {
+      document.getElementById('usersStats').innerHTML = `
+        ${renderStatItem('bi-people', 'blue', stats.total_users, 'Total Users')}
+        ${renderStatItem('bi-person-check', 'green', stats.active_users, 'Active Users')}
+      `;
+    }
+
+    if (show('transferStats') && document.getElementById('transferStats')) {
+      document.getElementById('transferStats').innerHTML = `
+        ${renderStatItem('bi-truck', 'orange', stats.pending_transfers ?? 0, 'Pending Transfers')}
+        ${renderStatItem('bi-check-circle', 'green', stats.approved_transfers ?? 0, 'Approved Transfers')}
+      `;
+    }
+
+    if (show('maintenanceStats') && document.getElementById('maintenanceStats')) {
+      document.getElementById('maintenanceStats').innerHTML = `
+        ${renderStatItem('bi-wrench', 'purple', stats.pending_maintenance ?? 0, 'Pending Maintenance')}
+        ${renderStatItem('bi-tools', 'teal', stats.ongoing_maintenance ?? stats.under_maintenance ?? 0, 'Ongoing Maintenance')}
+      `;
+    }
+
+    if (show('disposalStats') && document.getElementById('disposalStats')) {
+      document.getElementById('disposalStats').innerHTML = `
+        ${renderStatItem('bi-trash3', 'red', stats.pending_disposals ?? 0, 'Pending Disposals')}
+        ${renderStatItem('bi-archive', 'orange', stats.disposed ?? 0, 'Disposed Assets')}
+      `;
+    }
+
+    if (show('assetsNeedingAttention') && document.getElementById('attentionStats')) {
+      document.getElementById('attentionStats').innerHTML = `
+        ${renderStatItem('bi-wrench-adjustable', 'red', stats.maintenance_due ?? 0, 'Maintenance Due')}
+        ${renderStatItem('bi-exclamation-triangle', 'orange', stats.low_stock ?? 0, 'Low Stock')}
+      `;
+    }
+
+    if (show('charts')) {
+      renderCharts(charts);
+    }
+
+    renderTables(tables, modules, user);
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -173,6 +273,8 @@ function renderCharts(charts) {
   if (labels.length === 0) labels.push(...months.slice(0, 6));
 
   const ctx1 = document.getElementById('inventoryChart');
+  if (!ctx1) return;
+
   if (inventoryChart) inventoryChart.destroy();
   inventoryChart = new Chart(ctx1, {
     type: 'bar',
@@ -195,6 +297,8 @@ function renderCharts(charts) {
 
   const catData = charts.categoryDistribution || charts.departmentDistribution || [];
   const ctx2 = document.getElementById('categoryChart');
+  if (!ctx2) return;
+
   if (categoryChart) categoryChart.destroy();
   categoryChart = new Chart(ctx2, {
     type: 'doughnut',
@@ -214,78 +318,90 @@ function renderCharts(charts) {
   });
 }
 
-function renderTables(tables) {
-  const invRows = (tables.recentInventory || []).map(i => `
-    <tr>
-      <td>${i.item_code}</td>
-      <td>${i.item_name}</td>
-      <td>${i.category || i.department || '-'}</td>
-      <td>${i.quantity}</td>
-      <td>${getStatusBadge(i.status)}</td>
-    </tr>
-  `).join('');
+function renderTables(tables, modules = {}, user = null) {
+  const show = (key) => modules[key] !== false && (!user || canViewDashboardModule(user, key));
 
-  document.getElementById('recentInventoryTable').innerHTML = invRows ? `
-    <table class="data-table">
-      <thead><tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Quantity</th><th>Status</th></tr></thead>
-      <tbody>${invRows}</tbody>
-    </table>
-  ` : '<div class="empty-state">No inventory items yet</div>';
+  if (show('recentInventory') && document.getElementById('recentInventoryTable')) {
+    const invRows = (tables.recentInventory || []).map(i => `
+      <tr>
+        <td>${i.item_code}</td>
+        <td>${i.item_name}</td>
+        <td>${i.category || i.department || '-'}</td>
+        <td>${i.quantity}</td>
+        <td>${getStatusBadge(i.status)}</td>
+      </tr>
+    `).join('');
 
-  const lowStock = tables.lowStock || [];
-  document.getElementById('lowStockList').innerHTML = lowStock.length ? lowStock.map(item => `
-    <li class="low-stock-item">
-      <div class="low-stock-icon"><i class="bi bi-box"></i></div>
-      <div class="low-stock-info">
-        <div class="name">${item.item_name}</div>
-        <div class="qty">Remaining Quantity: ${item.available_quantity} ${item.category ? '· ' + item.category : ''}</div>
-      </div>
-      <span class="badge-low">Low</span>
-    </li>
-  `).join('') : '<li class="empty-state">No low stock items</li>';
+    document.getElementById('recentInventoryTable').innerHTML = invRows ? `
+      <table class="data-table">
+        <thead><tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Quantity</th><th>Status</th></tr></thead>
+        <tbody>${invRows}</tbody>
+      </table>
+    ` : '<div class="empty-state">No inventory items yet</div>';
+  }
 
-  const borrowRows = (tables.recentBorrows || []).map(b => `
-    <tr>
-      <td>${b.transaction_code}</td>
-      <td>${b.borrower_name}</td>
-      <td>${formatDate(b.borrow_date)}</td>
-      <td>${getStatusBadge(b.status)}</td>
-    </tr>
-  `).join('');
+  if (show('lowStock') && document.getElementById('lowStockList')) {
+    const lowStock = tables.lowStock || [];
+    document.getElementById('lowStockList').innerHTML = lowStock.length ? lowStock.map(item => `
+      <li class="low-stock-item">
+        <div class="low-stock-icon"><i class="bi bi-box"></i></div>
+        <div class="low-stock-info">
+          <div class="name">${item.item_name}</div>
+          <div class="qty">Remaining Quantity: ${item.available_quantity} ${item.category ? '· ' + item.category : ''}</div>
+        </div>
+        <span class="badge-low">Low</span>
+      </li>
+    `).join('') : '<li class="empty-state">No low stock items</li>';
+  }
 
-  document.getElementById('recentBorrowTable').innerHTML = borrowRows ? `
-    <table class="data-table">
-      <thead><tr><th>Code</th><th>Borrower</th><th>Date</th><th>Status</th></tr></thead>
-      <tbody>${borrowRows}</tbody>
-    </table>
-  ` : '<div class="empty-state">No borrow transactions</div>';
+  if (show('recentBorrows') && document.getElementById('recentBorrowTable')) {
+    const borrowRows = (tables.recentBorrows || []).map(b => `
+      <tr>
+        <td>${b.transaction_code}</td>
+        <td>${b.borrower_name}</td>
+        <td>${formatDate(b.borrow_date)}</td>
+        <td>${getStatusBadge(b.status)}</td>
+      </tr>
+    `).join('');
 
-  const returnRows = (tables.recentReturns || []).map(r => `
-    <tr>
-      <td>${r.transaction_code}</td>
-      <td>${r.borrower_name}</td>
-      <td>${formatDate(r.return_date)}</td>
-      <td>${getStatusBadge(r.condition)}</td>
-    </tr>
-  `).join('');
+    document.getElementById('recentBorrowTable').innerHTML = borrowRows ? `
+      <table class="data-table">
+        <thead><tr><th>Code</th><th>Borrower</th><th>Date</th><th>Status</th></tr></thead>
+        <tbody>${borrowRows}</tbody>
+      </table>
+    ` : '<div class="empty-state">No borrow transactions</div>';
+  }
 
-  document.getElementById('recentReturnTable').innerHTML = returnRows ? `
-    <table class="data-table">
-      <thead><tr><th>Code</th><th>Borrower</th><th>Date</th><th>Condition</th></tr></thead>
-      <tbody>${returnRows}</tbody>
-    </table>
-  ` : '<div class="empty-state">No return transactions</div>';
+  if (show('recentReturns') && document.getElementById('recentReturnTable')) {
+    const returnRows = (tables.recentReturns || []).map(r => `
+      <tr>
+        <td>${r.transaction_code}</td>
+        <td>${r.borrower_name}</td>
+        <td>${formatDate(r.return_date)}</td>
+        <td>${getStatusBadge(r.condition)}</td>
+      </tr>
+    `).join('');
 
-  const activities = tables.recentActivities || [];
-  document.getElementById('activityList').innerHTML = activities.length ? activities.map(a => `
-    <li class="activity-item">
-      <span class="activity-dot"></span>
-      <div>
-        <strong>${a.user_name || 'System'}</strong> — ${a.description}
-        <div style="font-size:11px;color:#8a8a8a;margin-top:2px;">${formatDate(a.created_at)} · ${a.module}</div>
-      </div>
-    </li>
-  `).join('') : '<li class="empty-state">No recent activities</li>';
+    document.getElementById('recentReturnTable').innerHTML = returnRows ? `
+      <table class="data-table">
+        <thead><tr><th>Code</th><th>Borrower</th><th>Date</th><th>Condition</th></tr></thead>
+        <tbody>${returnRows}</tbody>
+      </table>
+    ` : '<div class="empty-state">No process return transactions</div>';
+  }
+
+  if (show('activities') && document.getElementById('activityList')) {
+    const activities = tables.recentActivities || [];
+    document.getElementById('activityList').innerHTML = activities.length ? activities.map(a => `
+      <li class="activity-item">
+        <span class="activity-dot"></span>
+        <div>
+          <strong>${a.user_name || 'System'}</strong> — ${a.description}
+          <div style="font-size:11px;color:#8a8a8a;margin-top:2px;">${formatDate(a.created_at)} · ${a.module}</div>
+        </div>
+      </li>
+    `).join('') : '<li class="empty-state">No recent activities</li>';
+  }
 }
 
 document.addEventListener('DOMContentLoaded', initDashboard);

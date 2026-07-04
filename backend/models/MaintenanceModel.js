@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
+const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 
 const MaintenanceModel = {
   _baseSelect() {
@@ -27,6 +28,12 @@ const MaintenanceModel = {
       const term = `%${filters.search}%`;
       params.push(term, term, term);
     }
+    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
     sql += ' ORDER BY m.created_at DESC';
     const [rows] = await pool.query(sql, params);
     return rows;
@@ -135,27 +142,42 @@ const MaintenanceModel = {
     }
   },
 
-  async countByStatus(status) {
-    const [rows] = await pool.query(
-      'SELECT COUNT(*) AS count FROM maintenance_records WHERE status = ?',
-      [status]
-    );
-    return rows[0].count;
+  async countByStatus(status, scope) {
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM maintenance_records m
+      JOIN inventory_items i ON m.inventory_item_id = i.id
+      WHERE m.status = ?`;
+    const params = [status];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   },
 
-  async countPending() {
-    return this.countByStatus('Pending');
+  async countPending(scope) {
+    return this.countByStatus('Pending', scope);
   },
 
-  async countOngoing() {
-    const [rows] = await pool.query(
-      `SELECT COUNT(*) AS count FROM maintenance_records WHERE status IN ('Ongoing', 'In Progress')`
-    );
-    return rows[0].count;
+  async countOngoing(scope) {
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM maintenance_records m
+      JOIN inventory_items i ON m.inventory_item_id = i.id
+      WHERE m.status IN ('Ongoing', 'In Progress')`;
+    const params = [];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   },
 
-  async countScheduled() {
-    return this.countByStatus('Scheduled');
+  async countScheduled(scope) {
+    return this.countByStatus('Scheduled', scope);
   },
 
   async getUpcomingOnItems() {
@@ -169,11 +191,19 @@ const MaintenanceModel = {
     return rows;
   },
 
-  async countDue() {
-    const [rows] = await pool.query(
-      `SELECT COUNT(*) AS count FROM maintenance_records WHERE status IN ('Pending', 'Scheduled', 'Ongoing', 'In Progress')`
-    );
-    return rows[0].count;
+  async countDue(scope) {
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM maintenance_records m
+      JOIN inventory_items i ON m.inventory_item_id = i.id
+      WHERE m.status IN ('Pending', 'Scheduled', 'Ongoing', 'In Progress')`;
+    const params = [];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   }
 };
 

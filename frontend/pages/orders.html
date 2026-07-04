@@ -23,7 +23,7 @@
       <form id="borrowForm">
         <div class="modal-body-custom">
           <div class="form-row">
-            <div class="form-group"><label>Borrower Name *</label><input type="text" class="form-control-custom" id="borrowerName" required></div>
+            <div class="form-group"><label>Borrower Name *</label><input type="text" class="form-control-custom" id="borrowerName" required readonly></div>
             <div class="form-group"><label>Department</label><input type="text" class="form-control-custom" id="borrowerDept"></div>
           </div>
           <div class="form-row">
@@ -35,7 +35,13 @@
           <h4 style="font-size:14px;margin-bottom:12px;">Items to Borrow</h4>
           <div id="borrowItemsList">
             <div class="form-row borrow-item-row">
-              <div class="form-group" style="flex:2"><label>Item</label><select class="form-control-custom borrow-item-select" required></select></div>
+              <div class="form-group" style="flex:2"><label>Item</label>
+                <div class="borrow-item-combobox">
+                  <input type="text" class="form-control-custom borrow-item-select" placeholder="Select item..." autocomplete="off" required>
+                  <input type="hidden" class="borrow-item-id">
+                  <div class="borrow-item-dropdown"></div>
+                </div>
+              </div>
               <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
             </div>
           </div>
@@ -52,7 +58,7 @@
   <div class="modal-overlay" id="returnModal">
     <div class="modal-content-custom">
       <div class="modal-header-custom">
-        <h3>Return Item</h3>
+        <h3>Process Return</h3>
         <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('returnModal')"><i class="bi bi-x-lg"></i></button>
       </div>
       <form id="returnForm">
@@ -60,7 +66,7 @@
           <input type="hidden" id="returnBorrowId">
           <p id="returnBorrowInfo" style="font-size:13px;margin-bottom:16px;"></p>
           <div class="form-row">
-            <div class="form-group"><label>Return Date *</label><input type="date" class="form-control-custom" id="returnDate" required></div>
+            <div class="form-group"><label>Process Return Date *</label><input type="date" class="form-control-custom" id="returnDate" required></div>
             <div class="form-group"><label>Condition</label>
               <select class="form-control-custom" id="returnCondition">
                 <option>Good</option><option>Fair</option><option>Damaged</option><option>Lost</option>

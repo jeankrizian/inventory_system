@@ -9,10 +9,10 @@ async function seedNotifications() {
   const samples = [
     [1, 'New Borrow Request', 'Inventory Staff submitted a borrow request (BRW-2024-004) for Science Textbook.', 'borrow_request', 4, '/pages/orders.html', 0],
     [1, 'Low Stock Alert', 'Whiteboard Marker (OFF-002) is now low in stock (8 remaining).', 'low_stock', 14, '/pages/inventory.html?low_stock=true', 0],
-    [1, 'Item Returned', 'Inventory Staff returned items (RTN-2024-001): LCD Projector.', 'borrow_returned', 1, '/pages/orders.html', 1],
+    [1, 'Process Return Completed', 'Inventory Staff process return completed (RTN-2024-001): LCD Projector.', 'borrow_returned', 1, '/pages/orders.html', 1],
     [2, 'Borrow Request Approved', 'Your request to borrow (BRW-2024-003) has been approved.', 'borrow_approved', 3, '/pages/orders.html', 0],
     [2, 'Borrow Request Rejected', 'Your request to borrow (BRW-2024-008) has been rejected.', 'borrow_rejected', 8, '/pages/orders.html', 1],
-    [2, 'Return Recorded', 'Your returned item (RTN-2024-001) has been successfully processed.', 'return_recorded', 1, '/pages/orders.html', 1]
+    [2, 'Process Return Recorded', 'Your returned item (RTN-2024-001) has been successfully processed.', 'return_recorded', 1, '/pages/orders.html', 1]
   ];
 
   for (const row of samples) {

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS roles (
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   role_id INT NOT NULL,
+  assigned_department_id INT NULL,
+  assigned_location_id INT NULL,
   username VARCHAR(50) NOT NULL UNIQUE,
   email VARCHAR(100) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
@@ -25,7 +27,9 @@ CREATE TABLE IF NOT EXISTS users (
   last_login TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
+  FOREIGN KEY (assigned_department_id) REFERENCES departments(id) ON DELETE SET NULL,
+  FOREIGN KEY (assigned_location_id) REFERENCES locations(id) ON DELETE SET NULL
 );
 
 -- Departments

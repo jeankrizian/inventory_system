@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
+const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 
 const DisposalModel = {
   async getAll(filters = {}) {
@@ -19,6 +20,10 @@ const DisposalModel = {
       const term = `%${filters.search}%`;
       params.push(term, term, term);
     }
+    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+    if (scopeFilter.denied) return [];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
     sql += ' ORDER BY d.created_at DESC';
     const [rows] = await pool.query(sql, params);
     return rows;
@@ -70,10 +75,16 @@ const DisposalModel = {
     );
   },
 
-  async countPending() {
-    const [rows] = await pool.query(
-      `SELECT COUNT(*) AS count FROM disposal_requests WHERE status IN ('Pending', 'Inspected')`
-    );
+  async countPending(scope) {
+    let sql = `SELECT COUNT(*) AS count FROM disposal_requests d
+      JOIN inventory_items i ON d.inventory_item_id = i.id
+      WHERE d.status IN ('Pending', 'Inspected')`;
+    const params = [];
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) return 0;
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
     return rows[0].count;
   }
 };

@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
 
 const BorrowModel = {
   async getAll(filters = {}) {
@@ -9,6 +10,11 @@ const BorrowModel = {
       WHERE 1=1`;
     const params = [];
 
+    if (filters.borrower_id) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(filters.borrower_id);
+    }
+
     if (filters.status) {
       sql += ' AND bt.status = ?';
       params.push(filters.status);
@@ -18,6 +24,10 @@ const BorrowModel = {
       const term = `%${filters.search}%`;
       params.push(term, term);
     }
+
+    const scopeFilter = appendBorrowTransactionScopeSql(filters.scope, 'bt');
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
 
     sql += ' ORDER BY bt.created_at DESC';
     if (filters.limit) {
@@ -40,7 +50,8 @@ const BorrowModel = {
     if (!transaction) return null;
 
     const [items] = await pool.query(
-      `SELECT bi.*, i.item_code, i.item_name, i.available_quantity
+      `SELECT bi.*, i.item_code, i.item_name, i.available_quantity,
+              i.department_id, i.location_id
        FROM borrow_items bi
        JOIN inventory_items i ON bi.inventory_item_id = i.id
        WHERE bi.borrow_transaction_id = ?`,
@@ -87,7 +98,6 @@ const BorrowModel = {
   },
 
   async updateStatus(id, status, approvedBy = null) {
-    const updates = { status };
     if (approvedBy) {
       await pool.query(
         'UPDATE borrow_transactions SET status = ?, approved_by = ?, approved_at = NOW() WHERE id = ?',
@@ -99,26 +109,50 @@ const BorrowModel = {
     return true;
   },
 
-  async getRecent(limit = 5) {
-    const [rows] = await pool.query(
-      `SELECT transaction_code, borrower_name, borrow_date, status
-       FROM borrow_transactions ORDER BY created_at DESC LIMIT ?`,
-      [limit]
-    );
-    return rows;
+  async getRecent(limit = 5, scope) {
+    if (scope?.type === 'none') {
+      return [];
+    }
+    let sql = `SELECT bt.transaction_code, bt.borrower_name, bt.borrow_date, bt.status
+       FROM borrow_transactions bt WHERE 1=1`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    sql += ' ORDER BY bt.created_at DESC LIMIT ?';
+    params.push(limit);
+    const [rows] = await pool.query(sql, params);
+    return rows || [];
   },
 
-  async getMonthlyBorrowed() {
-    const [rows] = await pool.query(`
-      SELECT DATE_FORMAT(borrow_date, '%b') AS month, MONTH(borrow_date) AS month_num,
+  async getMonthlyBorrowed(scope) {
+    if (scope?.type === 'none') {
+      return [];
+    }
+    let sql = `
+      SELECT DATE_FORMAT(bt.borrow_date, '%b') AS month, MONTH(bt.borrow_date) AS month_num,
              COUNT(*) AS count
-      FROM borrow_transactions
-      WHERE borrow_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-        AND status IN ('Approved', 'Borrowed', 'Returned', 'Overdue')
-      GROUP BY MONTH(borrow_date), DATE_FORMAT(borrow_date, '%b')
-      ORDER BY month_num
-    `);
-    return rows;
+      FROM borrow_transactions bt
+      WHERE bt.borrow_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        AND bt.status IN ('Approved', 'Borrowed', 'Returned', 'Overdue')`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    sql += ` GROUP BY MONTH(bt.borrow_date), DATE_FORMAT(bt.borrow_date, '%b')
+      ORDER BY month_num`;
+    const [rows] = await pool.query(sql, params);
+    return rows || [];
   },
 
   async getBorrowItems(transactionId) {
@@ -129,9 +163,95 @@ const BorrowModel = {
     return rows;
   },
 
-  async countPending() {
-    const [rows] = await pool.query(`SELECT COUNT(*) AS count FROM borrow_transactions WHERE status = 'Pending'`);
-    return rows[0].count;
+  async countPending(scope) {
+    if (scope?.type === 'none') {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt WHERE bt.status = 'Pending'`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async countByStatus(scope, status) {
+    if (scope?.type === 'none') return 0;
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt WHERE bt.status = ?`;
+    const params = [status];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async countCurrentBorrowed(scope) {
+    if (scope?.type === 'none') return 0;
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt
+      WHERE bt.status IN ('Approved', 'Borrowed', 'Overdue')`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async countOverdue(scope) {
+    if (scope?.type === 'none') return 0;
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt
+      WHERE bt.status = 'Overdue'
+         OR (bt.status IN ('Approved', 'Borrowed')
+             AND bt.expected_return_date IS NOT NULL
+             AND bt.expected_return_date < CURDATE())`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async countDueSoon(scope, days = 3) {
+    if (scope?.type === 'none') return 0;
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt
+      WHERE bt.status IN ('Approved', 'Borrowed')
+        AND bt.expected_return_date IS NOT NULL
+        AND bt.expected_return_date >= CURDATE()
+        AND bt.expected_return_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)`;
+    const params = [days];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   }
 };
 

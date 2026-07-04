@@ -1,7 +1,7 @@
 const SupplierModel = require('../models/SupplierModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyAdmins } = require('../utils/notificationService');
+const { notifyPropertyManagers } = require('../utils/notificationService');
 
 const SupplierController = {
   async getAll(req, res) {
@@ -29,7 +29,7 @@ const SupplierController = {
       await logActivity(req.session.user.id, 'CREATE', 'Supplier', `Added supplier ${req.body.name}`, req.ip);
       const supplier = await SupplierModel.findById(id);
 
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'Supplier Added',
         message: `A new supplier has been added: ${supplier.name}.`,
         type: 'supplier_added',
@@ -50,7 +50,7 @@ const SupplierController = {
       await logActivity(req.session.user.id, 'UPDATE', 'Supplier', `Updated supplier ${req.body.name}`, req.ip);
       const supplier = await SupplierModel.findById(req.params.id);
 
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'Supplier Updated',
         message: `Supplier ${supplier.name} has been updated.`,
         type: 'supplier_updated',

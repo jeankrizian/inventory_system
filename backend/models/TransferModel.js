@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
+const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 
 const TransferModel = {
   async getAll(filters = {}) {
@@ -25,6 +26,9 @@ const TransferModel = {
       const term = `%${filters.search}%`;
       params.push(term, term, term);
     }
+    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
     sql += ' ORDER BY t.created_at DESC';
     const [rows] = await pool.query(sql, params);
     return rows;
@@ -110,14 +114,34 @@ const TransferModel = {
     return rows;
   },
 
-  async countPending() {
-    const [rows] = await pool.query(`SELECT COUNT(*) AS count FROM transfer_requests WHERE status = 'Pending'`);
-    return rows[0].count;
+  async countPending(scope) {
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM transfer_requests t
+      JOIN inventory_items i ON t.inventory_item_id = i.id
+      WHERE t.status = 'Pending'`;
+    const params = [];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   },
 
-  async countApproved() {
-    const [rows] = await pool.query(`SELECT COUNT(*) AS count FROM transfer_requests WHERE status IN ('Approved', 'Completed')`);
-    return rows[0].count;
+  async countApproved(scope) {
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM transfer_requests t
+      JOIN inventory_items i ON t.inventory_item_id = i.id
+      WHERE t.status IN ('Approved', 'Completed')`;
+    const params = [];
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
   }
 };
 

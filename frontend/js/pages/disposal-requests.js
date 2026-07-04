@@ -1,6 +1,7 @@
 let currentUser = null;
 let disposals = [];
 let pendingAction = null;
+let disposableItems = [];
 
 const DISPOSAL_METHODS = ['Auction', 'Donation', 'Recycling', 'Destruction', 'Trade-In', 'Other'];
 
@@ -8,14 +9,20 @@ async function initDisposalRequestsPage() {
   currentUser = await initLayout('disposal-requests');
   if (!currentUser) return;
 
+  const isViewOnly = !canOperateDisposal(currentUser);
+  const subtitle = isViewOnly
+    ? 'View disposal requests for oversight and monitoring'
+    : 'Review, inspect, and approve asset disposal requests';
+
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <h1>Disposal Requests</h1>
-      <p>Review, inspect, and approve asset disposal requests</p>
+      <p>${subtitle}</p>
     </div>
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Requests</h3>
+        ${canSubmitDisposal(currentUser) ? `<button class="btn-primary-custom" onclick="openSubmitModal()"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search disposals...">
@@ -27,14 +34,80 @@ async function initDisposalRequestsPage() {
           <option>Rejected</option>
         </select>
       </div>
-      <div id="disposalContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
+      <div class="table-responsive" id="disposalContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
     </div>
   `;
 
   document.getElementById('searchInput').addEventListener('input', debounce(loadDisposals, 300));
   document.getElementById('filterStatus').addEventListener('change', loadDisposals);
   document.getElementById('actionForm').addEventListener('submit', submitAction);
+  document.getElementById('submitForm')?.addEventListener('submit', submitCreate);
+  document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
+
+  if (canSubmitDisposal(currentUser)) await loadDisposableItems();
   await loadDisposals();
+}
+
+async function loadDisposableItems() {
+  try {
+    const res = await API.getInventory();
+    disposableItems = (res?.data || []).filter(i => i.status !== 'Disposed');
+  } catch (err) {
+    showToast(err.message, 'error');
+    disposableItems = [];
+  }
+}
+
+function onSubmitAssetChange() {
+  const item = disposableItems.find(i => i.id === parseInt(document.getElementById('submitAssetId').value, 10));
+  document.getElementById('submitPropertyTag').value = item?.property_tag || '-';
+  document.getElementById('submitDepartment').value = item?.department_name || item?.category_name || '-';
+  const qtyInput = document.getElementById('submitQuantity');
+  qtyInput.value = '1';
+  qtyInput.max = item?.available_quantity || 1;
+}
+
+async function openSubmitModal() {
+  if (!canSubmitDisposal(currentUser)) return;
+  await loadDisposableItems();
+  populateSelect(
+    document.getElementById('submitAssetId'),
+    disposableItems,
+    'id',
+    'item_name',
+    disposableItems.length ? 'Select asset...' : 'No disposable assets in your scope'
+  );
+  document.getElementById('submitPropertyTag').value = '';
+  document.getElementById('submitDepartment').value = '';
+  document.getElementById('submitQuantity').value = '1';
+  document.getElementById('submitQuantity').max = '1';
+  document.getElementById('submitReason').value = '';
+  openModal('submitModal');
+}
+
+async function submitCreate(e) {
+  e.preventDefault();
+  if (!canSubmitDisposal(currentUser)) return;
+  const assetId = parseInt(document.getElementById('submitAssetId').value, 10);
+  const quantity = parseInt(document.getElementById('submitQuantity').value, 10);
+  const reason = document.getElementById('submitReason').value?.trim();
+  if (!assetId) return showToast('Please select an asset', 'error');
+  if (!quantity || quantity < 1) return showToast('Quantity must be at least 1', 'error');
+  if (!reason) return showToast('Reason is required', 'error');
+
+  try {
+    const res = await API.createDisposal({
+      inventory_item_id: assetId,
+      quantity,
+      reason
+    });
+    showToast('Disposal request submitted');
+    openGeneratedDocument(res?.data?.generated_document, 'RDF');
+    closeModal('submitModal');
+    loadDisposals();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 async function loadDisposals() {
@@ -53,8 +126,8 @@ async function loadDisposals() {
   }
 }
 
-function isAdmin() {
-  return isAdminUser(currentUser);
+function canOperateDisposalActions() {
+  return canOperateDisposal(currentUser);
 }
 
 function renderDisposals() {
@@ -65,7 +138,6 @@ function renderDisposals() {
   }
 
   el.innerHTML = `
-    <div class="table-responsive">
       <table class="data-table">
         <thead>
           <tr>
@@ -85,11 +157,11 @@ function renderDisposals() {
               <td>${getStatusBadge(d.status)}</td>
               <td style="white-space:nowrap;">
                 <button class="btn-icon" onclick="viewDisposal(${d.id})" title="View"><i class="bi bi-eye"></i></button>
-                ${isAdmin() && d.status === 'Pending' ? `
+                ${canOperateDisposalActions() && d.status === 'Pending' ? `
                   <button class="btn-outline-custom btn-sm-custom" onclick="openInspect(${d.id})">Inspect</button>
                   <button class="btn-danger-custom btn-sm-custom" onclick="openReject(${d.id})">Reject</button>
                 ` : ''}
-                ${isAdmin() && d.status === 'Inspected' ? `
+                ${canOperateDisposalActions() && d.status === 'Inspected' ? `
                   <button class="btn-success-custom btn-sm-custom" onclick="openApprove(${d.id})">Approve</button>
                   <button class="btn-danger-custom btn-sm-custom" onclick="openReject(${d.id})">Reject</button>
                 ` : ''}
@@ -98,7 +170,6 @@ function renderDisposals() {
           `).join('')}
         </tbody>
       </table>
-    </div>
   `;
 }
 

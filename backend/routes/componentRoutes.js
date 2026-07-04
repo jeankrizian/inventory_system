@@ -1,12 +1,12 @@
 const express = require('express');
 const ComponentController = require('../controllers/ComponentController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireViewInventory, requireManageInventory } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
 
-router.get('/', ComponentController.getAll);
-router.get('/parent/:parentId', ComponentController.getByParent);
-router.post('/', ComponentController.create);
+router.get('/', requireViewInventory, ComponentController.getAll);
+router.get('/parent/:parentId', requireViewInventory, ComponentController.getByParent);
+router.post('/', requireManageInventory, ComponentController.create);
 
 module.exports = router;

@@ -135,8 +135,8 @@ const ReportController = {
         }
         case 'return': {
           const data = await ReturnModel.getAll();
-          title = 'Return Report';
-          headers = ['Code', 'Borrow Code', 'Returned By', 'Date', 'Condition'];
+          title = 'Process Return Report';
+          headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition'];
           rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition]);
           break;
         }
@@ -223,8 +223,8 @@ const ReportController = {
         }
         case 'return': {
           const data = await ReturnModel.getAll();
-          title = 'Return Report';
-          headers = ['Code', 'Borrow Code', 'Returned By', 'Return Date', 'Condition', 'Notes'];
+          title = 'Process Return Report';
+          headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition', 'Notes'];
           rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition, r.notes]);
           break;
         }

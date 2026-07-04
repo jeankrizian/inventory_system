@@ -2,15 +2,33 @@ const DisposalModel = require('../models/DisposalModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyAdmins, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
+const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
+
+async function getScopedDisposal(req, res) {
+  const disposal = await DisposalModel.findById(req.params.id);
+  if (!disposal) {
+    sendError(res, 'Disposal request not found', 404);
+    return null;
+  }
+  const item = await InventoryModel.findById(disposal.inventory_item_id);
+  const scope = getAccessScope(req.session.user);
+  if (item && !itemMatchesScope(item, scope)) {
+    sendError(res, 'Access denied', 403);
+    return null;
+  }
+  return disposal;
+}
 
 const DisposalController = {
   async getAll(req, res) {
     try {
+      const scope = getAccessScope(req.session.user);
       const data = await DisposalModel.getAll({
         status: req.query.status,
-        search: req.query.search
+        search: req.query.search,
+        scope
       });
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
@@ -18,8 +36,8 @@ const DisposalController = {
 
   async getById(req, res) {
     try {
-      const disposal = await DisposalModel.findById(req.params.id);
-      if (!disposal) return sendError(res, 'Disposal request not found', 404);
+      const disposal = await getScopedDisposal(req, res);
+      if (!disposal) return;
       sendSuccess(res, disposal);
     } catch (err) { sendError(res, err.message, 500); }
   },
@@ -29,13 +47,18 @@ const DisposalController = {
       const item = await InventoryModel.findById(req.body.inventory_item_id);
       if (!item) return sendError(res, 'Item not found', 404);
 
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Item is outside your assigned scope', 403);
+      }
+
       const result = await DisposalModel.create({
         ...req.body,
         requested_by: req.session.user.id
       });
 
       await logActivity(req.session.user.id, 'CREATE', 'Disposal', `Disposal request ${result.transaction_code}`, req.ip);
-      await notifyAdmins({
+      await notifyPropertyManagers({
         title: 'Disposal Request',
         message: `New disposal request ${result.transaction_code} for ${item.item_name}.`,
         type: 'disposal_request',
@@ -57,8 +80,8 @@ const DisposalController = {
 
   async inspect(req, res) {
     try {
-      const disposal = await DisposalModel.findById(req.params.id);
-      if (!disposal) return sendError(res, 'Disposal request not found', 404);
+      const disposal = await getScopedDisposal(req, res);
+      if (!disposal) return;
       if (disposal.status !== 'Pending') return sendError(res, 'Only pending requests can be inspected', 400);
 
       await DisposalModel.inspect(req.params.id, req.session.user.id, req.body.inspection_notes);
@@ -69,8 +92,8 @@ const DisposalController = {
 
   async approve(req, res) {
     try {
-      const disposal = await DisposalModel.findById(req.params.id);
-      if (!disposal) return sendError(res, 'Disposal request not found', 404);
+      const disposal = await getScopedDisposal(req, res);
+      if (!disposal) return;
       if (disposal.status !== 'Inspected') {
         return sendError(res, 'Only inspected requests can be approved', 400);
       }
@@ -105,8 +128,8 @@ const DisposalController = {
 
   async reject(req, res) {
     try {
-      const disposal = await DisposalModel.findById(req.params.id);
-      if (!disposal) return sendError(res, 'Disposal request not found', 404);
+      const disposal = await getScopedDisposal(req, res);
+      if (!disposal) return;
       if (['Completed', 'Rejected'].includes(disposal.status)) {
         return sendError(res, 'Request cannot be rejected', 400);
       }

@@ -1,7 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const InventoryController = require('../controllers/InventoryController');
-const { requireAuth, validate } = require('../middleware/auth');
+const { requireAuth, requireViewInventory, requireManageInventory, validate } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -19,10 +19,10 @@ const itemValidation = [
   validate
 ];
 
-router.get('/', InventoryController.getAll);
-router.get('/:id', InventoryController.getById);
-router.post('/', itemValidation, InventoryController.create);
-router.put('/:id', InventoryController.update);
-router.delete('/:id', InventoryController.remove);
+router.get('/', requireViewInventory, InventoryController.getAll);
+router.get('/:id', requireViewInventory, InventoryController.getById);
+router.post('/', requireManageInventory, itemValidation, InventoryController.create);
+router.put('/:id', requireManageInventory, InventoryController.update);
+router.delete('/:id', requireManageInventory, InventoryController.remove);
 
 module.exports = router;

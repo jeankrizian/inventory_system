@@ -22,7 +22,7 @@ async function initTransferRequestsPage() {
           <option>Pending</option><option>Approved</option><option>Rejected</option>
         </select>
       </div>
-      <div id="transferContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
+      <div class="table-responsive" id="transferContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
     </div>
   `;
 
@@ -48,8 +48,8 @@ async function loadTransfers() {
   }
 }
 
-function isAdmin() {
-  return isAdminUser(currentUser);
+function canOperateTransferActions() {
+  return canOperateTransfers(currentUser);
 }
 
 function renderTransfers() {
@@ -60,7 +60,6 @@ function renderTransfers() {
   }
 
   el.innerHTML = `
-    <div class="table-responsive">
       <table class="data-table">
         <thead>
           <tr>
@@ -85,7 +84,7 @@ function renderTransfers() {
                 ${t.status === 'Approved' ? `
                   <button class="btn-icon" onclick="openTransferDocument(${t.id})" title="View TRF" aria-label="View TRF"><i class="bi bi-file-earmark-arrow-up"></i></button>
                 ` : ''}
-                ${isAdmin() && t.status === 'Pending' ? `
+                ${canOperateTransferActions() && t.status === 'Pending' ? `
                   <button class="btn-success-custom btn-sm-custom" onclick="approveTransfer(${t.id})">Approve</button>
                   <button class="btn-danger-custom btn-sm-custom" onclick="openReject(${t.id})">Reject</button>
                 ` : ''}
@@ -94,7 +93,6 @@ function renderTransfers() {
           `).join('')}
         </tbody>
       </table>
-    </div>
   `;
 }
 

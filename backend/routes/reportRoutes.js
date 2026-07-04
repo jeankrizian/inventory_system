@@ -1,9 +1,9 @@
 const express = require('express');
 const ReportController = require('../controllers/ReportController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireReportsAccess } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireReportsAccess);
 
 router.get('/inventory', ReportController.getInventoryReport);
 router.get('/borrow', ReportController.getBorrowReport);

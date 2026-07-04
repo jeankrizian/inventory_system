@@ -11,18 +11,21 @@ async function initOrdersPage() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('tab') === 'returns') activeTab = 'returns';
 
+  const showBorrowBtn = canSubmitBorrow(currentUser);
+  const showReturnTab = canViewReturnHistory(currentUser);
+
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <h1>Orders & Borrowing</h1>
-      <p>Manage borrow requests, approvals, and returns</p>
+      <p>Manage borrow requests, approvals, and process returns</p>
     </div>
     <div class="content-card">
       <div class="content-card-header">
         <div class="nav-tabs-custom" style="border:none;margin:0;">
           <button class="nav-tab-custom ${activeTab === 'borrow' ? 'active' : ''}" data-tab="borrow">Borrow Transactions</button>
-          <button class="nav-tab-custom ${activeTab === 'returns' ? 'active' : ''}" data-tab="returns">Return History</button>
+          ${showReturnTab ? `<button class="nav-tab-custom ${activeTab === 'returns' ? 'active' : ''}" data-tab="returns">Process Return History</button>` : ''}
         </div>
-        <button class="btn-primary-custom" onclick="openBorrowModal()"><i class="bi bi-plus-lg"></i> Borrow Item</button>
+        ${showBorrowBtn ? `<button class="btn-primary-custom" onclick="openBorrowModal()"><i class="bi bi-plus-lg"></i> Borrow Item</button>` : ''}
       </div>
       <div class="filters-bar" id="borrowFilters">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search transactions...">
@@ -32,7 +35,7 @@ async function initOrdersPage() {
           <option>Returned</option><option>Rejected</option><option>Overdue</option>
         </select>
       </div>
-      <div id="ordersContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
+      <div class="table-responsive" id="ordersContent"><div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div></div>
     </div>
   `;
 
@@ -50,10 +53,16 @@ async function initOrdersPage() {
   document.getElementById('filterStatus')?.addEventListener('change', loadBorrows);
   document.getElementById('borrowForm').addEventListener('submit', submitBorrow);
   document.getElementById('returnForm').addEventListener('submit', submitReturn);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.borrow-item-combobox')) closeBorrowItemDropdowns();
+  });
 
-  const invRes = await API.getInventory();
-  inventoryItems = (invRes?.data || []).filter(i => i.available_quantity > 0 && canBorrowAsset(i.asset_classification));
+  if (showBorrowBtn) {
+    const invRes = await API.getBorrowableItems();
+    inventoryItems = (invRes?.data || []).filter(i => i.available_quantity > 0 && canBorrowAsset(i.asset_classification));
+  }
 
+  if (!showReturnTab && activeTab === 'returns') activeTab = 'borrow';
   await loadData();
 }
 
@@ -86,7 +95,8 @@ async function loadReturns() {
 
 function renderBorrows() {
   const el = document.getElementById('ordersContent');
-  const isAdmin = isAdminUser(currentUser);
+  const canApprove = canApproveBorrow(currentUser);
+  const canReturn = canProcessReturn(currentUser);
 
   if (!borrows.length) {
     el.innerHTML = '<div class="empty-state"><i class="bi bi-cart3"></i>No borrow transactions</div>';
@@ -94,7 +104,6 @@ function renderBorrows() {
   }
 
   el.innerHTML = `
-    <div class="table-responsive">
     <table class="data-table">
       <thead>
         <tr><th>Code</th><th>Borrower</th><th>Department</th><th>Borrow Date</th><th>Expected Return</th><th>Status</th><th>Actions</th></tr>
@@ -109,12 +118,12 @@ function renderBorrows() {
             <td>${formatDate(b.expected_return_date)}</td>
             <td>${getStatusBadge(b.status)}</td>
             <td style="white-space:nowrap;">
-              ${b.status === 'Pending' && isAdmin ? `
+              ${b.status === 'Pending' && canApprove ? `
                 <button class="btn-success-custom btn-sm-custom" onclick="approveBorrow(${b.id})">Approve</button>
                 <button class="btn-danger-custom btn-sm-custom" onclick="rejectBorrow(${b.id})">Reject</button>
               ` : ''}
-              ${['Borrowed','Approved','Overdue'].includes(b.status) ? `
-                <button class="btn-primary-custom btn-sm-custom" onclick="openReturnModal(${b.id}, '${b.transaction_code}', '${b.borrower_name}')">Return</button>
+              ${['Borrowed','Approved','Overdue'].includes(b.status) && canReturn ? `
+                <button class="btn-primary-custom btn-sm-custom" onclick="openReturnModal(${b.id}, '${b.transaction_code}', '${b.borrower_name}')">Process Return</button>
               ` : ''}
               <button class="btn-icon" onclick="viewBorrow(${b.id})" title="View"><i class="bi bi-eye"></i></button>
               ${['Borrowed','Approved','Overdue','Returned'].includes(b.status) ? `
@@ -125,20 +134,18 @@ function renderBorrows() {
         `).join('')}
       </tbody>
     </table>
-    </div>
   `;
 }
 
 function renderReturns() {
   const el = document.getElementById('ordersContent');
   if (!returns.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-arrow-return-left"></i>No return transactions</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-arrow-return-left"></i>No process return transactions</div>';
     return;
   }
   el.innerHTML = `
-    <div class="table-responsive">
     <table class="data-table">
-      <thead><tr><th>Code</th><th>Borrow Code</th><th>Returned By</th><th>Return Date</th><th>Condition</th><th>Notes</th></tr></thead>
+      <thead><tr><th>Code</th><th>Borrow Code</th><th>Processed By</th><th>Process Return Date</th><th>Condition</th><th>Notes</th></tr></thead>
       <tbody>
         ${returns.map(r => `
           <tr>
@@ -152,20 +159,87 @@ function renderReturns() {
         `).join('')}
       </tbody>
     </table>
-    </div>
   `;
 }
 
-function populateBorrowItemSelects() {
-  document.querySelectorAll('.borrow-item-select').forEach(sel => {
-    populateSelect(sel, inventoryItems, 'id', 'item_name', 'Select item...');
-    sel.querySelectorAll('option').forEach(opt => {
-      if (opt.value) {
-        const item = inventoryItems.find(i => i.id == opt.value);
-        if (item) opt.textContent = `${item.item_name} (${item.available_quantity} avail.)`;
-      }
+function getBorrowItemLabel(item) {
+  return `${item.item_name} (${item.available_quantity} avail.)`;
+}
+
+function filterBorrowItems(term) {
+  const t = term.trim().toLowerCase();
+  if (!t) return inventoryItems;
+  return inventoryItems.filter(i => i.item_name.toLowerCase().includes(t));
+}
+
+function borrowItemRowHtml(withRemove = false) {
+  return `
+    <div class="form-group" style="flex:2"><label>Item</label>
+      <div class="borrow-item-combobox">
+        <input type="text" class="form-control-custom borrow-item-select" placeholder="Select item..." autocomplete="off" required>
+        <input type="hidden" class="borrow-item-id">
+        <div class="borrow-item-dropdown"></div>
+      </div>
+    </div>
+    <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
+    ${withRemove ? `<div class="form-group" style="display:flex;align-items:flex-end;"><button type="button" class="btn-icon danger" onclick="this.closest('.borrow-item-row').remove()" title="Remove" aria-label="Remove"><i class="bi bi-trash"></i></button></div>` : ''}
+  `;
+}
+
+function closeBorrowItemDropdowns(except) {
+  document.querySelectorAll('.borrow-item-dropdown.show').forEach(dropdown => {
+    if (!except || !except.contains(dropdown)) dropdown.classList.remove('show');
+  });
+}
+
+function renderBorrowItemDropdown(dropdown, items, onSelect) {
+  if (!items.length) {
+    dropdown.innerHTML = '<div class="borrow-item-option borrow-item-empty">No items found</div>';
+    return;
+  }
+  dropdown.innerHTML = items.map(item => `
+    <div class="borrow-item-option" data-id="${item.id}">
+      ${item.item_name}<small>${item.available_quantity} available</small>
+    </div>
+  `).join('');
+  dropdown.querySelectorAll('.borrow-item-option:not(.borrow-item-empty)').forEach(opt => {
+    opt.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const item = items.find(i => i.id == opt.dataset.id);
+      if (item) onSelect(item);
     });
   });
+}
+
+function initBorrowItemCombobox(combobox) {
+  if (combobox.dataset.initialized) return;
+  combobox.dataset.initialized = '1';
+
+  const input = combobox.querySelector('.borrow-item-select');
+  const hidden = combobox.querySelector('.borrow-item-id');
+  const dropdown = combobox.querySelector('.borrow-item-dropdown');
+
+  function showDropdown() {
+    closeBorrowItemDropdowns(combobox);
+    const items = filterBorrowItems(input.value);
+    renderBorrowItemDropdown(dropdown, items, (item) => {
+      input.value = getBorrowItemLabel(item);
+      hidden.value = item.id;
+      dropdown.classList.remove('show');
+    });
+    dropdown.classList.add('show');
+  }
+
+  input.addEventListener('focus', showDropdown);
+  input.addEventListener('click', showDropdown);
+  input.addEventListener('input', () => {
+    hidden.value = '';
+    showDropdown();
+  });
+}
+
+function initBorrowItemComboboxes() {
+  document.querySelectorAll('.borrow-item-combobox').forEach(initBorrowItemCombobox);
 }
 
 function openBorrowModal() {
@@ -173,39 +247,35 @@ function openBorrowModal() {
   document.getElementById('borrowDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('borrowerName').value = currentUser.full_name || '';
   document.getElementById('borrowItemsList').innerHTML = `
-    <div class="form-row borrow-item-row">
-      <div class="form-group" style="flex:2"><label>Item</label><select class="form-control-custom borrow-item-select" required></select></div>
-      <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
-    </div>
+    <div class="form-row borrow-item-row">${borrowItemRowHtml()}</div>
   `;
-  populateBorrowItemSelects();
+  initBorrowItemComboboxes();
   openModal('borrowModal');
 }
 
 function addBorrowItemRow() {
   const row = document.createElement('div');
   row.className = 'form-row borrow-item-row';
-  row.innerHTML = `
-    <div class="form-group" style="flex:2"><label>Item</label><select class="form-control-custom borrow-item-select" required></select></div>
-    <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
-    <div class="form-group" style="display:flex;align-items:flex-end;"><button type="button" class="btn-icon danger" onclick="this.closest('.borrow-item-row').remove()" title="Remove" aria-label="Remove"><i class="bi bi-trash"></i></button></div>
-  `;
+  row.innerHTML = borrowItemRowHtml(true);
   document.getElementById('borrowItemsList').appendChild(row);
-  populateBorrowItemSelects();
+  initBorrowItemComboboxes();
 }
 
 async function submitBorrow(e) {
   e.preventDefault();
   const items = [];
   document.querySelectorAll('.borrow-item-row').forEach(row => {
-    const id = row.querySelector('.borrow-item-select').value;
+    const id = row.querySelector('.borrow-item-id').value;
     const qty = parseInt(row.querySelector('.borrow-item-qty').value);
     if (id) items.push({ inventory_item_id: parseInt(id), quantity: qty });
   });
+  if (!items.length) {
+    showToast('Please select at least one item from the list', 'error');
+    return;
+  }
 
   try {
     await API.createBorrow({
-      borrower_name: document.getElementById('borrowerName').value,
       borrower_department: document.getElementById('borrowerDept').value,
       purpose: document.getElementById('borrowPurpose').value,
       borrow_date: document.getElementById('borrowDate').value,
@@ -239,7 +309,7 @@ async function rejectBorrow(id) {
 
 function openReturnModal(id, code, borrower) {
   document.getElementById('returnBorrowId').value = id;
-  document.getElementById('returnBorrowInfo').textContent = `Returning items from ${code} — ${borrower}`;
+  document.getElementById('returnBorrowInfo').textContent = `Process Return for ${code} — ${borrower}`;
   document.getElementById('returnDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('returnForm').reset();
   document.getElementById('returnBorrowId').value = id;
@@ -255,7 +325,7 @@ async function submitReturn(e) {
       condition: document.getElementById('returnCondition').value,
       notes: document.getElementById('returnNotes').value
     });
-    showToast('Return processed successfully');
+    showToast('Process Return completed successfully');
     closeModal('returnModal');
     loadBorrows();
   } catch (err) { showToast(err.message, 'error'); }

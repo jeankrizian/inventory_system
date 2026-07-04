@@ -1,5 +1,26 @@
 const pool = require('../config/database');
 const { computeItemStatus } = require('../utils/helpers');
+const { appendInventoryScopeSql, isInventoryScopeDenied } = require('../utils/roleHelpers');
+
+const EMPTY_INVENTORY_STATS = {
+  total_items: 0,
+  available_items: 0,
+  borrowed_items: 0,
+  low_stock: 0,
+  under_maintenance: 0,
+  disposed: 0
+};
+
+function normalizeInventoryStats(row = {}) {
+  return {
+    total_items: Number(row.total_items ?? 0),
+    available_items: Number(row.available_items ?? 0),
+    borrowed_items: Number(row.borrowed_items ?? 0),
+    low_stock: Number(row.low_stock ?? 0),
+    under_maintenance: Number(row.under_maintenance ?? 0),
+    disposed: Number(row.disposed ?? 0)
+  };
+}
 
 function mapItem(row) {
 
@@ -103,7 +124,12 @@ const InventoryModel = {
 
     }
 
-
+    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
+    sql += scopeFilter.clause;
+    params.push(...scopeFilter.params);
 
     sql += ' ORDER BY i.item_name ASC';
 
@@ -364,102 +390,84 @@ const InventoryModel = {
 
 
 
-  async getStats() {
-
+  async getStats(scope) {
+    if (isInventoryScopeDenied(scope)) {
+      return { ...EMPTY_INVENTORY_STATS };
+    }
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return { ...EMPTY_INVENTORY_STATS };
+    }
     const [rows] = await pool.query(`
-
       SELECT
-
         COUNT(*) AS total_items,
-
-        COALESCE(SUM(CASE WHEN status != 'Disposed' THEN available_quantity ELSE 0 END), 0) AS available_items,
-
-        COALESCE(SUM(CASE WHEN status != 'Disposed' THEN quantity - available_quantity ELSE 0 END), 0) AS borrowed_items,
-
-        SUM(CASE WHEN status != 'Disposed' AND available_quantity <= low_stock_threshold THEN 1 ELSE 0 END) AS low_stock,
-
-        SUM(CASE WHEN status = 'Under Maintenance' THEN 1 ELSE 0 END) AS under_maintenance,
-
-        SUM(CASE WHEN status = 'Disposed' THEN 1 ELSE 0 END) AS disposed
-
-      FROM inventory_items WHERE is_archived = 0
-
-    `);
-
-    return rows[0];
-
+        COALESCE(SUM(CASE WHEN i.status != 'Disposed' THEN i.available_quantity ELSE 0 END), 0) AS available_items,
+        COALESCE(SUM(CASE WHEN i.status != 'Disposed' THEN i.quantity - i.available_quantity ELSE 0 END), 0) AS borrowed_items,
+        COALESCE(SUM(CASE WHEN i.status != 'Disposed' AND i.available_quantity <= i.low_stock_threshold THEN 1 ELSE 0 END), 0) AS low_stock,
+        COALESCE(SUM(CASE WHEN i.status = 'Under Maintenance' THEN 1 ELSE 0 END), 0) AS under_maintenance,
+        COALESCE(SUM(CASE WHEN i.status = 'Disposed' THEN 1 ELSE 0 END), 0) AS disposed
+      FROM inventory_items i
+      WHERE i.is_archived = 0${scopeFilter.clause}
+    `, scopeFilter.params);
+    return normalizeInventoryStats(rows[0]);
   },
 
-
-
-  async getRecent(limit = 5) {
-
+  async getRecent(limit = 5, scope) {
+    if (isInventoryScopeDenied(scope)) {
+      return [];
+    }
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
     const [rows] = await pool.query(
-
       `SELECT i.item_code, i.item_name, d.name AS department, d.name AS category, i.quantity, i.status
-
        FROM inventory_items i
-
        LEFT JOIN departments d ON i.department_id = d.id
-
-       WHERE i.is_archived = 0
-
+       WHERE i.is_archived = 0${scopeFilter.clause}
        ORDER BY i.updated_at DESC LIMIT ?`,
-
-      [limit]
-
+      [...scopeFilter.params, limit]
     );
-
-    return rows;
-
+    return rows || [];
   },
 
-
-
-  async getLowStock(limit = 5) {
-
+  async getLowStock(limit = 5, scope) {
+    if (isInventoryScopeDenied(scope)) {
+      return [];
+    }
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
     const [rows] = await pool.query(
-
       `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.low_stock_threshold,
-
               d.name AS department, d.name AS category
-
        FROM inventory_items i
-
        LEFT JOIN departments d ON i.department_id = d.id
-
-       WHERE i.available_quantity <= i.low_stock_threshold AND i.status != 'Disposed' AND i.is_archived = 0
-
+       WHERE i.available_quantity <= i.low_stock_threshold AND i.status != 'Disposed' AND i.is_archived = 0${scopeFilter.clause}
        ORDER BY i.available_quantity ASC LIMIT ?`,
-
-      [limit]
-
+      [...scopeFilter.params, limit]
     );
-
-    return rows;
-
+    return rows || [];
   },
 
-
-
-  async getDepartmentDistribution() {
-
+  async getDepartmentDistribution(scope) {
+    if (isInventoryScopeDenied(scope)) {
+      return [];
+    }
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
     const [rows] = await pool.query(`
-
       SELECT d.name AS department, d.name AS category, COUNT(i.id) AS count
-
       FROM departments d
-
       LEFT JOIN inventory_items i ON d.id = i.department_id AND i.is_archived = 0 AND i.status != 'Disposed'
-
+      WHERE 1=1${scopeFilter.clause}
       GROUP BY d.id, d.name
-
       ORDER BY count DESC
-
-    `);
-
-    return rows;
-
+    `, scopeFilter.params);
+    return rows || [];
   },
 
 
@@ -532,6 +540,49 @@ const InventoryModel = {
 
     return true;
 
+  },
+
+
+
+  borrowableItemsBaseSql() {
+    return `FROM inventory_items i
+       LEFT JOIN departments d ON i.department_id = d.id
+       LEFT JOIN locations l ON i.location_id = l.id
+       WHERE i.is_archived = 0
+         AND i.status != 'Disposed'
+         AND i.available_quantity > 0
+         AND i.asset_classification IN ('Non-Consumable (Fixed Asset)', 'Fixed Asset')`;
+  },
+
+  async getBorrowableItems(search = '') {
+    let sql = `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.asset_classification,
+              d.name AS department_name, l.name AS location_name
+       ${this.borrowableItemsBaseSql()}`;
+
+    const params = [];
+
+    if (search && search.trim()) {
+      sql += ' AND i.item_name LIKE ?';
+      params.push(`%${search.trim()}%`);
+    }
+
+    sql += ' ORDER BY i.item_name ASC';
+
+    const [rows] = await pool.query(sql, params);
+
+    return rows.map(mapItem);
+  },
+
+  async findBorrowableById(id) {
+    const [rows] = await pool.query(
+      `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.asset_classification,
+              d.name AS department_name, l.name AS location_name
+       ${this.borrowableItemsBaseSql()}
+         AND i.id = ?`,
+      [id]
+    );
+
+    return mapItem(rows[0]);
   }
 
 };
