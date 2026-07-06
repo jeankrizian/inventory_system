@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const UserModel = require('../models/UserModel');
+const CategoryModel = require('../models/CategoryModel');
+const LocationModel = require('../models/LocationModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
@@ -29,6 +31,53 @@ function resolveRoleAssignments(roleName, body) {
   }
 
   return updates;
+}
+
+function computeEffectiveAssignments(user, role, body) {
+  const effectiveRole = role !== undefined ? role : user.role_name;
+  const assignments = {
+    assigned_department_id: user.assigned_department_id ?? null,
+    assigned_location_id: user.assigned_location_id ?? null
+  };
+
+  if (role !== undefined) {
+    Object.assign(assignments, resolveRoleAssignments(role, body));
+  } else {
+    if (body.assigned_department_id !== undefined) {
+      assignments.assigned_department_id = parseAssignmentId(body.assigned_department_id);
+    }
+    if (body.assigned_location_id !== undefined) {
+      assignments.assigned_location_id = parseAssignmentId(body.assigned_location_id);
+    }
+  }
+
+  return { effectiveRole, assignments };
+}
+
+async function validateCustodianAssignments(roleName, assignments) {
+  const normalized = normalizeRoleName(roleName);
+
+  if (isDepartmentCustodian(normalized)) {
+    if (assignments.assigned_department_id == null) {
+      return 'Department Custodian requires an assigned department.';
+    }
+    const dept = await CategoryModel.findById(assignments.assigned_department_id);
+    if (!dept) {
+      return 'Selected department does not exist.';
+    }
+  }
+
+  if (isLaboratoryCustodian(normalized)) {
+    if (assignments.assigned_location_id == null) {
+      return 'Laboratory Custodian requires an assigned laboratory.';
+    }
+    const loc = await LocationModel.findById(assignments.assigned_location_id);
+    if (!loc) {
+      return 'Selected laboratory does not exist.';
+    }
+  }
+
+  return null;
 }
 
 const UserController = {
@@ -102,6 +151,10 @@ const UserController = {
       const roleRecord = await UserModel.findRoleByName(role);
       if (!roleRecord) return sendError(res, 'Selected role is not available', 400);
 
+      const assignmentUpdates = resolveRoleAssignments(role, req.body);
+      const assignmentError = await validateCustodianAssignments(role, assignmentUpdates);
+      if (assignmentError) return sendError(res, assignmentError, 400);
+
       const passwordHash = await bcrypt.hash(password, 10);
       const id = await UserModel.create({
         role_id: roleRecord.id,
@@ -111,7 +164,6 @@ const UserController = {
         full_name: full_name.trim()
       });
 
-      const assignmentUpdates = resolveRoleAssignments(role, req.body);
       await UserModel.update(id, assignmentUpdates);
 
       if (is_active === false || is_active === 0 || is_active === 'Inactive') {
@@ -173,6 +225,10 @@ const UserController = {
         if (password.length < 8) return sendError(res, 'Password must be at least 8 characters', 400);
         updates.password_hash = await bcrypt.hash(password, 10);
       }
+
+      const { effectiveRole, assignments } = computeEffectiveAssignments(user, role, req.body);
+      const assignmentError = await validateCustodianAssignments(effectiveRole, assignments);
+      if (assignmentError) return sendError(res, assignmentError, 400);
 
       const updated = await UserModel.update(req.params.id, updates);
       if (!updated && !Object.keys(updates).length) {

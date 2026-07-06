@@ -1,5 +1,5 @@
 /**
- * Registration page logic
+ * Registration page logic — public registration creates Employee (Staff) accounts only.
  */
 const SCHOOL_EMAIL_DOMAIN = '@caviteinstitute.edu.ph';
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.]{4,30}$/;
@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   form.addEventListener('submit', handleRegister);
 
-  ['username', 'role', 'email', 'password', 'confirmPassword'].forEach(id => {
+  ['fullName', 'username', 'email', 'password', 'confirmPassword'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', () => clearFieldError(id));
     document.getElementById(id)?.addEventListener('change', () => clearFieldError(id));
   });
@@ -30,8 +30,8 @@ function isValidUsername(username) {
 
 function showFieldError(fieldId, message) {
   const map = {
+    fullName: 'fullNameError',
     username: 'usernameError',
-    role: 'roleError',
     email: 'emailError',
     password: 'passwordError',
     confirmPassword: 'confirmPasswordError'
@@ -52,11 +52,18 @@ function clearFieldError(fieldId) {
 
 function validateForm() {
   let valid = true;
+  const fullName = document.getElementById('fullName').value.trim();
   const username = document.getElementById('username').value.trim();
-  const role = document.getElementById('role').value;
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
   const confirmPassword = document.getElementById('confirmPassword').value;
+
+  if (!fullName) {
+    showFieldError('fullName', 'Full name is required.');
+    valid = false;
+  } else {
+    showFieldError('fullName', '');
+  }
 
   if (!username) {
     showFieldError('username', 'Username is required.');
@@ -72,13 +79,6 @@ function validateForm() {
     valid = false;
   } else {
     showFieldError('username', '');
-  }
-
-  if (!role) {
-    showFieldError('role', 'Please select a role.');
-    valid = false;
-  } else {
-    showFieldError('role', '');
   }
 
   if (!email) {
@@ -132,8 +132,8 @@ async function handleRegister(e) {
 
   try {
     const res = await API.register({
+      full_name: document.getElementById('fullName').value.trim(),
       username: document.getElementById('username').value.trim(),
-      role: document.getElementById('role').value,
       email: document.getElementById('email').value.trim(),
       password: document.getElementById('password').value,
       confirm_password: document.getElementById('confirmPassword').value

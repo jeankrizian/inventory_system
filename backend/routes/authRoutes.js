@@ -23,6 +23,7 @@ router.post('/login', [
 ], AuthController.login);
 
 router.post('/register', [
+  body('full_name').trim().notEmpty().withMessage('Full name is required'),
   body('username')
     .trim()
     .notEmpty().withMessage('Username is required')
@@ -34,7 +35,6 @@ router.post('/register', [
       }
       return true;
     }),
-  body('role').notEmpty().withMessage('Role is required'),
   schoolEmailValidator,
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('confirm_password').custom((value, { req }) => {

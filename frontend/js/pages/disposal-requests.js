@@ -133,7 +133,7 @@ function canOperateDisposalActions() {
 function renderDisposals() {
   const el = document.getElementById('disposalContent');
   if (!disposals.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-trash3"></i>No disposal requests</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-trash3"></i>No disposal requests.</div>';
     return;
   }
 

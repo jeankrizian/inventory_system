@@ -337,7 +337,7 @@ function renderTables(tables, modules = {}, user = null) {
         <thead><tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Quantity</th><th>Status</th></tr></thead>
         <tbody>${invRows}</tbody>
       </table>
-    ` : '<div class="empty-state">No inventory items yet</div>';
+    ` : '<div class="empty-state"><i class="bi bi-box"></i>No inventory items found.</div>';
   }
 
   if (show('lowStock') && document.getElementById('lowStockList')) {
@@ -369,7 +369,7 @@ function renderTables(tables, modules = {}, user = null) {
         <thead><tr><th>Code</th><th>Borrower</th><th>Date</th><th>Status</th></tr></thead>
         <tbody>${borrowRows}</tbody>
       </table>
-    ` : '<div class="empty-state">No borrow transactions</div>';
+    ` : '<div class="empty-state"><i class="bi bi-cart3"></i>No borrow requests found.</div>';
   }
 
   if (show('recentReturns') && document.getElementById('recentReturnTable')) {

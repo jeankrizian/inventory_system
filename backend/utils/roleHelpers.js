@@ -20,6 +20,18 @@ function normalizeRoleName(role) {
   return (role || '').toLowerCase().trim();
 }
 
+/** Map user-facing role labels to canonical DB role names */
+function resolveRoleDbName(role) {
+  if (!role) return role;
+  const normalized = normalizeRoleName(role);
+  if (normalized === ROLES.EMPLOYEE || normalized === 'employee') return 'staff';
+  if (normalized === ROLES.ADMINISTRATOR || normalized === 'administrator') return 'admin';
+  if (normalized === ROLES.PROPERTY_MANAGER) return 'Property Manager';
+  if (normalized === ROLES.DEPARTMENT_CUSTODIAN) return 'Department Custodian';
+  if (normalized === ROLES.LABORATORY_CUSTODIAN) return 'Laboratory Custodian';
+  return String(role).trim();
+}
+
 function getRoleKey(role) {
   const normalized = normalizeRoleName(role);
   if (normalized === ROLES.ADMINISTRATOR) return NAV_ROLES.ADMINISTRATOR;
@@ -292,6 +304,7 @@ module.exports = {
   NAV_ROLES,
   ADMIN_ROLES,
   normalizeRoleName,
+  resolveRoleDbName,
   getRoleKey,
   isAdministrator,
   isPropertyManager,

@@ -2,6 +2,7 @@
  * Login page logic
  */
 document.addEventListener('DOMContentLoaded', () => {
+  showPendingAuthExpiredToast();
   redirectIfAuthenticated();
 
   const form = document.getElementById('loginForm');

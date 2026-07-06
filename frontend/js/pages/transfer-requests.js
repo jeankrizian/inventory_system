@@ -55,7 +55,7 @@ function canOperateTransferActions() {
 function renderTransfers() {
   const el = document.getElementById('transferContent');
   if (!transfers.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-arrow-left-right"></i>No transfer requests</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-arrow-left-right"></i>No transfer requests.</div>';
     return;
   }
 

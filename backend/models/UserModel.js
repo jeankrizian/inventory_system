@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { archiveRecord } = require('../utils/archiveService');
+const { resolveRoleDbName } = require('../utils/roleHelpers');
 
 const USER_SELECT = `
   u.id, u.username, u.email, u.full_name, u.profile_image, u.is_active,
@@ -56,7 +57,8 @@ const UserModel = {
   },
 
   async findRoleByName(roleName) {
-    const [rows] = await pool.query('SELECT * FROM roles WHERE name = ?', [roleName]);
+    const dbName = resolveRoleDbName(roleName);
+    const [rows] = await pool.query('SELECT * FROM roles WHERE name = ?', [dbName]);
     return rows[0] || null;
   },
 

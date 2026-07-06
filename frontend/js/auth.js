@@ -48,6 +48,31 @@ async function redirectIfAuthenticated() {
   }
 }
 
+const ACCESS_DENIED_TOAST_KEY = 'accessDeniedToast';
+const AUTH_EXPIRED_TOAST_KEY = 'authExpiredToast';
+
+/** Show a toast stored before a redirect (route guard / session expiry) */
+function showPendingRedirectToast(storageKey) {
+  const msg = sessionStorage.getItem(storageKey);
+  if (!msg) return;
+  sessionStorage.removeItem(storageKey);
+  showToast(msg, 'error');
+}
+
+function showPendingAccessDeniedToast() {
+  showPendingRedirectToast(ACCESS_DENIED_TOAST_KEY);
+}
+
+function showPendingAuthExpiredToast() {
+  showPendingRedirectToast(AUTH_EXPIRED_TOAST_KEY);
+}
+
+/** Redirect unauthorized page access to dashboard with toast */
+function denyPageAccess(message = 'You do not have permission to access that page.') {
+  sessionStorage.setItem(ACCESS_DENIED_TOAST_KEY, message);
+  window.location.replace('/pages/dashboard.html');
+}
+
 /** Show toast notification */
 function showToast(message, type = 'success') {
   let container = document.querySelector('.toast-container');

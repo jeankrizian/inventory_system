@@ -99,7 +99,7 @@ function renderBorrows() {
   const canReturn = canProcessReturn(currentUser);
 
   if (!borrows.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-cart3"></i>No borrow transactions</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-cart3"></i>No borrow requests found.</div>';
     return;
   }
 

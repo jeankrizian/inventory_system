@@ -26,22 +26,17 @@
       </div>
       <form id="registerForm" novalidate>
         <div class="form-group">
+          <label for="fullName">Full Name *</label>
+          <input type="text" class="form-control-custom" id="fullName" name="fullName"
+                 placeholder="Enter your full name" autocomplete="name" required>
+          <div class="field-error" id="fullNameError" style="display:none;"></div>
+        </div>
+        <div class="form-group">
           <label for="username">Username *</label>
           <input type="text" class="form-control-custom" id="username" name="username"
                  placeholder="Enter username" autocomplete="username" required maxlength="30">
           <div class="field-hint">4–30 characters. Letters, numbers, underscores, and periods only.</div>
           <div class="field-error" id="usernameError" style="display:none;"></div>
-        </div>
-        <div class="form-group">
-          <label for="role">Role *</label>
-          <select class="form-control-custom" id="role" required>
-            <option value="">Select role</option>
-            <option value="Property Manager">Property Manager</option>
-            <option value="Department Custodian">Department Custodian</option>
-            <option value="Laboratory Custodian">Laboratory Custodian</option>
-            <option value="Staff">Staff</option>
-          </select>
-          <div class="field-error" id="roleError" style="display:none;"></div>
         </div>
         <div class="form-group">
           <label for="email">Email Address *</label>

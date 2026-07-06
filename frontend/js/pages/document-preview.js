@@ -12,6 +12,11 @@ async function initDocumentPreview() {
     return;
   }
 
+  if (!canAccessPage('document-preview', user)) {
+    denyPageAccess();
+    return;
+  }
+
   document.getElementById('downloadPdfBtn').addEventListener('click', () => API.downloadDocumentPdf(id));
 
   try {
@@ -20,7 +25,9 @@ async function initDocumentPreview() {
     document.title = `${doc.document_number} - Document Preview`;
     document.getElementById('documentSheet').innerHTML = renderDocument(doc);
   } catch (err) {
-    document.getElementById('documentSheet').innerHTML = `<div class="loading">${err.message}</div>`;
+    const message = err.message || 'Unable to load document.';
+    showToast(message, 'error');
+    document.getElementById('documentSheet').innerHTML = `<div class="loading">${message}</div>`;
   }
 }
 

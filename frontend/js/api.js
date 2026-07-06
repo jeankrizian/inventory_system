@@ -30,13 +30,34 @@ const API = {
       throw new Error(`Unexpected server response (${response.status}). Please restart the server.`);
     }
 
-    // Session expired on protected routes — redirect once
     const isAuthEndpoint = endpoint.startsWith('/auth/');
+
     if (response.status === 401 && !isAuthEndpoint) {
-      if (!window.location.pathname.endsWith('index.html') && window.location.pathname !== '/') {
+      if (typeof clearAuthCache === 'function') clearAuthCache();
+      const onLoginPage = window.location.pathname.endsWith('index.html') || window.location.pathname === '/';
+      if (!onLoginPage) {
+        sessionStorage.setItem('authExpiredToast', 'Your session has expired. Please sign in again.');
         window.location.href = '/index.html';
       }
       return null;
+    }
+
+    if (response.status === 403) {
+      const rawMessage = data.message || 'You do not have permission to perform this action.';
+      const friendlyMessage = typeof rawMessage === 'string' && !rawMessage.startsWith('{')
+        ? rawMessage
+        : 'You do not have permission to perform this action.';
+
+      const isGet = !config.method || config.method === 'GET';
+      const isPageLoadGet = isGet && /^\/(dashboard|inventory|users|transfers|maintenance|disposals|borrow|reports|archive|suppliers|departments|locations|documents|categories|notifications)(\/|$|\?)/.test(endpoint);
+      const onDashboard = window.location.pathname.includes('dashboard.html');
+      if (isPageLoadGet && !onDashboard && typeof denyPageAccess === 'function') {
+        denyPageAccess(friendlyMessage);
+        return null;
+      }
+
+      if (typeof showToast === 'function') showToast(friendlyMessage, 'error');
+      throw new Error(friendlyMessage);
     }
 
     if (!data.success && response.status >= 400) {

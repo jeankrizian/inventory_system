@@ -89,6 +89,11 @@ function userHasPageAccess(page, user) {
   return allowed.includes(role);
 }
 
+/** Route guard — mirrors PAGE_PERMISSIONS / NAV_ITEMS role requirements */
+function canAccessPage(pageName, user) {
+  return userHasPageAccess(pageName, user);
+}
+
 function isSidebarCollapsed() {
   return localStorage.getItem('sidebarCollapsed') === 'true';
 }
@@ -308,12 +313,12 @@ async function initLayout(activePage) {
   const user = await requireAuth();
   if (!user) return null;
 
-  if (!userHasPageAccess(activePage, user)) {
-    const role = getUserRole(user);
-    const fallback = role === 'employee' ? '/pages/orders.html' : '/pages/dashboard.html';
-    window.location.href = fallback;
+  if (!canAccessPage(activePage, user)) {
+    denyPageAccess();
     return null;
   }
+
+  showPendingAccessDeniedToast();
 
   const appEl = document.getElementById('app');
   appEl.innerHTML = renderLayout(activePage, user);

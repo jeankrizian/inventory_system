@@ -79,7 +79,8 @@ async function loadArchive() {
       </div>
     `;
   } catch (err) {
-    el.innerHTML = `<div class="empty-state">${err.message}</div>`;
+    showToast(err.message, 'error');
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-archive"></i>No archived records found</div>';
     paginationEl.innerHTML = '';
   }
 }

@@ -70,6 +70,10 @@ function updateAssignmentFields() {
   const assignmentFields = document.getElementById('assignmentFields');
   const deptGroup = document.getElementById('departmentAssignmentGroup');
   const locGroup = document.getElementById('locationAssignmentGroup');
+  const deptSelect = document.getElementById('userAssignedDepartment');
+  const locSelect = document.getElementById('userAssignedLocation');
+  const deptLabel = document.getElementById('departmentAssignmentLabel');
+  const locLabel = document.getElementById('locationAssignmentLabel');
 
   const showDept = role === 'department custodian';
   const showLoc = role === 'laboratory custodian';
@@ -77,6 +81,21 @@ function updateAssignmentFields() {
   assignmentFields.style.display = (showDept || showLoc) ? 'flex' : 'none';
   deptGroup.style.display = showDept ? 'block' : 'none';
   locGroup.style.display = showLoc ? 'block' : 'none';
+
+  if (deptLabel) {
+    deptLabel.textContent = showDept ? 'Assigned Department *' : 'Assigned Department';
+  }
+  if (locLabel) {
+    locLabel.textContent = showLoc ? 'Assigned Laboratory *' : 'Assigned Laboratory';
+  }
+  if (deptSelect) {
+    deptSelect.required = showDept;
+    if (!showDept) deptSelect.value = '';
+  }
+  if (locSelect) {
+    locSelect.required = showLoc;
+    if (!showLoc) locSelect.value = '';
+  }
 }
 
 async function loadRoles() {
@@ -178,14 +197,38 @@ function editUser(id) {
   openModal('userModal');
 }
 
+function validateCustodianAssignments(role) {
+  const roleLower = (role || '').toLowerCase().trim();
+  if (roleLower === 'department custodian') {
+    const deptId = document.getElementById('userAssignedDepartment').value;
+    if (!deptId) {
+      return 'Department Custodian requires an assigned department.';
+    }
+  }
+  if (roleLower === 'laboratory custodian') {
+    const locId = document.getElementById('userAssignedLocation').value;
+    if (!locId) {
+      return 'Laboratory Custodian requires an assigned laboratory.';
+    }
+  }
+  return null;
+}
+
 async function saveUser(e) {
   e.preventDefault();
   const id = document.getElementById('userId').value;
+  const role = document.getElementById('userRole').value;
+  const assignmentError = validateCustodianAssignments(role);
+  if (assignmentError) {
+    showToast(assignmentError, 'error');
+    return;
+  }
+
   const data = {
     full_name: document.getElementById('userFullName').value,
     username: document.getElementById('userUsername').value,
     email: document.getElementById('userEmail').value,
-    role: document.getElementById('userRole').value,
+    role,
     is_active: document.getElementById('userStatus').value,
     assigned_department_id: document.getElementById('userAssignedDepartment').value || null,
     assigned_location_id: document.getElementById('userAssignedLocation').value || null

@@ -129,7 +129,7 @@ function canOperateMaintenanceActions() {
 function renderRecords() {
   const el = document.getElementById('maintenanceContent');
   if (!records.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-tools"></i>No maintenance requests</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-tools"></i>No maintenance requests.</div>';
     return;
   }
 

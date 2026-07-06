@@ -402,7 +402,7 @@ function renderTable() {
   const permissions = getInventoryPermissions(currentUser);
 
   if (!items.length) {
-    el.innerHTML = '<div class="empty-state"><i class="bi bi-box"></i>No items found</div>';
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-box"></i>No inventory items found.</div>';
     return;
   }
 

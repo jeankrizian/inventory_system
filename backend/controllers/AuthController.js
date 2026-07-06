@@ -6,20 +6,8 @@ const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUser
 const { buildSessionUser } = require('../utils/roleHelpers');
 const { requestPasswordReset } = require('../utils/passwordResetService');
 
-const REGISTRATION_ROLES = [
-  'Property Manager',
-  'Department Custodian',
-  'Laboratory Custodian',
-  'Staff'
-];
-
-function deriveFullName(email) {
-  return email.split('@')[0]
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ') || 'New User';
-}
+const REGISTRATION_ROLES = ['staff'];
+const REGISTRATION_ROLE = 'staff';
 
 const AuthController = {
   async login(req, res) {
@@ -109,10 +97,14 @@ const AuthController = {
 
   async register(req, res) {
     try {
-      const { username, role, email, password, confirm_password } = req.body;
+      const { username, email, password, confirm_password, full_name } = req.body;
       const normalizedEmail = normalizeSchoolEmail(email || '');
       const normalizedUsername = normalizeUsername(username || '');
+      const trimmedFullName = (full_name || '').trim();
 
+      if (!trimmedFullName) {
+        return sendError(res, 'Full name is required', 400);
+      }
       if (!normalizedUsername) {
         return sendError(res, 'Username is required', 400);
       }
@@ -121,9 +113,6 @@ const AuthController = {
       }
       if (await UserModel.isUsernameTaken(normalizedUsername)) {
         return sendError(res, 'This username is already taken. Please choose another one.', 409);
-      }
-      if (!role || !REGISTRATION_ROLES.includes(role)) {
-        return sendError(res, 'Please select a valid role', 400);
       }
       if (!isValidSchoolEmail(normalizedEmail)) {
         return sendError(res, 'Only @caviteinstitute.edu.ph email addresses are allowed', 400);
@@ -138,9 +127,9 @@ const AuthController = {
         return sendError(res, 'An account with this email already exists', 409);
       }
 
-      const roleRecord = await UserModel.findRoleByName(role);
+      const roleRecord = await UserModel.findRoleByName(REGISTRATION_ROLE);
       if (!roleRecord) {
-        return sendError(res, 'Selected role is not available', 400);
+        return sendError(res, 'Employee registration is not available', 400);
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
@@ -149,7 +138,7 @@ const AuthController = {
         username: normalizedUsername,
         email: normalizedEmail,
         password_hash: passwordHash,
-        full_name: deriveFullName(normalizedEmail)
+        full_name: trimmedFullName
       });
 
       await logActivity(userId, 'CREATE', 'Auth', `New account registered: ${normalizedUsername}`, req.ip);
