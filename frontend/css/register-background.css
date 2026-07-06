@@ -1,0 +1,20 @@
+/**
+ * Create Account page (register.html) background only.
+ * Soft moss-green tint at 15% opacity over a light base.
+ */
+
+.login-page--register-bg {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(
+    135deg,
+    rgba(85, 107, 47, 0.15) 0%,
+    rgba(85, 107, 47, 0.15) 50%,
+    rgba(68, 85, 37, 0.15) 100%
+  ), #f7f7f5;
+}
+
+.login-page--register-bg .login-card {
+  position: relative;
+  z-index: 1;
+}

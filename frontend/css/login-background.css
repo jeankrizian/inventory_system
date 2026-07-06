@@ -1,0 +1,74 @@
+/**
+ * Login page (index.html) background only.
+ * Institutional photo with moss-green gradient at 15% opacity.
+ */
+
+.login-page--institutional-bg {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #556B2F;
+}
+
+.login-page--institutional-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: url('/images/login-background.png') center center / cover no-repeat;
+  opacity: 0.72;
+  filter: blur(2px) saturate(0.9) brightness(1.02);
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.login-page--institutional-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(85, 107, 47, 0.15) 0%,
+    rgba(85, 107, 47, 0.15) 50%,
+    rgba(68, 85, 37, 0.15) 100%
+  );
+  pointer-events: none;
+}
+
+.login-page--institutional-bg .login-card {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.login-page--institutional-bg .login-logo {
+  text-align: center;
+  width: 100%;
+}
+
+.login-page--institutional-bg .login-logo .system-brand-login-page {
+  text-align: center;
+  font-size: 26px;
+  letter-spacing: 0.03em;
+  line-height: 1.45;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 8px;
+  margin: 0 auto;
+}
+
+.login-page--institutional-bg .login-logo .system-brand-login-page > span:first-child {
+  font-size: 26px;
+  display: block;
+  text-align: center;
+}
+
+.login-page--institutional-bg .system-brand-login-page .system-brand-subline {
+  font-size: 19px;
+  white-space: normal;
+  letter-spacing: 0.01em;
+  display: block;
+  max-width: 100%;
+  margin: 4px auto 0;
+  text-align: center;
+  overflow-wrap: break-word;
+}
