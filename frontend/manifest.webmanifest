@@ -1,0 +1,25 @@
+{
+  "name": "Cavite Institute Property Management System",
+  "short_name": "CI PMS",
+  "description": "Cavite Institute Property Management System",
+  "start_url": "/pages/dashboard.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f0",
+  "theme_color": "#800000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/images/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

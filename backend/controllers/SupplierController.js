@@ -1,7 +1,7 @@
 const SupplierModel = require('../models/SupplierModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers } = require('../utils/notificationService');
+const { notifyAdministrators } = require('../utils/notificationService');
 
 const SupplierController = {
   async getAll(req, res) {
@@ -29,7 +29,7 @@ const SupplierController = {
       await logActivity(req.session.user.id, 'CREATE', 'Supplier', `Added supplier ${req.body.name}`, req.ip);
       const supplier = await SupplierModel.findById(id);
 
-      await notifyPropertyManagers({
+      await notifyAdministrators({
         title: 'Supplier Added',
         message: `A new supplier has been added: ${supplier.name}.`,
         type: 'supplier_added',
@@ -50,7 +50,7 @@ const SupplierController = {
       await logActivity(req.session.user.id, 'UPDATE', 'Supplier', `Updated supplier ${req.body.name}`, req.ip);
       const supplier = await SupplierModel.findById(req.params.id);
 
-      await notifyPropertyManagers({
+      await notifyAdministrators({
         title: 'Supplier Updated',
         message: `Supplier ${supplier.name} has been updated.`,
         type: 'supplier_updated',
@@ -71,6 +71,13 @@ const SupplierController = {
       const archived = await SupplierModel.archive(req.params.id, req.session.user.id);
       if (!archived) return sendError(res, 'Supplier could not be archived', 400);
       await logActivity(req.session.user.id, 'ARCHIVE', 'Supplier', `Archived supplier ${supplier.name}`, req.ip);
+      await notifyAdministrators({
+        title: 'Supplier Archived',
+        message: `Supplier ${supplier.name} was archived.`,
+        type: 'supplier_archived',
+        reference_id: supplier.id,
+        link_url: '/pages/archive.html'
+      });
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
     } catch (err) {
       sendError(res, err.message, 500);

@@ -1,6 +1,7 @@
 const LocationModel = require('../models/LocationModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyAdministrators } = require('../utils/notificationService');
 
 const LocationController = {
   async getAll(req, res) {
@@ -27,6 +28,13 @@ const LocationController = {
       const id = await LocationModel.create(req.body);
       await logActivity(req.session.user.id, 'CREATE', 'Location', `Added location ${req.body.name}`, req.ip);
       const location = await LocationModel.findById(id);
+      await notifyAdministrators({
+        title: 'Location Added',
+        message: `Location ${location.name} was created.`,
+        type: 'location_created',
+        reference_id: id,
+        link_url: '/pages/manage-locations.html'
+      });
       sendSuccess(res, location, 'Location created successfully', 201);
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') return sendError(res, 'Location name already exists', 400);
@@ -40,6 +48,13 @@ const LocationController = {
       if (!updated) return sendError(res, 'Location not found', 404);
       await logActivity(req.session.user.id, 'UPDATE', 'Location', `Updated location ${req.body.name}`, req.ip);
       const location = await LocationModel.findById(req.params.id);
+      await notifyAdministrators({
+        title: 'Location Updated',
+        message: `Location ${location.name} was updated.`,
+        type: 'location_updated',
+        reference_id: location.id,
+        link_url: '/pages/manage-locations.html'
+      });
       sendSuccess(res, location, 'Location updated successfully');
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') return sendError(res, 'Location name already exists', 400);
@@ -54,6 +69,13 @@ const LocationController = {
       const archived = await LocationModel.archive(req.params.id, req.session.user.id);
       if (!archived) return sendError(res, 'Location could not be archived', 400);
       await logActivity(req.session.user.id, 'ARCHIVE', 'Location', `Archived location ${location.name}`, req.ip);
+      await notifyAdministrators({
+        title: 'Location Archived',
+        message: `Location ${location.name} was archived.`,
+        type: 'location_archived',
+        reference_id: location.id,
+        link_url: '/pages/archive.html'
+      });
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
     } catch (err) {
       sendError(res, err.message, 500);

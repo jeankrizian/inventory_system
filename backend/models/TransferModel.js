@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
-const { appendInventoryScopeSql } = require('../utils/roleHelpers');
+const { appendTransferRequestScopeSql } = require('../utils/roleHelpers');
+const { appendDateRangeSql } = require('../utils/reportFilters');
 
 const TransferModel = {
   async getAll(filters = {}) {
@@ -26,7 +27,15 @@ const TransferModel = {
       const term = `%${filters.search}%`;
       params.push(term, term, term);
     }
-    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+    if (filters.department_id) {
+      sql += ' AND i.department_id = ?';
+      params.push(filters.department_id);
+    }
+    sql += appendDateRangeSql(filters, 'COALESCE(t.request_date, DATE(t.created_at))', params);
+    const scopeFilter = appendTransferRequestScopeSql(filters.scope, 'i', 't');
+    if (scopeFilter.denied) {
+      return [];
+    }
     sql += scopeFilter.clause;
     params.push(...scopeFilter.params);
     sql += ' ORDER BY t.created_at DESC';
@@ -115,7 +124,7 @@ const TransferModel = {
   },
 
   async countPending(scope) {
-    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    const scopeFilter = appendTransferRequestScopeSql(scope, 'i', 't');
     if (scopeFilter.denied) {
       return 0;
     }
@@ -130,7 +139,7 @@ const TransferModel = {
   },
 
   async countApproved(scope) {
-    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    const scopeFilter = appendTransferRequestScopeSql(scope, 'i', 't');
     if (scopeFilter.denied) {
       return 0;
     }

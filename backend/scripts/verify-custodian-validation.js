@@ -2,7 +2,7 @@
  * Smoke test for custodian assignment validation and role name resolution.
  * Run: node scripts/verify-custodian-validation.js
  */
-const { resolveRoleDbName, normalizeRoleName, isDepartmentCustodian, isLaboratoryCustodian } = require('../utils/roleHelpers');
+const { resolveRoleDbName, normalizeRoleName, isCustodian } = require('../utils/roleHelpers');
 
 let passed = 0;
 let failed = 0;
@@ -23,12 +23,14 @@ assert(resolveRoleDbName('staff') === 'staff', 'staff -> staff');
 assert(resolveRoleDbName('Administrator') === 'admin', 'Administrator -> admin');
 assert(resolveRoleDbName('admin') === 'admin', 'admin -> admin');
 assert(resolveRoleDbName('Property Manager') === 'Property Manager', 'Property Manager unchanged');
-assert(resolveRoleDbName('Department Custodian') === 'Department Custodian', 'Department Custodian unchanged');
-assert(resolveRoleDbName('Laboratory Custodian') === 'Laboratory Custodian', 'Laboratory Custodian unchanged');
+assert(resolveRoleDbName('Department Custodian') === 'Custodian', 'Legacy Department Custodian -> Custodian');
+assert(resolveRoleDbName('Laboratory Custodian') === 'Custodian', 'Legacy Laboratory Custodian -> Custodian');
+assert(resolveRoleDbName('Custodian') === 'Custodian', 'Custodian unchanged');
 
 console.log('\nRole helper checks:');
-assert(isDepartmentCustodian('Department Custodian'), 'isDepartmentCustodian');
-assert(isLaboratoryCustodian('Laboratory Custodian'), 'isLaboratoryCustodian');
+assert(isCustodian('Custodian'), 'isCustodian for unified role');
+assert(isCustodian('Department Custodian'), 'Legacy department role still treated as custodian');
+assert(isCustodian('Laboratory Custodian'), 'Legacy laboratory role still treated as custodian');
 assert(normalizeRoleName('Staff') === 'staff', 'normalizeRoleName Staff');
 
 console.log(`\n${passed} passed, ${failed} failed`);

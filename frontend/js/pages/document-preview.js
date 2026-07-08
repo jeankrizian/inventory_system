@@ -64,7 +64,7 @@ function renderPAR(p) {
     <p class="doc-ack">${esc(p.acknowledgement)}</p>
     <div class="signatures">
       ${signatureBlock('Prepared by:', p.preparedBy, 'Property Officer')}
-      ${signatureBlock('Received by:', p.receivedBy, 'Department Custodian')}
+      ${signatureBlock('Received by:', p.receivedBy, 'Custodian')}
       ${signatureBlock('Noted by:', p.departmentHead, 'Department Head')}
       ${signatureBlock('Noted by:', p.propertyOfficer, 'Head, Property Management Office')}
     </div>
@@ -198,7 +198,7 @@ function renderSAL(p) {
     <p class="doc-ack">${esc(p.acknowledgement)}</p>
     <div class="signatures">
       ${signatureBlock('Issued by:', p.issuedBy, 'Property Manager')}
-      ${signatureBlock('Received by:', p.receivedBy, 'Department Custodian')}
+      ${signatureBlock('Received by:', p.receivedBy, 'Custodian')}
       ${signatureBlock('Noted by:', p.departmentHead, 'Department Head')}
       ${signatureBlock('Noted by:', p.propertyOfficer, 'Head, Property Management Office')}
     </div>

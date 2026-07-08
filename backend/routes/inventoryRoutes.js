@@ -6,8 +6,7 @@ const { requireAuth, requireViewInventory, requireManageInventory, validate } = 
 const router = express.Router();
 router.use(requireAuth);
 
-const itemValidation = [
-  body('item_code').notEmpty().withMessage('Item code is required'),
+const createItemValidation = [
   body('item_name').notEmpty().withMessage('Item name is required'),
   body().custom((_, { req }) => {
     if (!req.body.department_id && !req.body.category_id) {
@@ -20,8 +19,9 @@ const itemValidation = [
 ];
 
 router.get('/', requireViewInventory, InventoryController.getAll);
+router.get('/next-code', requireManageInventory, InventoryController.getNextCode);
 router.get('/:id', requireViewInventory, InventoryController.getById);
-router.post('/', requireManageInventory, itemValidation, InventoryController.create);
+router.post('/', requireManageInventory, createItemValidation, InventoryController.create);
 router.put('/:id', requireManageInventory, InventoryController.update);
 router.delete('/:id', requireManageInventory, InventoryController.remove);
 

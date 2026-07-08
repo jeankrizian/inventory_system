@@ -37,6 +37,10 @@ async function initMaintenanceRequestsPage() {
 
   if (canSubmitMaintenance(currentUser)) await loadMaintainableItems();
   await loadRecords();
+
+  const params = new URLSearchParams(window.location.search);
+  const recordId = params.get('id');
+  if (recordId) viewRecord(parseInt(recordId, 10));
 }
 
 async function loadMaintainableItems() {

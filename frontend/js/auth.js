@@ -153,7 +153,9 @@ function getRoleKey(role) {
   const normalized = (role || '').toLowerCase().trim();
   if (normalized === 'admin') return 'administrator';
   if (normalized === 'property manager') return 'property_manager';
-  if (normalized === 'department custodian' || normalized === 'laboratory custodian') return 'custodian';
+  if (normalized === 'custodian' || normalized === 'department custodian' || normalized === 'laboratory custodian') {
+    return 'custodian';
+  }
   return 'employee';
 }
 
@@ -170,16 +172,22 @@ function isPropertyManager(user) {
   return getUserRoleName(user) === 'property manager';
 }
 
-function isDepartmentCustodian(user) {
-  return getUserRoleName(user) === 'department custodian';
-}
-
-function isLaboratoryCustodian(user) {
-  return getUserRoleName(user) === 'laboratory custodian';
-}
-
 function isCustodian(user) {
-  return isDepartmentCustodian(user) || isLaboratoryCustodian(user);
+  const role = getUserRoleName(user);
+  return role === 'custodian' || role === 'department custodian' || role === 'laboratory custodian';
+}
+
+function formatRoleDisplayName(userOrRole) {
+  const role = typeof userOrRole === 'string'
+    ? userOrRole.toLowerCase().trim()
+    : getUserRoleName(userOrRole);
+  if (role === 'custodian' || role === 'department custodian' || role === 'laboratory custodian') {
+    return 'Custodian';
+  }
+  if (role === 'admin' || role === 'administrator') return 'Administrator';
+  if (role === 'property manager') return 'Property Manager';
+  if (role === 'staff' || role === 'employee') return 'Employee';
+  return userOrRole?.role_name || userOrRole?.role || userOrRole || '-';
 }
 
 function isEmployee(user) {
@@ -233,7 +241,7 @@ function canOperateDisposal(user) {
 }
 
 function canAccessReports(user) {
-  return isAdministrator(user) || isPropertyManager(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function canAccessArchive(user) {
@@ -249,11 +257,11 @@ function canManageSuppliers(user) {
 }
 
 function canViewReturnHistory(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
 function canViewAllBorrows(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
 function canViewTransfers(user) {
@@ -313,7 +321,7 @@ function canViewDashboardCharts(user) {
 }
 
 function canViewLowStockDashboard(user) {
-  return isAdministrator(user) || isPropertyManager(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function canViewAssetsNeedingAttention(user) {
@@ -321,15 +329,37 @@ function canViewAssetsNeedingAttention(user) {
 }
 
 function canViewRecentBorrowsDashboard(user) {
-  return isEmployee(user) || isPropertyManager(user) || isCustodian(user);
+  return isEmployee(user) || isPropertyManager(user);
 }
 
 function canViewRecentReturnsDashboard(user) {
-  return isEmployee(user) || isPropertyManager(user) || isCustodian(user);
+  return isEmployee(user) || isPropertyManager(user);
 }
 
 function canViewDashboardActivities(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isEmployee(user);
+  return isAdministrator(user) || isPropertyManager(user) || isEmployee(user) || isCustodian(user);
+}
+
+function getDashboardStatTitle(user, module) {
+  if (module === 'inventoryStats' && isCustodian(user)) return 'Assigned Assets';
+  if (module === 'inventoryStats' && isAdministrator(user)) return 'Inventory Summary';
+  if (module === 'inventoryStats' && isPropertyManager(user)) return 'Inventory Summary';
+  if (module === 'personalBorrowStats') return 'My Borrow Summary';
+  if (module === 'pendingApprovals') return 'Pending Approvals';
+  if (module === 'usersStats') return 'Users Summary';
+  if (module === 'transferStats') return 'Transfer Summary';
+  if (module === 'maintenanceStats') return 'Maintenance Summary';
+  if (module === 'disposalStats') return 'Disposal Summary';
+  if (module === 'assetsNeedingAttention') return 'Assets Needing Attention';
+  return 'Summary';
+}
+
+function getDashboardSubtitle(user) {
+  if (isAdministrator(user)) return 'Administrative summary';
+  if (isPropertyManager(user)) return 'Operational summary';
+  if (isCustodian(user)) return 'Assigned assets overview';
+  if (isEmployee(user)) return 'My borrowing summary';
+  return 'Overview';
 }
 
 function canViewDashboardModule(user, module) {

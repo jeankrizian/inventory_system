@@ -96,11 +96,11 @@ function buildDashboardModules(role, staffView) {
     disposalStats: true,
     charts: false,
     recentInventory: true,
-    lowStock: false,
+    lowStock: true,
     assetsNeedingAttention: true,
-    recentBorrows: true,
-    recentReturns: true,
-    activities: false
+    recentBorrows: false,
+    recentReturns: false,
+    activities: true
   };
 }
 
@@ -211,8 +211,8 @@ function buildActivityQuery(ctx) {
   }
 
   if (isCustodian(ctx.role)) {
-    const departmentId = ctx.borrowScope?.departmentId ?? null;
-    const locationId = ctx.borrowScope?.locationId ?? null;
+    const departmentId = ctx.inventoryScope?.departmentId ?? null;
+    const locationId = ctx.inventoryScope?.locationId ?? null;
     return {
       sql: `${baseSelect}
         WHERE al.user_id = ?
@@ -277,7 +277,8 @@ const DashboardModel = {
       currentBorrowed,
       approvedBorrows,
       overdueBorrows,
-      dueSoonBorrows
+      dueSoonBorrows,
+      totalBorrowRequests
     ] = await Promise.all([
       ctx.fullVisibility ? SupplierModel.count() : Promise.resolve(0),
       ctx.fullVisibility ? DepartmentModel.count() : Promise.resolve(0),
@@ -297,7 +298,8 @@ const DashboardModel = {
       ctx.modules.personalBorrowStats ? BorrowModel.countCurrentBorrowed(borrowScope) : Promise.resolve(0),
       ctx.modules.personalBorrowStats ? BorrowModel.countByStatus(borrowScope, 'Approved') : Promise.resolve(0),
       ctx.modules.personalBorrowStats ? BorrowModel.countOverdue(borrowScope) : Promise.resolve(0),
-      ctx.modules.personalBorrowStats ? BorrowModel.countDueSoon(borrowScope) : Promise.resolve(0)
+      ctx.modules.personalBorrowStats ? BorrowModel.countDueSoon(borrowScope) : Promise.resolve(0),
+      ctx.modules.personalBorrowStats ? BorrowModel.countTotal(borrowScope) : Promise.resolve(0)
     ]);
 
     const stats = {
@@ -326,7 +328,8 @@ const DashboardModel = {
       current_borrowed: Number(currentBorrowed ?? 0),
       approved_borrows: Number(approvedBorrows ?? 0),
       overdue_borrows: Number(overdueBorrows ?? 0),
-      due_soon_borrows: Number(dueSoonBorrows ?? 0)
+      due_soon_borrows: Number(dueSoonBorrows ?? 0),
+      total_borrow_requests: Number(totalBorrowRequests ?? 0)
     };
 
     return stats;

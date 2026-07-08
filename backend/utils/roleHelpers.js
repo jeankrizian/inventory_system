@@ -1,6 +1,7 @@
 const ROLES = {
   ADMINISTRATOR: 'admin',
   PROPERTY_MANAGER: 'property manager',
+  CUSTODIAN: 'custodian',
   DEPARTMENT_CUSTODIAN: 'department custodian',
   LABORATORY_CUSTODIAN: 'laboratory custodian',
   EMPLOYEE: 'staff'
@@ -27,16 +28,29 @@ function resolveRoleDbName(role) {
   if (normalized === ROLES.EMPLOYEE || normalized === 'employee') return 'staff';
   if (normalized === ROLES.ADMINISTRATOR || normalized === 'administrator') return 'admin';
   if (normalized === ROLES.PROPERTY_MANAGER) return 'Property Manager';
-  if (normalized === ROLES.DEPARTMENT_CUSTODIAN) return 'Department Custodian';
-  if (normalized === ROLES.LABORATORY_CUSTODIAN) return 'Laboratory Custodian';
+  if (
+    normalized === ROLES.CUSTODIAN
+    || normalized === ROLES.DEPARTMENT_CUSTODIAN
+    || normalized === ROLES.LABORATORY_CUSTODIAN
+  ) {
+    return 'Custodian';
+  }
   return String(role).trim();
+}
+
+function formatRoleDisplayName(role) {
+  if (isCustodian(role)) return 'Custodian';
+  if (isAdministrator(role)) return 'Administrator';
+  if (isPropertyManager(role)) return 'Property Manager';
+  if (isEmployee(role)) return 'Employee';
+  return String(role || '').trim();
 }
 
 function getRoleKey(role) {
   const normalized = normalizeRoleName(role);
   if (normalized === ROLES.ADMINISTRATOR) return NAV_ROLES.ADMINISTRATOR;
   if (normalized === ROLES.PROPERTY_MANAGER) return NAV_ROLES.PROPERTY_MANAGER;
-  if (normalized === ROLES.DEPARTMENT_CUSTODIAN || normalized === ROLES.LABORATORY_CUSTODIAN) {
+  if (normalized === ROLES.DEPARTMENT_CUSTODIAN || normalized === ROLES.LABORATORY_CUSTODIAN || normalized === ROLES.CUSTODIAN) {
     return NAV_ROLES.CUSTODIAN;
   }
   return NAV_ROLES.EMPLOYEE;
@@ -51,16 +65,38 @@ function isPropertyManager(role) {
   return normalizeRoleName(role) === ROLES.PROPERTY_MANAGER;
 }
 
-function isDepartmentCustodian(role) {
-  return normalizeRoleName(role) === ROLES.DEPARTMENT_CUSTODIAN;
+function isUnifiedCustodian(role) {
+  return isCustodian(role);
 }
 
+/** @deprecated Legacy role names normalize to Custodian — use isCustodian instead */
+function isDepartmentCustodian(role) {
+  return false;
+}
+
+/** @deprecated Legacy role names normalize to Custodian — use isCustodian instead */
 function isLaboratoryCustodian(role) {
-  return normalizeRoleName(role) === ROLES.LABORATORY_CUSTODIAN;
+  return false;
 }
 
 function isCustodian(role) {
-  return isDepartmentCustodian(role) || isLaboratoryCustodian(role);
+  const normalized = normalizeRoleName(role);
+  return normalized === ROLES.CUSTODIAN
+    || normalized === ROLES.DEPARTMENT_CUSTODIAN
+    || normalized === ROLES.LABORATORY_CUSTODIAN;
+}
+
+function getCustodianScopeFromAssignments(user) {
+  const departmentId = user?.assigned_department_id ?? null;
+  const locationId = user?.assigned_location_id ?? null;
+
+  if (departmentId && !locationId) {
+    return { type: 'department', departmentId };
+  }
+  if (locationId && !departmentId) {
+    return { type: 'location', locationId };
+  }
+  return null;
 }
 
 function isEmployee(role) {
@@ -114,7 +150,7 @@ function canOperateDisposal(role) {
 }
 
 function canAccessReports(role) {
-  return isAdministrator(role) || isPropertyManager(role);
+  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
 }
 
 function canAccessArchive(role) {
@@ -130,11 +166,11 @@ function canManageSuppliers(role) {
 }
 
 function canViewAllBorrows(role) {
-  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
+  return isAdministrator(role) || isPropertyManager(role);
 }
 
 function canViewReturnHistory(role) {
-  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
+  return isAdministrator(role) || isPropertyManager(role);
 }
 
 function canViewTransfers(role) {
@@ -158,30 +194,29 @@ function getAccessScope(user) {
   const role = user?.role;
   const userId = user?.id;
 
+  if (isAdministrator(role) || isPropertyManager(role)) {
+    return { type: 'all', userId };
+  }
+
   if (isEmployee(role)) {
-    return { type: 'own', userId };
+    return { type: 'denied', userId };
   }
 
-  if (isDepartmentCustodian(role)) {
-    return {
-      type: 'department',
-      userId,
-      departmentId: user?.assigned_department_id ?? null
-    };
-  }
-
-  if (isLaboratoryCustodian(role)) {
-    return {
-      type: 'location',
-      userId,
-      locationId: user?.assigned_location_id ?? null
-    };
+  if (isCustodian(role)) {
+    const assignmentScope = getCustodianScopeFromAssignments(user);
+    if (assignmentScope?.type === 'department') {
+      return { type: 'department', userId, departmentId: assignmentScope.departmentId };
+    }
+    if (assignmentScope?.type === 'location') {
+      return { type: 'location', userId, locationId: assignmentScope.locationId };
+    }
+    return { type: 'denied', userId };
   }
 
   return { type: 'all', userId };
 }
 
-/** Borrow list scope — admin/PM see all; custodians by dept/location; employees own only */
+/** Borrow list scope — school-wide for admin/PM; custodians see own requests; employees see own only */
 function getBorrowListScope(user) {
   const role = user?.role;
   const userId = user?.id;
@@ -190,24 +225,12 @@ function getBorrowListScope(user) {
     return { type: 'own', userId };
   }
 
+  if (isCustodian(role)) {
+    return { type: 'own', userId };
+  }
+
   if (isAdministrator(role) || isPropertyManager(role)) {
     return { type: 'all', userId };
-  }
-
-  if (isDepartmentCustodian(role)) {
-    return {
-      type: 'department',
-      userId,
-      departmentId: user?.assigned_department_id ?? null
-    };
-  }
-
-  if (isLaboratoryCustodian(role)) {
-    return {
-      type: 'location',
-      userId,
-      locationId: user?.assigned_location_id ?? null
-    };
   }
 
   return { type: 'none', userId };
@@ -236,6 +259,33 @@ function appendInventoryScopeSql(scope, tableAlias = 'i') {
   return { clause: '', params: [], denied: true };
 }
 
+/** Transfer list scope — includes from/to department or location on the request */
+function appendTransferRequestScopeSql(scope, inventoryAlias = 'i', transferAlias = 't') {
+  if (!scope || scope.type === 'all') {
+    return { clause: '', params: [] };
+  }
+  if (isInventoryScopeDenied(scope)) {
+    return { clause: '', params: [], denied: true };
+  }
+  if (scope.type === 'department') {
+    if (!scope.departmentId) return { clause: '', params: [], denied: true };
+    const id = scope.departmentId;
+    return {
+      clause: ` AND (${inventoryAlias}.department_id = ? OR ${transferAlias}.from_department_id = ? OR ${transferAlias}.to_department_id = ?)`,
+      params: [id, id, id]
+    };
+  }
+  if (scope.type === 'location') {
+    if (!scope.locationId) return { clause: '', params: [], denied: true };
+    const id = scope.locationId;
+    return {
+      clause: ` AND (${inventoryAlias}.location_id = ? OR ${transferAlias}.from_location_id = ? OR ${transferAlias}.to_location_id = ?)`,
+      params: [id, id, id]
+    };
+  }
+  return { clause: '', params: [], denied: true };
+}
+
 function itemMatchesScope(item, scope) {
   if (!item || !scope || scope.type === 'all') return true;
   if (scope.type === 'department') {
@@ -243,6 +293,25 @@ function itemMatchesScope(item, scope) {
   }
   if (scope.type === 'location') {
     return scope.locationId != null && item.location_id == scope.locationId;
+  }
+  return false;
+}
+
+function transferMatchesScope(transfer, scope) {
+  if (!transfer || !scope || scope.type === 'all') return true;
+  if (scope.type === 'department') {
+    return scope.departmentId != null && (
+      transfer.from_department_id == scope.departmentId
+      || transfer.to_department_id == scope.departmentId
+      || transfer.department_id == scope.departmentId
+    );
+  }
+  if (scope.type === 'location') {
+    return scope.locationId != null && (
+      transfer.from_location_id == scope.locationId
+      || transfer.to_location_id == scope.locationId
+      || transfer.location_id == scope.locationId
+    );
   }
   return false;
 }
@@ -305,12 +374,15 @@ module.exports = {
   ADMIN_ROLES,
   normalizeRoleName,
   resolveRoleDbName,
+  formatRoleDisplayName,
   getRoleKey,
   isAdministrator,
   isPropertyManager,
+  isUnifiedCustodian,
   isDepartmentCustodian,
   isLaboratoryCustodian,
   isCustodian,
+  getCustodianScopeFromAssignments,
   isEmployee,
   isAdminRole,
   canApproveBorrow,
@@ -337,8 +409,10 @@ module.exports = {
   getBorrowListScope,
   isInventoryScopeDenied,
   appendInventoryScopeSql,
+  appendTransferRequestScopeSql,
   appendBorrowTransactionScopeSql,
   itemMatchesScope,
+  transferMatchesScope,
   borrowTransactionMatchesScope,
   buildSessionUser
 };

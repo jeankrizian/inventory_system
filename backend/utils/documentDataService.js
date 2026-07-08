@@ -140,7 +140,7 @@ async function buildSALPayloadFromInventory(inventoryId, generatedBy) {
     receivedBy: item.custodian_name || '',
     departmentHead: await getDepartmentHead(item.department_id),
     propertyOfficer: await getPropertyOfficerName(),
-    acknowledgement: 'The Department Custodian acknowledges receipt of the semi-durable item(s) listed above and accepts responsibility for monitoring usage, safekeeping, and reporting any loss or damage to the Property Office.'
+    acknowledgement: 'The assigned custodian acknowledges receipt of the semi-durable item(s) listed above and accepts responsibility for monitoring usage, safekeeping, and reporting any loss or damage to the Property Office.'
   };
 }
 

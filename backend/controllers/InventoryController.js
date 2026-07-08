@@ -1,7 +1,9 @@
 const InventoryModel = require('../models/InventoryModel');
+const { generateNextItemCode } = require('../utils/itemCodeGenerator');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyCustodiansForItem } = require('../utils/notificationService');
+const { inventoryLink } = require('../utils/notificationLinks');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const {
   sanitizeInventoryByClassification,
@@ -9,6 +11,8 @@ const {
   isFixedAsset,
   normalizeClassification
 } = require('../utils/assetClassification');
+const { normalizeMaterial, isValidMaterial } = require('../utils/materialOptions');
+const { normalizeAssetCustodianType } = require('../utils/custodianTypeLabels');
 
 function isSemiDurableClassification(value) {
   return normalizeClassification(value) === 'Semi-Durable';
@@ -17,6 +21,12 @@ const DocumentService = require('../utils/documentService');
 function normalizeItemBody(body) {
   const data = { ...body };
   if (data.category_id && !data.department_id) data.department_id = data.category_id;
+  if (Object.prototype.hasOwnProperty.call(data, 'material')) {
+    data.material = normalizeMaterial(data.material);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'custodian_type')) {
+    data.custodian_type = normalizeAssetCustodianType(data.custodian_type);
+  }
   return data;
 }
 
@@ -63,16 +73,28 @@ function hasDepartmentAssignmentChanged(before, after) {
   return (before.department_id ?? null) != (after.department_id ?? null);
 }
 
+function isDuplicateItemCodeError(err) {
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`;
+  return err.code === 'ER_DUP_ENTRY' && message.includes('item_code');
+}
+
+function isDuplicatePropertyTagError(err) {
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`;
+  return err.code === 'ER_DUP_ENTRY' && message.includes('property_tag');
+}
+
 async function notifyLowStockIfNeeded(item) {
   if (item && item.available_quantity <= item.low_stock_threshold) {
-    await notifyPropertyManagers({
+    const payload = {
       title: 'Low Stock Alert',
       message: `${item.item_name} (${item.item_code}) is now low in stock (${item.available_quantity} remaining).`,
       type: 'low_stock',
       reference_id: item.id,
-      link_url: '/pages/inventory.html?low_stock=true',
+      link_url: inventoryLink(item.id, 'low_stock=true'),
       skipDuplicate: true
-    });
+    };
+    await notifyPropertyManagers(payload);
+    await notifyCustodiansForItem(item, payload);
   }
 }
 
@@ -114,18 +136,62 @@ const InventoryController = {
     }
   },
 
+  async getNextCode(req, res) {
+    try {
+      const departmentId = parseInt(req.query.department_id || req.query.category_id, 10);
+      if (!departmentId) {
+        return sendError(res, 'Department is required', 400);
+      }
+
+      const itemCode = await InventoryModel.getNextItemCode(departmentId);
+      sendSuccess(res, { item_code: itemCode });
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
   async create(req, res) {
     try {
       const normalized = normalizePurchaseFields(normalizeItemBody(req.body));
-      const validation = validateInventoryClassification(normalized);
+      const validation = validateInventoryClassification(normalized, { existingClassification: null });
       if (!validation.valid) return sendError(res, validation.message, 400);
+      if (!isValidMaterial(normalized.material)) {
+        return sendError(res, 'Invalid material value', 400);
+      }
 
       const body = sanitizeInventoryByClassification(normalized);
 
-      const existing = await InventoryModel.findByCode(body.item_code);
-      if (existing) return sendError(res, 'Item code already exists', 400);
+      if (!body.department_id) {
+        return sendError(res, 'Department is required', 400);
+      }
 
-      const id = await InventoryModel.create(body);
+      delete body.item_code;
+
+      let itemCode = null;
+      let id = null;
+      const maxAttempts = 5;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        itemCode = await generateNextItemCode(body.department_id);
+        body.item_code = itemCode;
+
+        try {
+          id = await InventoryModel.create(body);
+          break;
+        } catch (err) {
+          if (isDuplicatePropertyTagError(err)) {
+            return sendError(res, 'Property tag already exists', 400);
+          }
+          if (isDuplicateItemCodeError(err) && attempt < maxAttempts - 1) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!id) {
+        return sendError(res, 'Unable to generate a unique item code', 500);
+      }
       await logActivity(req.session.user.id, 'CREATE', 'Inventory', `Added item ${body.item_code}`, req.ip);
       const item = await InventoryModel.findById(id);
 
@@ -166,6 +232,9 @@ const InventoryController = {
 
       sendSuccess(res, { ...item, generated_document: generatedDocument, custodian_par: custodianPar, semi_durable_sal: semiDurableSal }, 'Item created successfully', 201);
     } catch (err) {
+      if (isDuplicatePropertyTagError(err)) {
+        return sendError(res, 'Property tag already exists', 400);
+      }
       sendError(res, err.message, 500);
     }
   },
@@ -179,19 +248,21 @@ const InventoryController = {
       const forValidation = {
         ...normalized,
         asset_classification: normalized.asset_classification ?? item.asset_classification,
+        material: normalized.material !== undefined ? normalized.material : item.material,
         property_tag: normalized.property_tag ?? item.property_tag,
         custodian_type: normalized.custodian_type ?? item.custodian_type,
         custodian_id: normalized.custodian_id ?? item.custodian_id
       };
-      const validation = validateInventoryClassification(forValidation);
+      const validation = validateInventoryClassification(forValidation, {
+        existingClassification: item.asset_classification
+      });
       if (!validation.valid) return sendError(res, validation.message, 400);
+      if (!isValidMaterial(forValidation.material)) {
+        return sendError(res, 'Invalid material value', 400);
+      }
 
       const body = sanitizeInventoryByClassification(forValidation);
-
-      if (body.item_code && body.item_code !== item.item_code) {
-        const existing = await InventoryModel.findByCode(body.item_code);
-        if (existing) return sendError(res, 'Item code already exists', 400);
-      }
+      delete body.item_code;
 
       await InventoryModel.update(req.params.id, body);
       await logActivity(req.session.user.id, 'UPDATE', 'Inventory', `Updated item ${item.item_code}`, req.ip);
@@ -242,6 +313,9 @@ const InventoryController = {
 
       sendSuccess(res, { ...updated, custodian_par: custodianPar, semi_durable_sal: semiDurableSal }, 'Item updated successfully');
     } catch (err) {
+      if (isDuplicatePropertyTagError(err)) {
+        return sendError(res, 'Property tag already exists', 400);
+      }
       sendError(res, err.message, 500);
     }
   },

@@ -1,7 +1,10 @@
 const ArchiveModel = require('../models/ArchiveModel');
+const UserModel = require('../models/UserModel');
 const { restoreRecord, getModuleConfig } = require('../utils/archiveService');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyAdministrators } = require('../utils/notificationService');
+const { usersLink } = require('../utils/notificationLinks');
 
 const ArchiveController = {
   async getAll(req, res) {
@@ -28,6 +31,20 @@ const ArchiveController = {
       if (!restored) return sendError(res, 'Archived record not found', 404);
 
       await logActivity(req.session.user.id, 'RESTORE', cfg.module, `Restored ${cfg.module} record #${id}`, req.ip);
+
+      if (module === 'user') {
+        const user = await UserModel.findById(id);
+        if (user) {
+          await notifyAdministrators({
+            title: 'User Restored',
+            message: `User account ${user.full_name} (${user.username}) was restored.`,
+            type: 'user_restored',
+            reference_id: user.id,
+            link_url: usersLink(user.id)
+          });
+        }
+      }
+
       sendSuccess(res, null, 'The record has been restored successfully.');
     } catch (err) {
       sendError(res, err.message, 500);

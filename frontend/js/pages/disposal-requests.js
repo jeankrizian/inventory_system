@@ -9,10 +9,13 @@ async function initDisposalRequestsPage() {
   currentUser = await initLayout('disposal-requests');
   if (!currentUser) return;
 
-  const isViewOnly = !canOperateDisposal(currentUser);
-  const subtitle = isViewOnly
-    ? 'View disposal requests for oversight and monitoring'
-    : 'Review, inspect, and approve asset disposal requests';
+  const canOperate = canOperateDisposal(currentUser);
+  const canSubmit = canSubmitDisposal(currentUser);
+  const subtitle = canOperate
+    ? 'Review, inspect, and approve asset disposal requests'
+    : canSubmit
+      ? 'Submit and track asset disposal requests'
+      : 'View disposal requests for oversight and monitoring';
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -46,6 +49,10 @@ async function initDisposalRequestsPage() {
 
   if (canSubmitDisposal(currentUser)) await loadDisposableItems();
   await loadDisposals();
+
+  const params = new URLSearchParams(window.location.search);
+  const disposalId = params.get('id');
+  if (disposalId) viewDisposal(parseInt(disposalId, 10));
 }
 
 async function loadDisposableItems() {

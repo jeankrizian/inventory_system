@@ -2,6 +2,10 @@
  * Login page logic
  */
 document.addEventListener('DOMContentLoaded', () => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
   showPendingAuthExpiredToast();
   redirectIfAuthenticated();
 

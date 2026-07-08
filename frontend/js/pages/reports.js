@@ -1,21 +1,37 @@
 const REPORTS = [
-  { type: 'inventory', title: 'Inventory Report', desc: 'Complete list of all inventory items with stock levels and status', icon: 'bi-box-seam' },
-  { type: 'borrow', title: 'Borrow Report', desc: 'All borrow transactions with borrower details and status', icon: 'bi-cart3' },
-  { type: 'return', title: 'Process Return Report', desc: 'All process return transactions with condition and notes', icon: 'bi-arrow-return-left' },
-  { type: 'low-stock', title: 'Low Stock Report', desc: 'Items below their low stock threshold', icon: 'bi-exclamation-triangle' },
-  { type: 'supplier', title: 'Supplier Report', desc: 'Complete supplier directory with contact information', icon: 'bi-truck' },
-  { type: 'transfers', title: 'Transfer Report', desc: 'Asset movement and transfer request history', icon: 'bi-arrow-left-right' },
-  { type: 'maintenance', title: 'Maintenance Report', desc: 'Preventive and corrective maintenance records', icon: 'bi-tools' },
-  { type: 'disposals', title: 'Disposal Report', desc: 'Disposal requests, inspections, and approvals', icon: 'bi-trash3' },
-  { type: 'departments', title: 'Department Report', desc: 'Departments with custodians and asset counts', icon: 'bi-building' },
-  { type: 'custodians', title: 'Custodian Report', desc: 'Custodian assignments and asset responsibilities', icon: 'bi-person-badge' },
-  { type: 'asset-status', title: 'Asset Status Report', desc: 'Full asset status overview with classifications', icon: 'bi-clipboard-data' },
+  { type: 'inventory', title: 'Inventory Report', desc: 'Complete list of all inventory items with stock levels and status', icon: 'bi-box-seam', filters: ['department', 'classification', 'date'] },
+  { type: 'borrow', title: 'Borrow Report', desc: 'All borrow transactions with borrower details and status', icon: 'bi-cart3', filters: ['department', 'date'] },
+  { type: 'return', title: 'Process Return Report', desc: 'All process return transactions with condition and notes', icon: 'bi-arrow-return-left', filters: ['department', 'date'] },
+  { type: 'low-stock', title: 'Low Stock Report', desc: 'Items below their low stock threshold', icon: 'bi-exclamation-triangle', filters: ['department'] },
+  { type: 'supplier', title: 'Supplier Report', desc: 'Complete supplier directory with contact information', icon: 'bi-truck', filters: [] },
+  { type: 'transfers', title: 'Transfer Report', desc: 'Asset movement and transfer request history', icon: 'bi-arrow-left-right', filters: ['department', 'date'] },
+  { type: 'maintenance', title: 'Maintenance Report', desc: 'Preventive and corrective maintenance records', icon: 'bi-tools', filters: ['department', 'date'] },
+  { type: 'disposals', title: 'Disposal Report', desc: 'Disposal requests, inspections, and approvals', icon: 'bi-trash3', filters: ['department', 'date'] },
+  { type: 'departments', title: 'Department Report', desc: 'Departments with custodians and asset counts', icon: 'bi-building', filters: ['department'] },
+  { type: 'custodians', title: 'Custodian Report', desc: 'Custodian assignments and asset responsibilities', icon: 'bi-person-badge', filters: ['department'] },
+  { type: 'asset-status', title: 'Asset Status Report', desc: 'Full asset status overview with classifications', icon: 'bi-clipboard-data', filters: ['department', 'classification', 'date'] },
   { type: 'documents', title: 'Official Documents', desc: 'PAR, GRN, and RDF document history with preview and PDF export', icon: 'bi-file-earmark-text', link: '/pages/documents.html' }
+];
+
+let activeReportType = null;
+let departments = [];
+
+const CLASSIFICATION_OPTIONS = [
+  'Consumable',
+  'Semi-Durable',
+  'Non-Consumable (Fixed Asset)'
 ];
 
 async function initReportsPage() {
   const user = await initLayout('reports');
   if (!user) return;
+
+  try {
+    const deptRes = await API.getDepartments();
+    departments = deptRes?.data || [];
+  } catch (err) {
+    departments = [];
+  }
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -31,8 +47,8 @@ async function initReportsPage() {
             ${r.link
     ? `<a class="btn-outline-custom btn-sm-custom" href="${r.link}"><i class="bi bi-eye"></i> Open</a>`
     : `<button class="btn-outline-custom btn-sm-custom" onclick="viewReport('${r.type}')"><i class="bi bi-eye"></i> View</button>
-            <button class="btn-outline-custom btn-sm-custom" onclick="API.exportPDF('${r.type}')"><i class="bi bi-file-pdf"></i> PDF</button>
-            <button class="btn-outline-custom btn-sm-custom" onclick="API.exportExcel('${r.type}')"><i class="bi bi-file-excel"></i> Excel</button>
+            <button class="btn-outline-custom btn-sm-custom" onclick="exportReportPDF('${r.type}')"><i class="bi bi-file-pdf"></i> PDF</button>
+            <button class="btn-outline-custom btn-sm-custom" onclick="exportReportExcel('${r.type}')"><i class="bi bi-file-excel"></i> Excel</button>
             <button class="btn-outline-custom btn-sm-custom" onclick="printReport('${r.type}')"><i class="bi bi-printer"></i> Print</button>`}
           </div>
         </div>
@@ -41,33 +57,116 @@ async function initReportsPage() {
     <div class="content-card" id="reportPreview" style="display:none;">
       <div class="content-card-header">
         <h3 id="reportPreviewTitle">Report Preview</h3>
-        <button class="btn-outline-custom btn-sm-custom" onclick="document.getElementById('reportPreview').style.display='none'">
-          <i class="bi bi-x"></i> Close
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-outline-custom btn-sm-custom" onclick="exportReportPDF(activeReportType)"><i class="bi bi-file-pdf"></i> PDF</button>
+          <button class="btn-outline-custom btn-sm-custom" onclick="exportReportExcel(activeReportType)"><i class="bi bi-file-excel"></i> Excel</button>
+          <button class="btn-outline-custom btn-sm-custom" onclick="printReport(activeReportType)"><i class="bi bi-printer"></i> Print</button>
+          <button class="btn-outline-custom btn-sm-custom" onclick="document.getElementById('reportPreview').style.display='none'">
+            <i class="bi bi-x"></i> Close
+          </button>
+        </div>
       </div>
+      <div class="filters-bar" id="reportFiltersBar"></div>
       <div class="table-responsive" id="reportTable"></div>
     </div>
   `;
 }
 
-async function viewReport(type) {
-  const report = REPORTS.find(r => r.type === type);
-  document.getElementById('reportPreviewTitle').textContent = report.title;
-  document.getElementById('reportPreview').style.display = 'block';
+function getReportConfig(type) {
+  return REPORTS.find(r => r.type === type);
+}
+
+function getReportFilterParams() {
+  const params = {};
+  const dept = document.getElementById('reportFilterDepartment')?.value;
+  const classification = document.getElementById('reportFilterClassification')?.value;
+  const dateFrom = document.getElementById('reportFilterDateFrom')?.value;
+  const dateTo = document.getElementById('reportFilterDateTo')?.value;
+
+  if (dept) params.department_id = dept;
+  if (classification) params.asset_classification = classification;
+  if (dateFrom) params.date_from = dateFrom;
+  if (dateTo) params.date_to = dateTo;
+
+  return params;
+}
+
+function renderReportFilters(type) {
+  const config = getReportConfig(type);
+  const bar = document.getElementById('reportFiltersBar');
+  if (!config?.filters?.length) {
+    bar.innerHTML = '';
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  const deptOptions = departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  bar.innerHTML = `
+    ${config.filters.includes('department') ? `
+      <select class="form-control-custom" id="reportFilterDepartment">
+        <option value="">All Departments</option>
+        ${deptOptions}
+      </select>` : ''}
+    ${config.filters.includes('classification') ? `
+      <select class="form-control-custom" id="reportFilterClassification">
+        <option value="">All Classifications</option>
+        ${CLASSIFICATION_OPTIONS.map(c => `<option>${c}</option>`).join('')}
+      </select>` : ''}
+    ${config.filters.includes('date') ? `
+      <input type="date" class="form-control-custom" id="reportFilterDateFrom" title="From date">
+      <input type="date" class="form-control-custom" id="reportFilterDateTo" title="To date">` : ''}
+    <button class="btn-primary-custom btn-sm-custom" type="button" id="reportApplyFilters"><i class="bi bi-funnel"></i> Apply Filters</button>
+    <button class="btn-outline-custom btn-sm-custom" type="button" id="reportClearFilters">Clear</button>
+  `;
+
+  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type));
+  document.getElementById('reportClearFilters')?.addEventListener('click', () => {
+    document.getElementById('reportFilterDepartment') && (document.getElementById('reportFilterDepartment').value = '');
+    document.getElementById('reportFilterClassification') && (document.getElementById('reportFilterClassification').value = '');
+    document.getElementById('reportFilterDateFrom') && (document.getElementById('reportFilterDateFrom').value = '');
+    document.getElementById('reportFilterDateTo') && (document.getElementById('reportFilterDateTo').value = '');
+    loadReportData(type);
+  });
+}
+
+async function loadReportData(type) {
+  const report = getReportConfig(type);
   document.getElementById('reportTable').innerHTML = '<div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>';
 
   try {
-    const res = await API.getReport(type);
+    const res = await API.getReport(type, getReportFilterParams());
     const data = res?.data || [];
     renderReportTable(type, data);
-    document.getElementById('reportPreview').scrollIntoView({ behavior: 'smooth' });
-  } catch (err) { showToast(err.message, 'error'); }
+  } catch (err) {
+    document.getElementById('reportTable').innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function viewReport(type) {
+  const report = getReportConfig(type);
+  activeReportType = type;
+  document.getElementById('reportPreviewTitle').textContent = report.title;
+  document.getElementById('reportPreview').style.display = 'block';
+  renderReportFilters(type);
+  await loadReportData(type);
+  document.getElementById('reportPreview').scrollIntoView({ behavior: 'smooth' });
+}
+
+function exportReportPDF(type) {
+  const params = activeReportType === type ? getReportFilterParams() : {};
+  API.exportPDF(type, params);
+}
+
+function exportReportExcel(type) {
+  const params = activeReportType === type ? getReportFilterParams() : {};
+  API.exportExcel(type, params);
 }
 
 function renderReportTable(type, data) {
   const el = document.getElementById('reportTable');
   if (!data.length) {
-    el.innerHTML = '<div class="empty-state">No data available</div>';
+    el.innerHTML = '<div class="empty-state">No data available for the selected filters</div>';
     return;
   }
 
@@ -111,12 +210,20 @@ function renderReportTable(type, data) {
       break;
     case 'custodians':
       headers = ['Custodian','Email','Type','Assigned Assets'];
-      rows = data.map(c => [c.custodian_name, c.email, c.custodian_type, c.assigned_assets]);
+      rows = data.map(c => [
+        c.custodian_name,
+        c.email,
+        normalizeAssetCustodianType(c.custodian_type) || c.custodian_type,
+        c.assigned_assets
+      ]);
       break;
     case 'asset-status':
       headers = ['Code','Name','Classification','Department','Status','Property Tag'];
       rows = data.map(i => [i.item_code, i.item_name, normalizeAssetClassification(i.asset_classification), i.department_name || i.category_name, i.status, i.property_tag]);
       break;
+    default:
+      el.innerHTML = '<div class="empty-state">Unsupported report type</div>';
+      return;
   }
 
   el.innerHTML = `

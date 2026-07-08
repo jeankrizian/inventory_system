@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
+const { appendDateRangeSql } = require('../utils/reportFilters');
 
 const MaintenanceModel = {
   _baseSelect() {
@@ -28,6 +29,11 @@ const MaintenanceModel = {
       const term = `%${filters.search}%`;
       params.push(term, term, term);
     }
+    if (filters.department_id) {
+      sql += ' AND i.department_id = ?';
+      params.push(filters.department_id);
+    }
+    sql += appendDateRangeSql(filters, 'm.scheduled_date', params);
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
     if (scopeFilter.denied) {
       return [];

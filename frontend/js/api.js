@@ -90,6 +90,7 @@ const API = {
     return API.get(`/inventory${query ? '?' + query : ''}`);
   },
   getInventoryItem: (id) => API.get(`/inventory/${id}`),
+  getNextItemCode: (departmentId) => API.get(`/inventory/next-code?department_id=${departmentId}`),
   createInventoryItem: (data) => API.post('/inventory', data),
   updateInventoryItem: (id, data) => API.put(`/inventory/${id}`, data),
   deleteInventoryItem: (id) => API.delete(`/inventory/${id}`),
@@ -128,9 +129,18 @@ const API = {
   returnBorrow: (id, data) => API.post(`/borrow/${id}/return`, data),
   getReturns: () => API.get('/borrow/returns'),
 
-  getReport: (type) => API.get(`/reports/${type}`),
-  exportPDF: (type) => window.open(`${API.baseURL}/reports/export/pdf/${type}`, '_blank'),
-  exportExcel: (type) => window.open(`${API.baseURL}/reports/export/excel/${type}`, '_blank'),
+  getReport: (type, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return API.get(`/reports/${type}${query ? '?' + query : ''}`);
+  },
+  exportPDF: (type, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    window.open(`${API.baseURL}/reports/export/pdf/${type}${query ? '?' + query : ''}`, '_blank');
+  },
+  exportExcel: (type, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    window.open(`${API.baseURL}/reports/export/excel/${type}${query ? '?' + query : ''}`, '_blank');
+  },
 
   search: (q) => API.get(`/search?q=${encodeURIComponent(q)}`),
 

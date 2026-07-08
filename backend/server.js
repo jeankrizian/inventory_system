@@ -29,6 +29,10 @@ const { runDocumentMigration } = require('./database/runDocumentMigration');
 const { runPurchaseMigration } = require('./database/runPurchaseMigration');
 const { runExtendedDocumentMigration } = require('./database/runExtendedDocumentMigration');
 const { runRbacAssignmentMigration } = require('./database/runRbacAssignmentMigration');
+const { runItemDescriptionMigration } = require('./database/runItemDescriptionMigration');
+const { runMaterialMigration } = require('./database/runMaterialMigration');
+const { runCustodianRoleMigration } = require('./database/runCustodianRoleMigration');
+const { runCustodianTypeMigration } = require('./database/runCustodianTypeMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
@@ -44,6 +48,11 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const frontendPath = path.join(__dirname, '../frontend');
+
+// Block direct access to public registration page before static file serving
+app.get('/register.html', (req, res) => {
+  res.redirect('/');
+});
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -165,10 +174,6 @@ app.get('/index.html', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-app.get('/register.html', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'register.html'));
-});
-
 app.get('/forgot-password.html', (req, res) => {
   res.sendFile(path.join(frontendPath, 'forgot-password.html'));
 });
@@ -199,6 +204,10 @@ async function startServer() {
     await runPurchaseMigration();
     await runExtendedDocumentMigration();
     await runRbacAssignmentMigration();
+    await runItemDescriptionMigration();
+    await runMaterialMigration();
+    await runCustodianRoleMigration();
+    await runCustodianTypeMigration();
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);

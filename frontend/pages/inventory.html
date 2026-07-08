@@ -24,9 +24,10 @@
         <div class="modal-body-custom">
           <input type="hidden" id="itemId">
           <div class="form-row">
-            <div class="form-group"><label>Item Code *</label><input type="text" class="form-control-custom" id="itemCode" required></div>
+            <div class="form-group"><label>Item Code</label><input type="text" class="form-control-custom" id="itemCode" readonly placeholder="Auto-generated from category"></div>
             <div class="form-group"><label>Item Name *</label><input type="text" class="form-control-custom" id="itemName" required></div>
           </div>
+          <div class="form-group"><label>Description</label><textarea class="form-control-custom" id="itemDescription" rows="2" placeholder="Optional item description"></textarea></div>
           <div class="form-row">
             <div class="form-group"><label>Category *</label><select class="form-control-custom" id="itemCategory" required></select></div>
             <div class="form-group"><label>Supplier</label><select class="form-control-custom" id="itemSupplier"></select></div>
@@ -73,18 +74,27 @@
             <div class="form-group"><label>Classification *</label>
               <select class="form-control-custom" id="itemClassification" required>
                 <option value="">Select classification</option>
-                <option>Consumable</option>
-                <option>Semi-Durable</option>
-                <option>Non-Consumable (Fixed Asset)</option>
               </select>
             </div>
-            <div class="form-group" id="propertyTagGroup"><label>Property Tag</label><input type="text" class="form-control-custom" id="itemPropertyTag" placeholder="Required for Non-Consumable (Fixed Asset)"></div>
+            <div class="form-group"><label>Material</label>
+              <select class="form-control-custom" id="itemMaterial">
+                <option value="">Select material...</option>
+                <option>Wood</option>
+                <option>Metal</option>
+                <option>Plastic</option>
+                <option>Glass</option>
+                <option>Fabric</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" id="propertyTagGroup"><label>Property Tag</label><input type="text" class="form-control-custom" id="itemPropertyTag" placeholder="e.g. 2025-0001 or 2025/0001"></div>
           </div>
           <div class="form-row" id="custodianRow">
             <div class="form-group"><label>Custodian Type</label>
               <select class="form-control-custom" id="itemCustodianType">
                 <option value="">None</option>
-                <option>Property Custodian</option><option>Department Custodian</option><option>Laboratory Custodian</option>
+                <option>Property Custodian</option><option>Department</option><option>Laboratory</option>
               </select>
             </div>
             <div class="form-group"><label>Assigned Custodian</label>
@@ -281,6 +291,9 @@
   <script src="/js/components/layout.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/assetClassification.js"></script>
+  <script src="/js/itemAvailability.js"></script>
+  <script src="/js/searchableSelect.js"></script>
+  <script src="/js/custodianTypes.js"></script>
   <script src="/js/pages/inventory.js"></script>
 </body>
 </html>

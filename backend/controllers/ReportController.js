@@ -7,14 +7,18 @@ const SupplierModel = require('../models/SupplierModel');
 const TransferModel = require('../models/TransferModel');
 const DisposalModel = require('../models/DisposalModel');
 const MaintenanceModel = require('../models/MaintenanceModel');
-const DepartmentModel = require('../models/DepartmentModel');
 const pool = require('../config/database');
 const { sendSuccess, sendError } = require('../utils/response');
+const { parseReportFilters } = require('../utils/reportFilters');
+
+function getFilters(query) {
+  return parseReportFilters(query);
+}
 
 const ReportController = {
   async getInventoryReport(req, res) {
     try {
-      const items = await InventoryModel.getAll(req.query);
+      const items = await InventoryModel.getAll(getFilters(req.query));
       sendSuccess(res, items);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -23,7 +27,7 @@ const ReportController = {
 
   async getBorrowReport(req, res) {
     try {
-      const data = await BorrowModel.getAll(req.query);
+      const data = await BorrowModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -32,7 +36,7 @@ const ReportController = {
 
   async getReturnReport(req, res) {
     try {
-      const data = await ReturnModel.getAll();
+      const data = await ReturnModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -41,7 +45,9 @@ const ReportController = {
 
   async getLowStockReport(req, res) {
     try {
-      const items = await InventoryModel.getAll({ low_stock: true });
+      const filters = getFilters(req.query);
+      filters.low_stock = true;
+      const items = await InventoryModel.getAll(filters);
       sendSuccess(res, items);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -59,56 +65,68 @@ const ReportController = {
 
   async getTransferReport(req, res) {
     try {
-      const data = await TransferModel.getAll(req.query);
+      const data = await TransferModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getMaintenanceReport(req, res) {
     try {
-      const data = await MaintenanceModel.getAll(req.query);
+      const data = await MaintenanceModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getDisposalReport(req, res) {
     try {
-      const data = await DisposalModel.getAll(req.query);
+      const data = await DisposalModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getDepartmentReport(req, res) {
     try {
-      const [rows] = await pool.query(
-        `SELECT d.*, u.full_name AS custodian_name,
-                (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id AND i.is_archived = 0 AND i.status != 'Disposed') AS asset_count
-         FROM departments d LEFT JOIN users u ON d.custodian_id = u.id
-         WHERE d.is_archived = 0
-         ORDER BY d.name`
-      );
+      const filters = getFilters(req.query);
+      let sql = `
+        SELECT d.*, u.full_name AS custodian_name,
+               (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id AND i.is_archived = 0 AND i.status != 'Disposed') AS asset_count
+        FROM departments d LEFT JOIN users u ON d.custodian_id = u.id
+        WHERE d.is_archived = 0`;
+      const params = [];
+      if (filters.department_id) {
+        sql += ' AND d.id = ?';
+        params.push(filters.department_id);
+      }
+      sql += ' ORDER BY d.name';
+      const [rows] = await pool.query(sql, params);
       sendSuccess(res, rows);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getAssetStatusReport(req, res) {
     try {
-      const items = await InventoryModel.getAll(req.query);
+      const items = await InventoryModel.getAll(getFilters(req.query));
       sendSuccess(res, items);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async getCustodianReport(req, res) {
     try {
-      const [rows] = await pool.query(
-        `SELECT u.full_name AS custodian_name, u.email,
-                i.custodian_type, COUNT(i.id) AS assigned_assets
-         FROM inventory_items i
-         JOIN users u ON i.custodian_id = u.id
-         WHERE i.status != 'Disposed'
-         GROUP BY u.id, u.full_name, u.email, i.custodian_type
-         ORDER BY assigned_assets DESC`
-      );
+      const filters = getFilters(req.query);
+      let sql = `
+        SELECT u.full_name AS custodian_name, u.email,
+               i.custodian_type, COUNT(i.id) AS assigned_assets
+        FROM inventory_items i
+        JOIN users u ON i.custodian_id = u.id
+        WHERE i.status != 'Disposed'`;
+      const params = [];
+      if (filters.department_id) {
+        sql += ' AND i.department_id = ?';
+        params.push(filters.department_id);
+      }
+      sql += ` GROUP BY u.id, u.full_name, u.email, i.custodian_type
+        ORDER BY assigned_assets DESC`;
+      const [rows] = await pool.query(sql, params);
       sendSuccess(res, rows);
     } catch (err) { sendError(res, err.message, 500); }
   },
@@ -116,32 +134,34 @@ const ReportController = {
   async exportPDF(req, res) {
     try {
       const { type } = req.params;
+      const filters = getFilters(req.query);
       let title, headers, rows;
 
       switch (type) {
         case 'inventory': {
-          const items = await InventoryModel.getAll();
+          const items = await InventoryModel.getAll(filters);
           title = 'Inventory Report';
           headers = ['Code', 'Name', 'Category', 'Qty', 'Available', 'Status'];
           rows = items.map(i => [i.item_code, i.item_name, i.category_name, i.quantity, i.available_quantity, i.status]);
           break;
         }
         case 'borrow': {
-          const data = await BorrowModel.getAll();
+          const data = await BorrowModel.getAll(filters);
           title = 'Borrow Report';
           headers = ['Code', 'Borrower', 'Department', 'Date', 'Status'];
           rows = data.map(b => [b.transaction_code, b.borrower_name, b.borrower_department, b.borrow_date, b.status]);
           break;
         }
         case 'return': {
-          const data = await ReturnModel.getAll();
+          const data = await ReturnModel.getAll(filters);
           title = 'Process Return Report';
           headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition'];
           rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition]);
           break;
         }
         case 'low-stock': {
-          const items = await InventoryModel.getAll({ low_stock: true });
+          const lowStockFilters = { ...filters, low_stock: true };
+          const items = await InventoryModel.getAll(lowStockFilters);
           title = 'Low Stock Report';
           headers = ['Code', 'Name', 'Available', 'Threshold', 'Status'];
           rows = items.map(i => [i.item_code, i.item_name, i.available_quantity, i.low_stock_threshold, i.status]);
@@ -170,7 +190,6 @@ const ReportController = {
       doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: 'right' });
       doc.moveDown();
 
-      // Table header
       const colWidth = (doc.page.width - 100) / headers.length;
       let y = doc.y;
       headers.forEach((h, i) => {
@@ -200,6 +219,7 @@ const ReportController = {
   async exportExcel(req, res) {
     try {
       const { type } = req.params;
+      const filters = getFilters(req.query);
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Cavite Institute Property Management System';
       const sheet = workbook.addWorksheet('Report');
@@ -208,28 +228,29 @@ const ReportController = {
 
       switch (type) {
         case 'inventory': {
-          const items = await InventoryModel.getAll();
+          const items = await InventoryModel.getAll(filters);
           title = 'Inventory Report';
           headers = ['Item Code', 'Item Name', 'Category', 'Brand', 'Quantity', 'Available', 'Unit', 'Status', 'Location'];
           rows = items.map(i => [i.item_code, i.item_name, i.category_name, i.brand, i.quantity, i.available_quantity, i.unit, i.status, i.location_name]);
           break;
         }
         case 'borrow': {
-          const data = await BorrowModel.getAll();
+          const data = await BorrowModel.getAll(filters);
           title = 'Borrow Report';
           headers = ['Code', 'Borrower', 'Department', 'Purpose', 'Borrow Date', 'Expected Return', 'Status'];
           rows = data.map(b => [b.transaction_code, b.borrower_name, b.borrower_department, b.purpose, b.borrow_date, b.expected_return_date, b.status]);
           break;
         }
         case 'return': {
-          const data = await ReturnModel.getAll();
+          const data = await ReturnModel.getAll(filters);
           title = 'Process Return Report';
           headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition', 'Notes'];
           rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition, r.notes]);
           break;
         }
         case 'low-stock': {
-          const items = await InventoryModel.getAll({ low_stock: true });
+          const lowStockFilters = { ...filters, low_stock: true };
+          const items = await InventoryModel.getAll(lowStockFilters);
           title = 'Low Stock Report';
           headers = ['Item Code', 'Item Name', 'Category', 'Available', 'Threshold', 'Status'];
           rows = items.map(i => [i.item_code, i.item_name, i.category_name, i.available_quantity, i.low_stock_threshold, i.status]);

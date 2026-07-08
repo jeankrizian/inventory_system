@@ -8,6 +8,7 @@ const { requestPasswordReset } = require('../utils/passwordResetService');
 
 const REGISTRATION_ROLES = ['staff'];
 const REGISTRATION_ROLE = 'staff';
+const PUBLIC_REGISTRATION_DISABLED = true;
 
 const AuthController = {
   async login(req, res) {
@@ -96,6 +97,9 @@ const AuthController = {
   },
 
   async register(req, res) {
+    if (PUBLIC_REGISTRATION_DISABLED) {
+      return sendError(res, 'Public registration is disabled. Contact an administrator to create an account.', 403);
+    }
     try {
       const { username, email, password, confirm_password, full_name } = req.body;
       const normalizedEmail = normalizeSchoolEmail(email || '');
@@ -170,6 +174,9 @@ const AuthController = {
   },
 
   getRegistrationRoles(req, res) {
+    if (PUBLIC_REGISTRATION_DISABLED) {
+      return sendError(res, 'Public registration is disabled', 403);
+    }
     sendSuccess(res, REGISTRATION_ROLES);
   }
 };

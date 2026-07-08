@@ -95,7 +95,7 @@ function renderPAR(doc, payload) {
 
   drawSignatureBlock(doc, [
     { label: 'Prepared by:', value: payload.preparedBy, caption: 'Property Officer' },
-    { label: 'Received by:', value: payload.receivedBy, caption: 'Department Custodian' },
+    { label: 'Received by:', value: payload.receivedBy, caption: 'Custodian' },
     { label: 'Noted by:', value: payload.departmentHead, caption: 'Department Head' },
     { label: 'Noted by:', value: payload.propertyOfficer, caption: 'Head, Property Management Office' }
   ]);
@@ -242,7 +242,7 @@ function renderSAL(doc, payload) {
 
   drawSignatureBlock(doc, [
     { label: 'Issued by:', value: payload.issuedBy, caption: 'Property Manager' },
-    { label: 'Received by:', value: payload.receivedBy, caption: 'Department Custodian' },
+    { label: 'Received by:', value: payload.receivedBy, caption: 'Custodian' },
     { label: 'Noted by:', value: payload.departmentHead, caption: 'Department Head' },
     { label: 'Noted by:', value: payload.propertyOfficer, caption: 'Head, Property Management Office' }
   ]);

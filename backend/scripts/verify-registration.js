@@ -50,7 +50,7 @@ assert(resolveRoleDbName('Staff') === 'staff', 'Staff -> staff');
 assert(resolveRoleDbName('employee') === 'staff', 'employee -> staff');
 
 console.log('\nPrivileged roles excluded from public registration:');
-const privilegedRoles = ['admin', 'Property Manager', 'Department Custodian', 'Laboratory Custodian'];
+const privilegedRoles = ['admin', 'Property Manager', 'Custodian'];
 privilegedRoles.forEach((role) => {
   assert(
     !authControllerSrc.includes(`'${role}'`) || authControllerSrc.indexOf('REGISTRATION_ROLES') === -1

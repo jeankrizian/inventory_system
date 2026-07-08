@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
+const { appendDateRangeSql } = require('../utils/reportFilters');
 
 const ReturnModel = {
   async getAll(filters = {}) {
@@ -14,6 +15,17 @@ const ReturnModel = {
     const scopeFilter = appendBorrowTransactionScopeSql(filters.scope, 'bt');
     sql += scopeFilter.clause;
     params.push(...scopeFilter.params);
+
+    if (filters.department_id) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM borrow_items bi
+        JOIN inventory_items ii ON bi.inventory_item_id = ii.id
+        WHERE bi.borrow_transaction_id = rt.borrow_transaction_id AND ii.department_id = ?
+      )`;
+      params.push(filters.department_id);
+    }
+
+    sql += appendDateRangeSql(filters, 'rt.return_date', params);
 
     sql += ' ORDER BY rt.created_at DESC';
     const [rows] = await pool.query(sql, params);

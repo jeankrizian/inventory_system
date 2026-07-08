@@ -13,11 +13,14 @@ async function initOrdersPage() {
 
   const showBorrowBtn = canSubmitBorrow(currentUser);
   const showReturnTab = canViewReturnHistory(currentUser);
+  const pageSubtitle = canViewAllBorrows(currentUser)
+    ? 'Manage borrow requests, approvals, and process returns'
+    : 'View and submit your borrow requests';
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <h1>Orders & Borrowing</h1>
-      <p>Manage borrow requests, approvals, and process returns</p>
+      <p>${pageSubtitle}</p>
     </div>
     <div class="content-card">
       <div class="content-card-header">
@@ -59,11 +62,14 @@ async function initOrdersPage() {
 
   if (showBorrowBtn) {
     const invRes = await API.getBorrowableItems();
-    inventoryItems = (invRes?.data || []).filter(i => i.available_quantity > 0 && canBorrowAsset(i.asset_classification));
+    inventoryItems = (invRes?.data || []).filter((i) => canBorrowAsset(i.asset_classification));
   }
 
   if (!showReturnTab && activeTab === 'returns') activeTab = 'borrow';
   await loadData();
+
+  const deepLinkId = params.get('id');
+  if (deepLinkId) viewBorrow(parseInt(deepLinkId, 10));
 }
 
 async function loadData() {
@@ -93,6 +99,13 @@ async function loadReturns() {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+function formatPurpose(value, maxLength = 60) {
+  const text = (value || '').trim();
+  if (!text) return '-';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
 function renderBorrows() {
   const el = document.getElementById('ordersContent');
   const canApprove = canApproveBorrow(currentUser);
@@ -106,7 +119,7 @@ function renderBorrows() {
   el.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Code</th><th>Borrower</th><th>Department</th><th>Borrow Date</th><th>Expected Return</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Code</th><th>Borrower</th><th>Department</th><th>Purpose</th><th>Borrow Date</th><th>Expected Return</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${borrows.map(b => `
@@ -114,6 +127,7 @@ function renderBorrows() {
             <td>${b.transaction_code}</td>
             <td>${b.borrower_name}</td>
             <td>${b.borrower_department || '-'}</td>
+            <td title="${(b.purpose || '').replace(/"/g, '&quot;')}">${formatPurpose(b.purpose)}</td>
             <td>${formatDate(b.borrow_date)}</td>
             <td>${formatDate(b.expected_return_date)}</td>
             <td>${getStatusBadge(b.status)}</td>
@@ -163,6 +177,9 @@ function renderReturns() {
 }
 
 function getBorrowItemLabel(item) {
+  if (item.is_borrowable === false) {
+    return `${item.item_name} (Unavailable)`;
+  }
   return `${item.item_name} (${item.available_quantity} avail.)`;
 }
 
@@ -198,13 +215,15 @@ function renderBorrowItemDropdown(dropdown, items, onSelect) {
     return;
   }
   dropdown.innerHTML = items.map(item => `
-    <div class="borrow-item-option" data-id="${item.id}">
-      ${item.item_name}<small>${item.available_quantity} available</small>
+    <div class="borrow-item-option ${item.is_borrowable === false ? 'borrow-item-unavailable' : ''}" data-id="${item.id}" data-borrowable="${item.is_borrowable !== false}">
+      ${item.item_name}
+      <small>${item.is_borrowable === false ? (item.unavailable_reason || 'Unavailable') : `${item.available_quantity} available`}</small>
     </div>
   `).join('');
   dropdown.querySelectorAll('.borrow-item-option:not(.borrow-item-empty)').forEach(opt => {
     opt.addEventListener('mousedown', (e) => {
       e.preventDefault();
+      if (opt.dataset.borrowable === 'false') return;
       const item = items.find(i => i.id == opt.dataset.id);
       if (item) onSelect(item);
     });
@@ -264,20 +283,33 @@ function addBorrowItemRow() {
 async function submitBorrow(e) {
   e.preventDefault();
   const items = [];
-  document.querySelectorAll('.borrow-item-row').forEach(row => {
+  for (const row of document.querySelectorAll('.borrow-item-row')) {
     const id = row.querySelector('.borrow-item-id').value;
-    const qty = parseInt(row.querySelector('.borrow-item-qty').value);
-    if (id) items.push({ inventory_item_id: parseInt(id), quantity: qty });
-  });
+    const qty = parseInt(row.querySelector('.borrow-item-qty').value, 10);
+    if (!id) continue;
+
+    const selected = inventoryItems.find((item) => String(item.id) === String(id));
+    if (selected && selected.is_borrowable === false) {
+      showToast(`${selected.item_name} is unavailable for borrowing`, 'error');
+      return;
+    }
+    items.push({ inventory_item_id: parseInt(id, 10), quantity: qty });
+  }
   if (!items.length) {
     showToast('Please select at least one item from the list', 'error');
+    return;
+  }
+
+  const purpose = document.getElementById('borrowPurpose').value.trim();
+  if (!purpose) {
+    showToast('Purpose is required', 'error');
     return;
   }
 
   try {
     await API.createBorrow({
       borrower_department: document.getElementById('borrowerDept').value,
-      purpose: document.getElementById('borrowPurpose').value,
+      purpose,
       borrow_date: document.getElementById('borrowDate').value,
       expected_return_date: document.getElementById('expectedReturn').value || null,
       items

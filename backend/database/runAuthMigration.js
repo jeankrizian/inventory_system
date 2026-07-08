@@ -2,8 +2,7 @@ const pool = require('../config/database');
 
 const registrationRoles = [
   ['Property Manager', 'Property management office access'],
-  ['Department Custodian', 'Department asset custodian access'],
-  ['Laboratory Custodian', 'Laboratory asset custodian access']
+  ['Custodian', 'Asset custodian access scoped by department or laboratory assignment']
 ];
 
 async function runAuthMigration() {

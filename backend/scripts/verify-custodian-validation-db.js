@@ -8,25 +8,28 @@ const LocationModel = require('../models/LocationModel');
 const UserModel = require('../models/UserModel');
 
 async function runValidation(roleName, assignments) {
-  const { normalizeRoleName, isDepartmentCustodian, isLaboratoryCustodian } = require('../utils/roleHelpers');
+  const { normalizeRoleName, isCustodian } = require('../utils/roleHelpers');
   const normalized = normalizeRoleName(roleName);
 
-  if (isDepartmentCustodian(normalized)) {
-    if (assignments.assigned_department_id == null) {
-      return 'Department Custodian requires an assigned department.';
-    }
+  if (!isCustodian(normalized)) {
+    return null;
+  }
+
+  const hasDepartment = assignments.assigned_department_id != null;
+  const hasLocation = assignments.assigned_location_id != null;
+
+  if (hasDepartment === hasLocation) {
+    return 'Custodian requires either an assigned department or an assigned laboratory, but not both.';
+  }
+
+  if (hasDepartment) {
     const dept = await CategoryModel.findById(assignments.assigned_department_id);
     if (!dept) return 'Selected department does not exist.';
+    return null;
   }
 
-  if (isLaboratoryCustodian(normalized)) {
-    if (assignments.assigned_location_id == null) {
-      return 'Laboratory Custodian requires an assigned laboratory.';
-    }
-    const loc = await LocationModel.findById(assignments.assigned_location_id);
-    if (!loc) return 'Selected laboratory does not exist.';
-  }
-
+  const loc = await LocationModel.findById(assignments.assigned_location_id);
+  if (!loc) return 'Selected laboratory does not exist.';
   return null;
 }
 
@@ -53,37 +56,37 @@ async function main() {
 
   console.log('\nCustodian assignment validation:');
   await check(
-    'dept custodian missing department',
-    await runValidation('Department Custodian', { assigned_department_id: null, assigned_location_id: null }),
-    'Department Custodian requires an assigned department.'
+    'custodian missing assignment',
+    await runValidation('Custodian', { assigned_department_id: null, assigned_location_id: null }),
+    'Custodian requires either an assigned department or an assigned laboratory, but not both.'
   );
   await check(
-    'dept custodian invalid department',
-    await runValidation('Department Custodian', { assigned_department_id: 999999, assigned_location_id: null }),
+    'custodian both assignments',
+    await runValidation('Custodian', { assigned_department_id: 1, assigned_location_id: 1 }),
+    'Custodian requires either an assigned department or an assigned laboratory, but not both.'
+  );
+  await check(
+    'custodian invalid department',
+    await runValidation('Custodian', { assigned_department_id: 999999, assigned_location_id: null }),
     'Selected department does not exist.'
   );
   if (validDeptId) {
     await check(
-      'dept custodian valid department',
-      await runValidation('Department Custodian', { assigned_department_id: validDeptId, assigned_location_id: null }),
+      'custodian valid department',
+      await runValidation('Custodian', { assigned_department_id: validDeptId, assigned_location_id: null }),
       null
     );
   }
 
   await check(
-    'lab custodian missing location',
-    await runValidation('Laboratory Custodian', { assigned_department_id: null, assigned_location_id: null }),
-    'Laboratory Custodian requires an assigned laboratory.'
-  );
-  await check(
-    'lab custodian invalid location',
-    await runValidation('Laboratory Custodian', { assigned_department_id: null, assigned_location_id: 999999 }),
+    'custodian invalid location',
+    await runValidation('Custodian', { assigned_department_id: null, assigned_location_id: 999999 }),
     'Selected laboratory does not exist.'
   );
   if (validLocId) {
     await check(
-      'lab custodian valid location',
-      await runValidation('Laboratory Custodian', { assigned_department_id: null, assigned_location_id: validLocId }),
+      'custodian valid location',
+      await runValidation('Custodian', { assigned_department_id: null, assigned_location_id: validLocId }),
       null
     );
   }

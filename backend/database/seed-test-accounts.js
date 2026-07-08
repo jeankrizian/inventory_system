@@ -11,8 +11,7 @@ const ROLES = [
   ['admin', 'Full system access'],
   ['staff', 'Limited access for inventory operations'],
   ['Property Manager', 'Property management office access'],
-  ['Department Custodian', 'Department asset custodian access'],
-  ['Laboratory Custodian', 'Laboratory asset custodian access']
+  ['Custodian', 'Asset custodian access scoped by department or laboratory assignment']
 ];
 
 /** Department: Information Technology Department (IT) from main seed */
@@ -46,8 +45,8 @@ const TEST_ACCOUNTS = [
     username: 'deptcust_test',
     password: 'dept123456',
     email: 'deptcust_test@caviteinstitute.edu',
-    full_name: 'Test Department Custodian',
-    roleName: 'Department Custodian',
+    full_name: 'Test Custodian (Department)',
+    roleName: 'Custodian',
     assigned_department_id: DEPT_ASSIGNMENT.id,
     assigned_location_id: null,
     assignedLabel: DEPT_ASSIGNMENT.label
@@ -56,8 +55,8 @@ const TEST_ACCOUNTS = [
     username: 'labcust_test',
     password: 'lab123456',
     email: 'labcust_test@caviteinstitute.edu',
-    full_name: 'Test Laboratory Custodian',
-    roleName: 'Laboratory Custodian',
+    full_name: 'Test Custodian (Laboratory)',
+    roleName: 'Custodian',
     assigned_department_id: null,
     assigned_location_id: LOCATION_ASSIGNMENT.id,
     assignedLabel: LOCATION_ASSIGNMENT.label
@@ -78,8 +77,7 @@ const ROLE_DISPLAY = {
   admin: 'Administrator',
   staff: 'Employee (Staff)',
   'Property Manager': 'Property Manager',
-  'Department Custodian': 'Department Custodian',
-  'Laboratory Custodian': 'Laboratory Custodian'
+  Custodian: 'Custodian'
 };
 
 async function ensureRoles(connection) {

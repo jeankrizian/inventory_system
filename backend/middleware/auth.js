@@ -105,7 +105,7 @@ const requireOperateDisposal = requireRole(
 
 const requireReportsAccess = requireRole(
   canAccessReports,
-  'Reports access requires Administrator or Property Manager role'
+  'Reports access requires Administrator, Property Manager, or Custodian role'
 );
 
 const requireArchiveAccess = requireRole(

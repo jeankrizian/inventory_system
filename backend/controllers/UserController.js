@@ -4,10 +4,10 @@ const CategoryModel = require('../models/CategoryModel');
 const LocationModel = require('../models/LocationModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyAdministrators } = require('../utils/notificationService');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
 const {
-  isDepartmentCustodian,
-  isLaboratoryCustodian,
+  isCustodian,
   normalizeRoleName
 } = require('../utils/roleHelpers');
 
@@ -24,9 +24,8 @@ function resolveRoleAssignments(roleName, body) {
     assigned_location_id: null
   };
 
-  if (isDepartmentCustodian(normalized)) {
+  if (isCustodian(normalized)) {
     updates.assigned_department_id = parseAssignmentId(body.assigned_department_id);
-  } else if (isLaboratoryCustodian(normalized)) {
     updates.assigned_location_id = parseAssignmentId(body.assigned_location_id);
   }
 
@@ -57,24 +56,25 @@ function computeEffectiveAssignments(user, role, body) {
 async function validateCustodianAssignments(roleName, assignments) {
   const normalized = normalizeRoleName(roleName);
 
-  if (isDepartmentCustodian(normalized)) {
-    if (assignments.assigned_department_id == null) {
-      return 'Department Custodian requires an assigned department.';
-    }
-    const dept = await CategoryModel.findById(assignments.assigned_department_id);
-    if (!dept) {
-      return 'Selected department does not exist.';
-    }
+  if (!isCustodian(normalized)) {
+    return null;
   }
 
-  if (isLaboratoryCustodian(normalized)) {
-    if (assignments.assigned_location_id == null) {
-      return 'Laboratory Custodian requires an assigned laboratory.';
+  const hasDepartment = assignments.assigned_department_id != null;
+  const hasLocation = assignments.assigned_location_id != null;
+
+  if (isCustodian(normalized)) {
+    if (hasDepartment === hasLocation) {
+      return 'Custodian requires either an assigned department or an assigned laboratory, but not both.';
+    }
+    if (hasDepartment) {
+      const dept = await CategoryModel.findById(assignments.assigned_department_id);
+      if (!dept) return 'Selected department does not exist.';
+      return null;
     }
     const loc = await LocationModel.findById(assignments.assigned_location_id);
-    if (!loc) {
-      return 'Selected laboratory does not exist.';
-    }
+    if (!loc) return 'Selected laboratory does not exist.';
+    return null;
   }
 
   return null;
@@ -84,7 +84,12 @@ const UserController = {
   async getRoles(req, res) {
     try {
       const roles = await UserModel.getAllRoles();
-      sendSuccess(res, roles);
+      const legacyCustodianRoles = new Set(['Department Custodian', 'Laboratory Custodian']);
+      const hasUnifiedCustodian = roles.some((role) => role.name === 'Custodian');
+      const filteredRoles = hasUnifiedCustodian
+        ? roles.filter((role) => !legacyCustodianRoles.has(role.name))
+        : roles;
+      sendSuccess(res, filteredRoles);
     } catch (err) {
       sendError(res, err.message, 500);
     }
@@ -172,6 +177,13 @@ const UserController = {
 
       await logActivity(req.session.user.id, 'CREATE', 'User', `Added user ${normalizedUsername}`, req.ip);
       const user = await UserModel.findById(id);
+      await notifyAdministrators({
+        title: 'User Created',
+        message: `User account ${user.full_name} (${user.username}) was created.`,
+        type: 'user_created',
+        reference_id: id,
+        link_url: '/pages/manage-users.html'
+      });
       sendSuccess(res, user, 'User created successfully', 201);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -255,6 +267,13 @@ const UserController = {
       if (!archived) return sendError(res, 'User could not be archived', 400);
 
       await logActivity(req.session.user.id, 'ARCHIVE', 'User', `Archived user ${user.username}`, req.ip);
+      await notifyAdministrators({
+        title: 'User Archived',
+        message: `User account ${user.full_name} (${user.username}) was archived.`,
+        type: 'user_archived',
+        reference_id: user.id,
+        link_url: '/pages/archive.html'
+      });
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
     } catch (err) {
       sendError(res, err.message, 500);

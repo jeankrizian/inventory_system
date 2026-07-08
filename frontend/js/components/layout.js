@@ -30,7 +30,7 @@ const NAV_ITEMS = [
       { href: '/pages/suppliers.html', icon: 'bi-truck', label: 'Suppliers', page: 'suppliers', roles: ['administrator'] }
     ]
   },
-  { href: '/pages/reports.html', icon: 'bi-bar-chart-line', label: 'Reports', page: 'reports', roles: ['administrator', 'property_manager'] },
+  { href: '/pages/reports.html', icon: 'bi-bar-chart-line', label: 'Reports', page: 'reports', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/archive.html', icon: 'bi-archive', label: 'Archive', page: 'archive', roles: ['administrator', 'property_manager'] }
 ];
 
@@ -42,7 +42,7 @@ const FOOTER_NAV = [
 const PAGE_PERMISSIONS = {
   dashboard: ['administrator', 'property_manager', 'custodian', 'employee'],
   inventory: ['administrator', 'property_manager', 'custodian'],
-  reports: ['administrator', 'property_manager'],
+  reports: ['administrator', 'property_manager', 'custodian'],
   suppliers: ['administrator', 'property_manager'],
   orders: ['administrator', 'property_manager', 'custodian', 'employee'],
   'maintenance-requests': ['administrator', 'property_manager', 'custodian'],
@@ -318,6 +318,7 @@ async function initLayout(activePage) {
     return null;
   }
 
+  initPwa();
   showPendingAccessDeniedToast();
 
   const appEl = document.getElementById('app');
@@ -433,5 +434,42 @@ function initLayoutEvents() {
     }, 400);
     searchInput.addEventListener('input', searchHandler);
     searchInput.addEventListener('click', (e) => e.stopPropagation());
+  }
+}
+
+function initPwa() {
+  if (window.__ciPwaInit) return;
+  window.__ciPwaInit = true;
+
+  if (!document.querySelector('link[rel="manifest"]')) {
+    const manifest = document.createElement('link');
+    manifest.rel = 'manifest';
+    manifest.href = '/manifest.webmanifest';
+    document.head.appendChild(manifest);
+  }
+
+  if (!document.querySelector('meta[name="theme-color"]')) {
+    const theme = document.createElement('meta');
+    theme.name = 'theme-color';
+    theme.content = '#800000';
+    document.head.appendChild(theme);
+  }
+
+  if (!document.querySelector('meta[name="mobile-web-app-capable"]')) {
+    const mobile = document.createElement('meta');
+    mobile.name = 'mobile-web-app-capable';
+    mobile.content = 'yes';
+    document.head.appendChild(mobile);
+  }
+
+  if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+    const apple = document.createElement('meta');
+    apple.name = 'apple-mobile-web-app-capable';
+    apple.content = 'yes';
+    document.head.appendChild(apple);
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 }

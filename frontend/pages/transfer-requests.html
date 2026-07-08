@@ -14,6 +14,38 @@
 <body>
   <div class="app-wrapper" id="app"></div>
 
+  <div class="modal-overlay" id="submitModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Transfer Request</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('submitModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="submitForm">
+        <div class="modal-body-custom">
+          <div class="form-group"><label>Asset *</label>
+            <select class="form-control-custom" id="submitAssetId" required>
+              <option value="">Select asset...</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="submitPropertyTag" readonly></div>
+            <div class="form-group"><label>Current Department</label><input type="text" class="form-control-custom" id="submitDepartment" readonly></div>
+          </div>
+          <div class="form-group"><label>Current Location</label><input type="text" class="form-control-custom" id="submitLocation" readonly></div>
+          <div class="form-row">
+            <div class="form-group"><label>Destination Department *</label><select class="form-control-custom" id="submitToDepartment" required></select></div>
+            <div class="form-group"><label>Destination Location *</label><select class="form-control-custom" id="submitToLocation" required></select></div>
+          </div>
+          <div class="form-group"><label>Reason for Transfer *</label><textarea class="form-control-custom" id="submitReason" rows="3" required></textarea></div>
+        </div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('submitModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="actionModal">
     <div class="modal-content-custom" style="max-width:560px;">
       <div class="modal-header-custom">
@@ -34,6 +66,7 @@
   <script src="/js/auth.js"></script>
   <script src="/js/components/layout.js"></script>
   <script src="/js/notifications.js"></script>
+  <script src="/js/assetClassification.js"></script>
   <script src="/js/pages/transfer-requests.js"></script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
+const { appendDateRangeSql } = require('../utils/reportFilters');
 
 const BorrowModel = {
   async getAll(filters = {}) {
@@ -20,10 +21,21 @@ const BorrowModel = {
       params.push(filters.status);
     }
     if (filters.search) {
-      sql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ?)';
+      sql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ? OR bt.purpose LIKE ?)';
       const term = `%${filters.search}%`;
-      params.push(term, term);
+      params.push(term, term, term);
     }
+
+    if (filters.department_id) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM borrow_items bi
+        JOIN inventory_items ii ON bi.inventory_item_id = ii.id
+        WHERE bi.borrow_transaction_id = bt.id AND ii.department_id = ?
+      )`;
+      params.push(filters.department_id);
+    }
+
+    sql += appendDateRangeSql(filters, 'bt.borrow_date', params);
 
     const scopeFilter = appendBorrowTransactionScopeSql(filters.scope, 'bt');
     sql += scopeFilter.clause;
@@ -168,6 +180,24 @@ const BorrowModel = {
       return 0;
     }
     let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt WHERE bt.status = 'Pending'`;
+    const params = [];
+    if (scope?.type === 'own' && scope.userId) {
+      sql += ' AND bt.borrower_id = ?';
+      params.push(scope.userId);
+    } else if (scope && scope.type !== 'all') {
+      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
+      sql += scopeFilter.clause;
+      params.push(...scopeFilter.params);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async countTotal(scope) {
+    if (scope?.type === 'none') {
+      return 0;
+    }
+    let sql = `SELECT COUNT(*) AS count FROM borrow_transactions bt WHERE 1=1`;
     const params = [];
     if (scope?.type === 'own' && scope.userId) {
       sql += ' AND bt.borrower_id = ?';

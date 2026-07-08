@@ -22,8 +22,9 @@ async function assignSampleCustodians() {
   const [deptCustodians] = await pool.query(
     `SELECT u.id FROM users u
      JOIN roles r ON u.role_id = r.id
-     WHERE r.name = 'Department Custodian'
+     WHERE r.name = 'Custodian'
        AND u.assigned_department_id IS NULL
+       AND u.assigned_location_id IS NULL
      LIMIT 1`
   );
   if (deptCustodians.length) {
@@ -36,8 +37,9 @@ async function assignSampleCustodians() {
   const [labCustodians] = await pool.query(
     `SELECT u.id FROM users u
      JOIN roles r ON u.role_id = r.id
-     WHERE r.name = 'Laboratory Custodian'
+     WHERE r.name = 'Custodian'
        AND u.assigned_location_id IS NULL
+       AND u.assigned_department_id IS NULL
      LIMIT 1`
   );
   if (labCustodians.length) {

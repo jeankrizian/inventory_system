@@ -22,14 +22,14 @@ function chunkPairs(items) {
 
 function buildStatsRows(user) {
   const statModules = [
-    { key: 'personalBorrowStats', id: 'personalBorrowStats', title: 'My Borrow Summary', cols: 4 },
-    { key: 'pendingApprovals', id: 'pendingApprovalsStats', title: 'Pending Approvals', cols: 4 },
-    { key: 'inventoryStats', id: 'inventoryStats', title: 'Inventory Summary', cols: 4 },
-    { key: 'usersStats', id: 'usersStats', title: 'Users Summary', cols: 2 },
-    { key: 'transferStats', id: 'transferStats', title: 'Transfer Summary', cols: 2 },
-    { key: 'maintenanceStats', id: 'maintenanceStats', title: 'Maintenance Summary', cols: 2 },
-    { key: 'disposalStats', id: 'disposalStats', title: 'Disposal Summary', cols: 2 },
-    { key: 'assetsNeedingAttention', id: 'attentionStats', title: 'Assets Needing Attention', cols: 2 }
+    { key: 'personalBorrowStats', id: 'personalBorrowStats', title: getDashboardStatTitle(user, 'personalBorrowStats'), cols: 4 },
+    { key: 'pendingApprovals', id: 'pendingApprovalsStats', title: getDashboardStatTitle(user, 'pendingApprovals'), cols: 4 },
+    { key: 'inventoryStats', id: 'inventoryStats', title: getDashboardStatTitle(user, 'inventoryStats'), cols: 4 },
+    { key: 'usersStats', id: 'usersStats', title: getDashboardStatTitle(user, 'usersStats'), cols: 2 },
+    { key: 'transferStats', id: 'transferStats', title: getDashboardStatTitle(user, 'transferStats'), cols: 2 },
+    { key: 'maintenanceStats', id: 'maintenanceStats', title: getDashboardStatTitle(user, 'maintenanceStats'), cols: 2 },
+    { key: 'disposalStats', id: 'disposalStats', title: getDashboardStatTitle(user, 'disposalStats'), cols: 2 },
+    { key: 'assetsNeedingAttention', id: 'attentionStats', title: getDashboardStatTitle(user, 'assetsNeedingAttention'), cols: 2 }
   ];
 
   const statCards = statModules
@@ -69,10 +69,11 @@ function buildDashboardHtml(user) {
   const tableCards = [];
 
   if (canViewDashboardModule(user, 'recentInventory')) {
+    const inventoryTitle = isCustodian(user) ? 'Recent Assigned Assets' : 'Recent Inventory';
     tableCards.push(`
       <div class="table-card">
         <div class="table-card-header">
-          <h3>Recent Inventory</h3>
+          <h3>${inventoryTitle}</h3>
           <a href="/pages/inventory.html" class="see-all-link">See All</a>
         </div>
         <div class="table-responsive" id="recentInventoryTable">
@@ -133,7 +134,7 @@ function buildDashboardHtml(user) {
   const activitiesHtml = canViewDashboardModule(user, 'activities') ? `
     <div class="table-card">
       <div class="table-card-header">
-        <h3>${isEmployee(user) ? 'My Recent Activity' : 'Recent Activities'}</h3>
+        <h3>${isCustodian(user) ? 'Recent Assigned Asset Activity' : isEmployee(user) ? 'My Recent Activity' : 'Recent Activities'}</h3>
       </div>
       <ul class="activity-list" id="activityList">
         <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>
@@ -141,6 +142,10 @@ function buildDashboardHtml(user) {
     </div>` : '';
 
   return `
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p>${getDashboardSubtitle(user)}</p>
+    </div>
     <div class="dashboard-grid">
       ${statsRows}
       ${chartsHtml}
@@ -190,8 +195,9 @@ async function loadDashboardData(user) {
 
     if (show('personalBorrowStats') && document.getElementById('personalBorrowStats')) {
       document.getElementById('personalBorrowStats').innerHTML = `
+        ${renderStatItem('bi-journal-text', 'blue', stats.total_borrow_requests, 'Total Borrow Requests')}
         ${renderStatItem('bi-box-arrow-in-right', 'blue', stats.current_borrowed, 'Currently Borrowed')}
-        ${renderStatItem('bi-hourglass-split', 'orange', stats.pending_borrows, 'Pending Requests')}
+        ${renderStatItem('bi-hourglass-split', 'orange', stats.pending_borrows, 'Pending')}
         ${renderStatItem('bi-check-circle', 'green', stats.approved_borrows, 'Approved')}
         ${renderStatItem('bi-arrow-return-left', 'purple', stats.returned_items, 'Returned')}
         ${renderStatItem('bi-alarm', 'teal', stats.due_soon_borrows, 'Due Soon')}
@@ -209,9 +215,16 @@ async function loadDashboardData(user) {
     }
 
     if (show('inventoryStats') && document.getElementById('inventoryStats')) {
-      document.getElementById('inventoryStats').innerHTML = `
-        ${renderStatItem('bi-box-seam', 'blue', stats.total_items, 'Total Assets')}
-        ${renderStatItem('bi-arrow-left-right', 'purple', stats.borrowed_items, 'Borrowed')}
+      const assignedLabel = isCustodian(user) ? 'Assigned Assets' : 'Total Assets';
+      const borrowedLabel = isCustodian(user) ? 'Borrowed Assets' : 'Borrowed';
+      document.getElementById('inventoryStats').innerHTML = isCustodian(user) ? `
+        ${renderStatItem('bi-box-seam', 'blue', stats.total_items, assignedLabel)}
+        ${renderStatItem('bi-arrow-left-right', 'purple', stats.borrowed_items, borrowedLabel)}
+        ${renderStatItem('bi-exclamation-triangle', 'red', stats.low_stock, 'Low Stock')}
+        ${renderStatItem('bi-wrench-adjustable', 'orange', stats.under_maintenance, 'Under Maintenance')}
+      ` : `
+        ${renderStatItem('bi-box-seam', 'blue', stats.total_items, assignedLabel)}
+        ${renderStatItem('bi-arrow-left-right', 'purple', stats.borrowed_items, borrowedLabel)}
         ${renderStatItem('bi-arrow-return-left', 'green', stats.returned_items, 'Returned')}
         ${renderStatItem('bi-exclamation-triangle', 'red', stats.low_stock, 'Low Stock')}
       `;
@@ -225,8 +238,9 @@ async function loadDashboardData(user) {
     }
 
     if (show('transferStats') && document.getElementById('transferStats')) {
+      const pendingLabel = isCustodian(user) ? 'Pending Transfers' : 'Pending Transfers';
       document.getElementById('transferStats').innerHTML = `
-        ${renderStatItem('bi-truck', 'orange', stats.pending_transfers ?? 0, 'Pending Transfers')}
+        ${renderStatItem('bi-truck', 'orange', stats.pending_transfers ?? 0, pendingLabel)}
         ${renderStatItem('bi-check-circle', 'green', stats.approved_transfers ?? 0, 'Approved Transfers')}
       `;
     }
@@ -240,7 +254,7 @@ async function loadDashboardData(user) {
 
     if (show('disposalStats') && document.getElementById('disposalStats')) {
       document.getElementById('disposalStats').innerHTML = `
-        ${renderStatItem('bi-trash3', 'red', stats.pending_disposals ?? 0, 'Pending Disposals')}
+        ${renderStatItem('bi-trash3', 'red', stats.pending_disposals ?? 0, 'Pending Disposal')}
         ${renderStatItem('bi-archive', 'orange', stats.disposed ?? 0, 'Disposed Assets')}
       `;
     }

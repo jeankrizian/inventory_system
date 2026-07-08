@@ -2,7 +2,8 @@ const MaintenanceModel = require('../models/MaintenanceModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { maintenanceLink } = require('../utils/notificationLinks');
 const { canMaintain } = require('../utils/assetClassification');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 
@@ -84,10 +85,18 @@ const MaintenanceController = {
       await logActivity(req.session.user.id, 'CREATE', 'Maintenance', `Maintenance request ${result.transaction_code}`, req.ip);
       await notifyPropertyManagers({
         title: 'New Maintenance Request',
-        message: `New maintenance request ${result.transaction_code} for ${item.item_name}.`,
+        message: `New maintenance request ${result.transaction_code} submitted for ${item.item_name}.`,
         type: 'maintenance_request',
         reference_id: result.id,
-        link_url: '/pages/maintenance-requests.html'
+        link_url: maintenanceLink(result.id)
+      });
+      await notifyCustodiansForItem(item, {
+        title: 'Maintenance Request',
+        message: `Maintenance request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
+        type: 'maintenance_request',
+        reference_id: result.id,
+        link_url: maintenanceLink(result.id),
+        skipDuplicate: true
       });
 
       sendSuccess(res, result, 'Maintenance request submitted', 201);
@@ -116,7 +125,7 @@ const MaintenanceController = {
         message: `Your maintenance request ${record.transaction_code} has been approved.`,
         type: 'maintenance_approved',
         reference_id: record.id,
-        link_url: '/pages/maintenance-requests.html'
+        link_url: maintenanceLink(record.id)
       });
 
       sendSuccess(res, null, 'Maintenance request approved');
@@ -136,7 +145,7 @@ const MaintenanceController = {
         message: `Your maintenance request ${record.transaction_code} has been rejected.${req.body.rejection_reason ? ` Reason: ${req.body.rejection_reason}` : ''}`,
         type: 'maintenance_rejected',
         reference_id: record.id,
-        link_url: '/pages/maintenance-requests.html'
+        link_url: maintenanceLink(record.id)
       });
 
       sendSuccess(res, null, 'Maintenance request rejected');
@@ -168,6 +177,15 @@ const MaintenanceController = {
 
       await MaintenanceModel.start(req.params.id, req.body);
       await logActivity(req.session.user.id, 'UPDATE', 'Maintenance', `Started ${record.transaction_code}`, req.ip);
+      if (record.requested_by) {
+        await notifyUser(record.requested_by, {
+          title: 'Maintenance Started',
+          message: `Maintenance ${record.transaction_code} for ${record.item_name} has started.`,
+          type: 'maintenance_started',
+          reference_id: record.id,
+          link_url: maintenanceLink(record.id)
+        });
+      }
       sendSuccess(res, null, 'Maintenance marked as ongoing');
     } catch (err) { sendError(res, err.message, 500); }
   },
@@ -203,7 +221,7 @@ const MaintenanceController = {
           message: `Maintenance ${record.transaction_code} for ${record.item_name} has been completed.`,
           type: 'maintenance_completed',
           reference_id: record.id,
-          link_url: '/pages/maintenance-requests.html'
+          link_url: maintenanceLink(record.id)
         });
       }
 

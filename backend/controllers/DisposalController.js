@@ -2,7 +2,8 @@ const DisposalModel = require('../models/DisposalModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { disposalLink } = require('../utils/notificationLinks');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
 
@@ -63,7 +64,15 @@ const DisposalController = {
         message: `New disposal request ${result.transaction_code} for ${item.item_name}.`,
         type: 'disposal_request',
         reference_id: result.id,
-        link_url: '/pages/disposal-requests.html'
+        link_url: disposalLink(result.id)
+      });
+      await notifyCustodiansForItem(item, {
+        title: 'Disposal Request',
+        message: `Disposal request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
+        type: 'disposal_request',
+        reference_id: result.id,
+        link_url: disposalLink(result.id),
+        skipDuplicate: true
       });
 
       let generatedDocument = null;
@@ -119,7 +128,14 @@ const DisposalController = {
         message: `Your disposal request ${disposal.transaction_code} has been approved.`,
         type: 'disposal_approved',
         reference_id: disposal.id,
-        link_url: '/pages/disposal-requests.html'
+        link_url: disposalLink(disposal.id)
+      });
+      await notifyUser(disposal.requested_by, {
+        title: 'Disposal Finalized',
+        message: `Your disposal request ${disposal.transaction_code} has been finalized.`,
+        type: 'disposal_finalized',
+        reference_id: disposal.id,
+        link_url: disposalLink(disposal.id)
       });
 
       sendSuccess(res, { generated_document: generatedDocument }, 'Disposal approved and inventory updated');
@@ -144,7 +160,7 @@ const DisposalController = {
         message: `Your disposal request ${disposal.transaction_code} has been rejected.`,
         type: 'disposal_rejected',
         reference_id: disposal.id,
-        link_url: '/pages/disposal-requests.html'
+        link_url: disposalLink(disposal.id)
       });
 
       sendSuccess(res, null, 'Disposal rejected');

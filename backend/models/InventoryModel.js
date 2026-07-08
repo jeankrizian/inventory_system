@@ -1,6 +1,9 @@
 const pool = require('../config/database');
 const { computeItemStatus } = require('../utils/helpers');
 const { appendInventoryScopeSql, isInventoryScopeDenied } = require('../utils/roleHelpers');
+const { generateNextItemCode } = require('../utils/itemCodeGenerator');
+const { isItemAvailableForBorrow, getItemUnavailableReason } = require('../utils/itemAvailability');
+const { appendDateRangeSql } = require('../utils/reportFilters');
 
 const EMPTY_INVENTORY_STATS = {
   total_items: 0,
@@ -124,6 +127,8 @@ const InventoryModel = {
 
     }
 
+    sql += appendDateRangeSql(filters, 'COALESCE(i.acquisition_date, DATE(i.created_at))', params);
+
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
     if (scopeFilter.denied) {
       return [];
@@ -189,6 +194,10 @@ const InventoryModel = {
 
   },
 
+  async getNextItemCode(departmentId) {
+    return generateNextItemCode(departmentId);
+  },
+
 
 
   async create(data) {
@@ -199,7 +208,7 @@ const InventoryModel = {
 
       `INSERT INTO inventory_items 
 
-       (item_code, item_name, department_id, asset_classification, property_tag, custodian_id, custodian_type,
+       (item_code, item_name, description, department_id, asset_classification, material, property_tag, custodian_id, custodian_type,
 
         parent_asset_id, brand, model, quantity, available_quantity, unit,
 
@@ -209,13 +218,19 @@ const InventoryModel = {
 
         maintenance_schedule, next_maintenance_date, maintenance_status, service_provider)
 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
       [
 
-        data.item_code, data.item_name, data.department_id,
+        data.item_code, data.item_name,
+
+        data.description || null,
+
+        data.department_id,
 
         data.asset_classification || 'Consumable',
+
+        data.material || null,
 
         data.property_tag || null,
 
@@ -293,7 +308,7 @@ const InventoryModel = {
 
       `UPDATE inventory_items SET
 
-        item_code = ?, item_name = ?, department_id = ?, asset_classification = ?,
+        item_code = ?, item_name = ?, description = ?, department_id = ?, asset_classification = ?, material = ?,
 
         property_tag = ?, custodian_id = ?, custodian_type = ?, parent_asset_id = ?,
 
@@ -315,9 +330,13 @@ const InventoryModel = {
 
         data.item_name ?? existing.item_name,
 
+        data.description !== undefined ? (data.description || null) : existing.description,
+
         data.department_id ?? existing.department_id,
 
         data.asset_classification ?? existing.asset_classification,
+
+        data.material !== undefined ? (data.material || null) : existing.material,
 
         data.property_tag !== undefined ? data.property_tag : existing.property_tag,
 
@@ -544,20 +563,29 @@ const InventoryModel = {
 
 
 
-  borrowableItemsBaseSql() {
+  borrowCatalogBaseSql() {
     return `FROM inventory_items i
        LEFT JOIN departments d ON i.department_id = d.id
        LEFT JOIN locations l ON i.location_id = l.id
        WHERE i.is_archived = 0
          AND i.status != 'Disposed'
-         AND i.available_quantity > 0
          AND i.asset_classification IN ('Non-Consumable (Fixed Asset)', 'Fixed Asset')`;
   },
 
+  enrichBorrowCatalogItem(row) {
+    const item = mapItem(row);
+    const borrowable = isItemAvailableForBorrow(item);
+    return {
+      ...item,
+      is_borrowable: borrowable,
+      unavailable_reason: borrowable ? null : getItemUnavailableReason(item)
+    };
+  },
+
   async getBorrowableItems(search = '') {
-    let sql = `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.asset_classification,
+    let sql = `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.status, i.asset_classification,
               d.name AS department_name, l.name AS location_name
-       ${this.borrowableItemsBaseSql()}`;
+       ${this.borrowCatalogBaseSql()}`;
 
     const params = [];
 
@@ -566,23 +594,28 @@ const InventoryModel = {
       params.push(`%${search.trim()}%`);
     }
 
-    sql += ' ORDER BY i.item_name ASC';
+    sql += ` ORDER BY CASE
+      WHEN i.available_quantity > 0
+        AND i.status NOT IN ('Unavailable', 'Out of Stock', 'Under Maintenance', 'Disposed') THEN 0
+      ELSE 1
+    END ASC, i.item_name ASC`;
 
     const [rows] = await pool.query(sql, params);
 
-    return rows.map(mapItem);
+    return rows.map((row) => this.enrichBorrowCatalogItem(row));
   },
 
   async findBorrowableById(id) {
     const [rows] = await pool.query(
-      `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.asset_classification,
+      `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.status, i.asset_classification,
               d.name AS department_name, l.name AS location_name
-       ${this.borrowableItemsBaseSql()}
+       ${this.borrowCatalogBaseSql()}
          AND i.id = ?`,
       [id]
     );
 
-    return mapItem(rows[0]);
+    const item = rows[0] ? this.enrichBorrowCatalogItem(rows[0]) : null;
+    return item?.is_borrowable ? item : null;
   }
 
 };

@@ -3,9 +3,10 @@ const InventoryModel = require('../models/InventoryModel');
 const DepartmentModel = require('../models/DepartmentModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { transferLink } = require('../utils/notificationLinks');
 const { canTransfer, isSemiDurable } = require('../utils/assetClassification');
-const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
+const { getAccessScope, itemMatchesScope, transferMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
 
 const TransferController = {
@@ -29,7 +30,8 @@ const TransferController = {
 
       const item = await InventoryModel.findById(transfer.inventory_item_id);
       const scope = getAccessScope(req.session.user);
-      if (item && !itemMatchesScope(item, scope)) {
+      const inScope = (item && itemMatchesScope(item, scope)) || transferMatchesScope(transfer, scope);
+      if (!inScope) {
         return sendError(res, 'Access denied', 403);
       }
 
@@ -80,7 +82,15 @@ const TransferController = {
         message: `New transfer request ${result.transaction_code} for ${item.item_name}.`,
         type: 'transfer_request',
         reference_id: result.id,
-        link_url: '/pages/transfer-requests.html'
+        link_url: transferLink(result.id)
+      });
+      await notifyCustodiansForItem(item, {
+        title: 'Transfer Request',
+        message: `Transfer request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
+        type: 'transfer_request',
+        reference_id: result.id,
+        link_url: transferLink(result.id),
+        skipDuplicate: true
       });
 
       sendSuccess(res, result, 'Transfer request created', 201);
@@ -127,10 +137,17 @@ const TransferController = {
       await logActivity(req.session.user.id, 'APPROVE', 'Transfer', `Approved ${transfer.transaction_code}`, req.ip);
       await notifyUser(transfer.requested_by, {
         title: 'Transfer Approved',
-        message: `Your transfer request ${transfer.transaction_code} has been approved. The asset has been moved to its new location.`,
+        message: `Your transfer request ${transfer.transaction_code} has been approved.`,
         type: 'transfer_approved',
         reference_id: transfer.id,
-        link_url: '/pages/transfer-requests.html'
+        link_url: transferLink(transfer.id)
+      });
+      await notifyUser(transfer.requested_by, {
+        title: 'Transfer Completed',
+        message: `Your transfer request ${transfer.transaction_code} has been completed.`,
+        type: 'transfer_completed',
+        reference_id: transfer.id,
+        link_url: transferLink(transfer.id)
       });
 
       let generatedDocument = null;
@@ -162,7 +179,7 @@ const TransferController = {
         message: `Your transfer request ${transfer.transaction_code} has been rejected.${reason ? ` Reason: ${reason}` : ''}`,
         type: 'transfer_rejected',
         reference_id: transfer.id,
-        link_url: '/pages/transfer-requests.html'
+        link_url: transferLink(transfer.id)
       });
 
       sendSuccess(res, null, 'Transfer rejected');

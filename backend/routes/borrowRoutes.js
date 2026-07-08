@@ -20,6 +20,7 @@ router.get('/:id', BorrowController.getById);
 router.post('/', [
   requireSubmitBorrow,
   body('borrow_date').notEmpty(),
+  body('purpose').trim().notEmpty().withMessage('Purpose is required'),
   body('items').isArray({ min: 1 }),
   validate
 ], BorrowController.create);

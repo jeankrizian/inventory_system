@@ -205,17 +205,21 @@ function bindInventoryActionsListeners() {
 function renderInventoryActionsCell(item, classification, permissions) {
   const id = item.id;
   const isDisposed = item.status === 'Disposed';
-  const showBorrow = permissions.canSubmitBorrow && !isDisposed && showBorrowInInventoryMenu(classification);
+  const canBorrowType = showBorrowInInventoryMenu(classification);
+  const itemBorrowable = isItemAvailableForBorrow(item);
+  const showBorrow = permissions.canSubmitBorrow && canBorrowType && itemBorrowable;
+  const showBorrowUnavailable = permissions.canSubmitBorrow && canBorrowType && !itemBorrowable && !isDisposed;
   const showTransfer = permissions.canSubmitTransfer && !isDisposed && canTransferAsset(classification);
   const showMaintain = permissions.canSubmitMaintenance && !isDisposed && canMaintainAsset(classification);
   const showReplace = permissions.canManageInventory && !isDisposed && canReplaceComponent(classification);
   const showDispose = permissions.canSubmitDisposal && !isDisposed;
   const documentOptions = getInventoryDocumentOptions(item, classification);
-  const hasOverflowItems = showBorrow || showTransfer || showMaintain || showReplace || showDispose ||
+  const hasOverflowItems = showBorrow || showBorrowUnavailable || showTransfer || showMaintain || showReplace || showDispose ||
     documentOptions.length || permissions.canArchiveInventory;
 
   const overflowItems = [
     showBorrow ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openBorrowForItem(${id}))"><i class="bi bi-box-arrow-right"></i> Borrow</button>` : '',
+    showBorrowUnavailable ? `<button type="button" role="menuitem" disabled><i class="bi bi-box-arrow-right"></i> Borrow (Unavailable)</button>` : '',
     showTransfer ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openTransferModal(${id}))"><i class="bi bi-arrow-left-right"></i> Transfer</button>` : '',
     showMaintain ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openMaintenanceModal(${id}))"><i class="bi bi-tools"></i> Maintenance</button>` : '',
     showReplace ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openComponentModal(${id}))"><i class="bi bi-cpu"></i> Components</button>` : '',
@@ -326,6 +330,7 @@ async function initInventoryPage() {
   `;
 
   await loadDropdowns();
+  initItemFormSearchableSelects();
   await loadItems();
   bindInventoryActionsListeners();
 
@@ -337,6 +342,7 @@ async function initInventoryPage() {
   document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
   document.getElementById('itemQuantity').addEventListener('input', updateAcquisitionCost);
   document.getElementById('itemUnitCost').addEventListener('input', updateAcquisitionCost);
+  document.getElementById('itemCategory').addEventListener('change', updateItemCodePreview);
   document.getElementById('itemForm').addEventListener('submit', saveItem);
   document.getElementById('transferForm')?.addEventListener('submit', submitTransfer);
   document.getElementById('disposalForm')?.addEventListener('submit', submitDisposal);
@@ -371,6 +377,7 @@ async function loadDropdowns() {
   populateSelect(document.getElementById('itemLocation'), locations);
   populateSelect(document.getElementById('transferLocation'), locations);
   populateSelect(document.getElementById('transferDepartment'), categories);
+  syncItemFormSearchableSelects();
 }
 
 async function loadItems() {
@@ -444,6 +451,17 @@ function updateAcquisitionCost() {
   acquisitionEl.value = (qty * unitCost).toFixed(2);
 }
 
+function syncClassificationOptions(currentValue = '') {
+  const select = document.getElementById('itemClassification');
+  if (!select) return;
+
+  const normalized = currentValue ? normalizeAssetClassification(currentValue) : '';
+  const options = getSelectableClassifications(normalized);
+  select.innerHTML = '<option value="">Select classification</option>'
+    + options.map((option) => `<option value="${option}">${option}</option>`).join('');
+  if (normalized) select.value = normalized;
+}
+
 function applyClassificationFormState() {
   const classification = normalizeAssetClassification(document.getElementById('itemClassification').value);
   const isFixed = isFixedAssetClassification(classification);
@@ -475,14 +493,52 @@ function applyClassificationFormState() {
   }
 }
 
+function setItemCodeFieldState(isEdit) {
+  const itemCodeInput = document.getElementById('itemCode');
+  if (!itemCodeInput) return;
+
+  itemCodeInput.readOnly = true;
+  if (!isEdit) {
+    itemCodeInput.value = '';
+    itemCodeInput.placeholder = 'Auto-generated from category';
+  }
+}
+
+async function updateItemCodePreview() {
+  const itemId = document.getElementById('itemId').value;
+  if (itemId) return;
+
+  const departmentId = document.getElementById('itemCategory').value;
+  const itemCodeInput = document.getElementById('itemCode');
+  if (!itemCodeInput) return;
+
+  if (!departmentId) {
+    itemCodeInput.value = '';
+    itemCodeInput.placeholder = 'Auto-generated from category';
+    return;
+  }
+
+  try {
+    const res = await API.getNextItemCode(departmentId);
+    itemCodeInput.value = res?.data?.item_code || '';
+    itemCodeInput.placeholder = '';
+  } catch (err) {
+    itemCodeInput.value = '';
+    itemCodeInput.placeholder = 'Unable to preview item code';
+    showToast(err.message || 'Unable to preview item code', 'error');
+  }
+}
+
 function openAddModal() {
   document.getElementById('itemModalTitle').textContent = 'Add Item';
   document.getElementById('itemForm').reset();
   document.getElementById('itemId').value = '';
   document.getElementById('itemUnit').value = 'pcs';
   document.getElementById('itemThreshold').value = '5';
-  document.getElementById('itemClassification').value = '';
+  syncClassificationOptions('');
+  setItemCodeFieldState(false);
   applyClassificationFormState();
+  syncItemFormSearchableSelects();
   openModal('itemModal');
 }
 
@@ -493,7 +549,9 @@ async function editItem(id) {
     document.getElementById('itemModalTitle').textContent = 'Edit Item';
     document.getElementById('itemId').value = item.id;
     document.getElementById('itemCode').value = item.item_code;
+    setItemCodeFieldState(true);
     document.getElementById('itemName').value = item.item_name;
+    document.getElementById('itemDescription').value = item.description || '';
     document.getElementById('itemCategory').value = item.department_id || item.category_id;
     document.getElementById('itemSupplier').value = item.supplier_id || '';
     document.getElementById('itemBrand').value = item.brand || '';
@@ -512,14 +570,16 @@ async function editItem(id) {
     document.getElementById('itemCondition').value = item.condition;
     document.getElementById('itemThreshold').value = item.low_stock_threshold;
     document.getElementById('itemStatus').value = item.status;
-    document.getElementById('itemClassification').value = normalizeAssetClassification(item.asset_classification);
+    syncClassificationOptions(item.asset_classification);
+    document.getElementById('itemMaterial').value = item.material || '';
     document.getElementById('itemPropertyTag').value = item.property_tag || '';
-    document.getElementById('itemCustodianType').value = item.custodian_type || '';
+    document.getElementById('itemCustodianType').value = normalizeAssetCustodianType(item.custodian_type) || '';
     document.getElementById('itemCustodian').value = item.custodian_id || '';
     document.getElementById('itemMaintenanceSchedule').value = item.maintenance_schedule || '';
     document.getElementById('itemNextMaintenance').value = item.next_maintenance_date ? item.next_maintenance_date.split('T')[0] : '';
     document.getElementById('itemServiceProvider').value = item.service_provider || '';
     applyClassificationFormState();
+    syncItemFormSearchableSelects();
     openModal('itemModal');
   } catch (err) {
     showToast(err.message, 'error');
@@ -527,9 +587,9 @@ async function editItem(id) {
 }
 
 function getItemFormData() {
-  return {
-    item_code: document.getElementById('itemCode').value,
+  const data = {
     item_name: document.getElementById('itemName').value,
+    description: document.getElementById('itemDescription').value.trim() || null,
     department_id: parseInt(document.getElementById('itemCategory').value),
     category_id: parseInt(document.getElementById('itemCategory').value),
     supplier_id: document.getElementById('itemSupplier').value ? parseInt(document.getElementById('itemSupplier').value) : null,
@@ -550,13 +610,15 @@ function getItemFormData() {
     low_stock_threshold: parseInt(document.getElementById('itemThreshold').value),
     status: document.getElementById('itemStatus').value,
     asset_classification: document.getElementById('itemClassification').value,
-    property_tag: document.getElementById('itemPropertyTag').value || null,
+    material: document.getElementById('itemMaterial').value || null,
+    property_tag: normalizePropertyTag(document.getElementById('itemPropertyTag').value),
     custodian_type: document.getElementById('itemCustodianType').value || null,
     custodian_id: document.getElementById('itemCustodian').value ? parseInt(document.getElementById('itemCustodian').value) : null,
     maintenance_schedule: document.getElementById('itemMaintenanceSchedule').value || null,
     next_maintenance_date: document.getElementById('itemNextMaintenance').value || null,
     service_provider: document.getElementById('itemServiceProvider').value || null
   };
+  return data;
 }
 
 async function saveItem(e) {
@@ -573,8 +635,18 @@ async function saveItem(e) {
 
   data.asset_classification = classification;
 
+  if (isConsumableClassification(classification) && !isConsumableEnabled() && !document.getElementById('itemId').value) {
+    showToast('Consumable classification is temporarily disabled', 'error');
+    return;
+  }
+
   if (isFixedAssetClassification(classification) && !data.property_tag) {
     showToast('Property tag is required for Non-Consumable (Fixed Asset) items', 'error');
+    return;
+  }
+
+  if (data.property_tag && !isValidPropertyTagFormat(data.property_tag)) {
+    showToast('Property tag format is invalid. Use values like 2025-0001 or 2025/0001.', 'error');
     return;
   }
 
@@ -845,10 +917,14 @@ async function viewAssetDetails(id) {
 
     document.getElementById('assetDetailTitle').textContent = `${item.item_name} (${item.item_code})`;
     document.getElementById('assetDetailInfo').innerHTML = `
+      <div class="form-group"><label>Description</label><div>${item.description || '-'}</div></div>
       <div class="form-row">
+        <div class="form-group"><label>Material</label><div>${item.material || '-'}</div></div>
         <div class="form-group"><label>Property Tag</label><div>${item.property_tag || '-'}</div></div>
         <div class="form-group"><label>Department</label><div>${item.department_name || '-'}</div></div>
         <div class="form-group"><label>Location</label><div>${item.location_name || '-'}</div></div>
+      </div>
+      <div class="form-row">
         <div class="form-group"><label>Status</label><div>${getStatusBadge(item.status)}</div></div>
       </div>
       <div class="form-row">

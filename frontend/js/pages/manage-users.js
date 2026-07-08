@@ -40,6 +40,16 @@ async function initManageUsers() {
   document.getElementById('filterStatus').addEventListener('change', loadUsers);
   document.getElementById('userForm').addEventListener('submit', saveUser);
   document.getElementById('userRole').addEventListener('change', updateAssignmentFields);
+  document.getElementById('userAssignedDepartment')?.addEventListener('change', () => {
+    if ((document.getElementById('userRole').value || '').toLowerCase().trim() === 'custodian') {
+      document.getElementById('userAssignedLocation').value = '';
+    }
+  });
+  document.getElementById('userAssignedLocation')?.addEventListener('change', () => {
+    if ((document.getElementById('userRole').value || '').toLowerCase().trim() === 'custodian') {
+      document.getElementById('userAssignedDepartment').value = '';
+    }
+  });
 
   await Promise.all([loadRoles(), loadDepartments(), loadLocations()]);
   await loadUsers();
@@ -75,26 +85,25 @@ function updateAssignmentFields() {
   const deptLabel = document.getElementById('departmentAssignmentLabel');
   const locLabel = document.getElementById('locationAssignmentLabel');
 
-  const showDept = role === 'department custodian';
-  const showLoc = role === 'laboratory custodian';
+  const isUnified = role === 'custodian';
 
-  assignmentFields.style.display = (showDept || showLoc) ? 'flex' : 'none';
-  deptGroup.style.display = showDept ? 'block' : 'none';
-  locGroup.style.display = showLoc ? 'block' : 'none';
+  assignmentFields.style.display = isUnified ? 'flex' : 'none';
+  deptGroup.style.display = isUnified ? 'block' : 'none';
+  locGroup.style.display = isUnified ? 'block' : 'none';
 
   if (deptLabel) {
-    deptLabel.textContent = showDept ? 'Assigned Department *' : 'Assigned Department';
+    deptLabel.textContent = 'Assigned Department';
   }
   if (locLabel) {
-    locLabel.textContent = showLoc ? 'Assigned Laboratory *' : 'Assigned Laboratory';
+    locLabel.textContent = 'Assigned Laboratory';
   }
   if (deptSelect) {
-    deptSelect.required = showDept;
-    if (!showDept) deptSelect.value = '';
+    deptSelect.required = false;
+    if (!isUnified) deptSelect.value = '';
   }
   if (locSelect) {
-    locSelect.required = showLoc;
-    if (!showLoc) locSelect.value = '';
+    locSelect.required = false;
+    if (!isUnified) locSelect.value = '';
   }
 }
 
@@ -131,6 +140,10 @@ async function loadUsers() {
   }
 }
 
+function formatAssignment(value) {
+  return value && String(value).trim() ? value : '—';
+}
+
 function renderUsers() {
   const el = document.getElementById('usersTable');
   if (!users.length) {
@@ -143,6 +156,7 @@ function renderUsers() {
       <thead>
         <tr>
           <th>Full Name</th><th>Username</th><th>Email</th><th>Role</th>
+          <th>Assigned Department</th><th>Assigned Laboratory</th>
           <th>Status</th><th>Date Created</th><th>Actions</th>
         </tr>
       </thead>
@@ -152,7 +166,9 @@ function renderUsers() {
             <td>${u.full_name}</td>
             <td>${u.username}</td>
             <td>${u.email}</td>
-            <td>${u.role_name || '-'}</td>
+            <td>${formatRoleDisplayName(u.role_name)}</td>
+            <td>${formatAssignment(u.assigned_department_name)}</td>
+            <td>${formatAssignment(u.assigned_location_name)}</td>
             <td>${u.is_active ? 'Active' : 'Inactive'}</td>
             <td>${formatDate(u.created_at)}</td>
             <td>
@@ -199,16 +215,15 @@ function editUser(id) {
 
 function validateCustodianAssignments(role) {
   const roleLower = (role || '').toLowerCase().trim();
-  if (roleLower === 'department custodian') {
-    const deptId = document.getElementById('userAssignedDepartment').value;
-    if (!deptId) {
-      return 'Department Custodian requires an assigned department.';
+  const deptId = document.getElementById('userAssignedDepartment').value;
+  const locId = document.getElementById('userAssignedLocation').value;
+
+  if (roleLower === 'custodian') {
+    if (!deptId && !locId) {
+      return 'Custodian requires an assigned department or laboratory.';
     }
-  }
-  if (roleLower === 'laboratory custodian') {
-    const locId = document.getElementById('userAssignedLocation').value;
-    if (!locId) {
-      return 'Laboratory Custodian requires an assigned laboratory.';
+    if (deptId && locId) {
+      return 'Custodian can be assigned to a department or a laboratory, but not both.';
     }
   }
   return null;
