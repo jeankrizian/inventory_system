@@ -21,7 +21,6 @@ async function initSettingsPage() {
         <div class="form-group"><label>Username</label><input type="text" class="form-control-custom" value="${user.username}" disabled></div>
         <div class="form-group"><label>Email</label><input type="email" class="form-control-custom" value="${user.email}" disabled></div>
       </div>
-      <div class="form-group"><label>Last Login</label><input type="text" class="form-control-custom" value="${user.last_login ? formatDate(user.last_login) : 'N/A'}" disabled></div>
     </div>
   `;
 }

@@ -96,7 +96,7 @@ function buildDashboardHtml(user) {
   }
 
   if (canViewDashboardModule(user, 'recentBorrows')) {
-    const borrowTitle = isEmployee(user) ? 'My Borrow History' : 'Recent Borrow Transactions';
+    const borrowTitle = 'Recent Borrow Transactions';
     tableCards.push(`
       <div class="table-card">
         <div class="table-card-header">
@@ -110,7 +110,7 @@ function buildDashboardHtml(user) {
   }
 
   if (canViewDashboardModule(user, 'recentReturns')) {
-    const returnTitle = isEmployee(user) ? 'My Returned Items' : 'Recent Process Return Transactions';
+    const returnTitle = 'Recent Process Return Transactions';
     const returnsSeeAllHref = canViewReturnHistory(user)
       ? '/pages/orders.html?tab=returns'
       : '/pages/orders.html';
@@ -134,7 +134,7 @@ function buildDashboardHtml(user) {
   const activitiesHtml = canViewDashboardModule(user, 'activities') ? `
     <div class="table-card">
       <div class="table-card-header">
-        <h3>${isCustodian(user) ? 'Recent Assigned Asset Activity' : isEmployee(user) ? 'My Recent Activity' : 'Recent Activities'}</h3>
+        <h3>${isCustodian(user) ? 'Recent Assigned Asset Activity' : 'Recent Activities'}</h3>
       </div>
       <ul class="activity-list" id="activityList">
         <li class="loading-spinner"><i class="bi bi-arrow-repeat"></i></li>

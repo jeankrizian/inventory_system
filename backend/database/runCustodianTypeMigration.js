@@ -1,37 +1,23 @@
 const pool = require('../config/database');
 
-async function columnUsesLegacyCustodianEnum(tableName) {
+async function tableHasColumn(tableName, columnName) {
   const [rows] = await pool.query(
-    `SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'custodian_type'`,
-    [tableName]
+    `SELECT COUNT(*) AS c FROM information_schema.columns
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [tableName, columnName]
   );
-  const columnType = rows[0]?.COLUMN_TYPE || '';
-  return columnType.includes('Department Custodian') || columnType.includes('Laboratory Custodian');
-}
-
-async function migrateCustodianTypeColumn(tableName) {
-  if (!(await columnUsesLegacyCustodianEnum(tableName))) {
-    return;
-  }
-
-  await pool.query(
-    `UPDATE ${tableName} SET custodian_type = 'Department' WHERE custodian_type = 'Department Custodian'`
-  );
-  await pool.query(
-    `UPDATE ${tableName} SET custodian_type = 'Laboratory' WHERE custodian_type = 'Laboratory Custodian'`
-  );
-  await pool.query(
-    `ALTER TABLE ${tableName}
-     MODIFY custodian_type ENUM('Property Custodian', 'Department', 'Laboratory') NULL`
-  );
+  return rows[0].c > 0;
 }
 
 async function runCustodianTypeMigration() {
-  console.log('Running custodian type label migration...');
-  await migrateCustodianTypeColumn('departments');
-  await migrateCustodianTypeColumn('inventory_items');
-  console.log('Custodian type label migration completed.');
+  console.log('Running custodian type removal migration...');
+  for (const tableName of ['departments', 'inventory_items']) {
+    if (await tableHasColumn(tableName, 'custodian_type')) {
+      await pool.query(`ALTER TABLE \`${tableName}\` DROP COLUMN custodian_type`);
+      console.log(`Dropped custodian_type from ${tableName}`);
+    }
+  }
+  console.log('Custodian type removal migration completed.');
 }
 
 if (require.main === module) {

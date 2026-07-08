@@ -44,15 +44,14 @@ const CategoryModel = {
     if (existing.length) code = `${code}${Date.now().toString().slice(-4)}`;
 
     const [result] = await pool.query(
-      `INSERT INTO departments (name, code, description, department_head, custodian_id, custodian_type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO departments (name, code, description, department_head, custodian_id, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         data.name,
         code,
         data.description || null,
         data.department_head || null,
         data.custodian_id || null,
-        data.custodian_type || null,
         data.status || 'Active'
       ]
     );
@@ -65,7 +64,7 @@ const CategoryModel = {
 
     const [result] = await pool.query(
       `UPDATE departments SET name = ?, code = ?, description = ?, department_head = ?,
-        custodian_id = ?, custodian_type = ?, status = COALESCE(?, status)
+        custodian_id = ?, status = COALESCE(?, status)
        WHERE id = ? AND is_archived = 0`,
       [
         data.name ?? existing.name,
@@ -73,7 +72,6 @@ const CategoryModel = {
         data.description ?? existing.description,
         data.department_head ?? existing.department_head,
         data.custodian_id !== undefined ? data.custodian_id : existing.custodian_id,
-        data.custodian_type ?? existing.custodian_type,
         data.status,
         id
       ]

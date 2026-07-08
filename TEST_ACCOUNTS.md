@@ -1,50 +1,52 @@
-# Test Accounts
+# Demo Test Accounts
 
-All specialized custodian access uses the single **Custodian** role. Assignment determines whether the account is department-scoped or laboratory-scoped.
+Run seeding:
 
-## Administrator
+```bash
+cd inventory_system/backend
+npm run seed:test-accounts
+npm run verify:demo-accounts
+```
 
-Role: Administrator  
-Username: `admin`  
-Password: `admin123`  
-Email: admin@caviteinstitute.edu
+Administrator account (`admin` / `admin123`) is preserved separately and is not modified by the demo seed.
 
 ## Property Manager
 
 Role: Property Manager  
 Username: `pm_test`  
 Password: `pm123456`  
-Email: pm_test@caviteinstitute.edu
+Email: pm_test@caviteinstitute.edu.ph  
+Assigned Department: — (none)
 
-## Custodian (Department Assignment)
-
-Role: Custodian  
-Username: `deptcust_test`  
-Password: `dept123456`  
-Email: deptcust_test@caviteinstitute.edu  
-Assigned: Information Technology Department (IT)
-
-## Custodian (Laboratory Assignment)
+## Custodian — Information Technology
 
 Role: Custodian  
-Username: `labcust_test`  
-Password: `lab123456`  
-Email: labcust_test@caviteinstitute.edu  
-Assigned: ICT Laboratory
+Username: `ict_custodian`  
+Password: `cust123456`  
+Email: ict_custodian@caviteinstitute.edu.ph  
+Assigned Department: Information Technology (ICT)
 
-## Employee
+## Custodian — Engineering
 
-Role: Employee (Staff)  
-Username: `staff`  
-Password: `staff123`  
-Email: staff@caviteinstitute.edu
+Role: Custodian  
+Username: `eng_custodian`  
+Password: `cust123456`  
+Email: eng_custodian@caviteinstitute.edu.ph  
+Assigned Department: Engineering (ENG)
+
+## Custodian — Senior High School
+
+Role: Custodian  
+Username: `shs_custodian`  
+Password: `cust123456`  
+Email: shs_custodian@caviteinstitute.edu.ph  
+Assigned Department: Senior High School (SHS)
 
 ## Quick Reference
 
-| Role | Username | Password | Email |
-|------|----------|----------|-------|
-| Administrator | `admin` | `admin123` | admin@caviteinstitute.edu |
-| Property Manager | `pm_test` | `pm123456` | pm_test@caviteinstitute.edu |
-| Custodian (Dept) | `deptcust_test` | `dept123456` | deptcust_test@caviteinstitute.edu |
-| Custodian (Lab) | `labcust_test` | `lab123456` | labcust_test@caviteinstitute.edu |
-| Employee | `staff` | `staff123` | staff@caviteinstitute.edu |
+| Role | Username | Password | Department |
+|------|----------|----------|------------|
+| Property Manager | `pm_test` | `pm123456` | — |
+| Custodian | `ict_custodian` | `cust123456` | ICT |
+| Custodian | `eng_custodian` | `cust123456` | ENG |
+| Custodian | `shs_custodian` | `cust123456` | SHS |

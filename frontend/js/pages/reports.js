@@ -16,11 +16,7 @@ const REPORTS = [
 let activeReportType = null;
 let departments = [];
 
-const CLASSIFICATION_OPTIONS = [
-  'Consumable',
-  'Semi-Durable',
-  'Non-Consumable (Fixed Asset)'
-];
+const CLASSIFICATION_OPTIONS = getFilterClassifications();
 
 async function initReportsPage() {
   const user = await initLayout('reports');
@@ -209,17 +205,12 @@ function renderReportTable(type, data) {
       rows = data.map(d => [d.name, d.code, d.department_head, d.custodian_name, d.asset_count, d.status]);
       break;
     case 'custodians':
-      headers = ['Custodian','Email','Type','Assigned Assets'];
-      rows = data.map(c => [
-        c.custodian_name,
-        c.email,
-        normalizeAssetCustodianType(c.custodian_type) || c.custodian_type,
-        c.assigned_assets
-      ]);
+      headers = ['Custodian', 'Email', 'Assigned Assets'];
+      rows = data.map(c => [c.custodian_name, c.email, c.assigned_assets]);
       break;
     case 'asset-status':
       headers = ['Code','Name','Classification','Department','Status','Property Tag'];
-      rows = data.map(i => [i.item_code, i.item_name, normalizeAssetClassification(i.asset_classification), i.department_name || i.category_name, i.status, i.property_tag]);
+      rows = data.map(i => [i.item_code, i.item_name, formatClassificationDisplay(i.asset_classification), i.department_name || i.category_name, i.status, i.property_tag]);
       break;
     default:
       el.innerHTML = '<div class="empty-state">Unsupported report type</div>';

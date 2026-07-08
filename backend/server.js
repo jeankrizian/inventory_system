@@ -33,6 +33,7 @@ const { runItemDescriptionMigration } = require('./database/runItemDescriptionMi
 const { runMaterialMigration } = require('./database/runMaterialMigration');
 const { runCustodianRoleMigration } = require('./database/runCustodianRoleMigration');
 const { runCustodianTypeMigration } = require('./database/runCustodianTypeMigration');
+const { runStaffRoleRemovalMigration } = require('./database/runStaffRoleRemovalMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
@@ -208,6 +209,7 @@ async function startServer() {
     await runMaterialMigration();
     await runCustodianRoleMigration();
     await runCustodianTypeMigration();
+    await runStaffRoleRemovalMigration();
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);

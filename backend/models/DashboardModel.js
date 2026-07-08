@@ -11,7 +11,6 @@ const MaintenanceModel = require('./MaintenanceModel');
 const {
   isAdministrator,
   isPropertyManager,
-  isEmployee,
   isCustodian
 } = require('../utils/roleHelpers');
 
@@ -24,29 +23,9 @@ const EMPTY_INVENTORY_STATS = {
   disposed: 0
 };
 
-function buildDashboardModules(role, staffView) {
+function buildDashboardModules(role) {
   const admin = isAdministrator(role);
   const pm = isPropertyManager(role);
-  const cust = isCustodian(role);
-
-  if (staffView) {
-    return {
-      personalBorrowStats: true,
-      inventoryStats: false,
-      usersStats: false,
-      pendingApprovals: false,
-      transferStats: false,
-      maintenanceStats: false,
-      disposalStats: false,
-      charts: false,
-      recentInventory: false,
-      lowStock: false,
-      assetsNeedingAttention: false,
-      recentBorrows: true,
-      recentReturns: true,
-      activities: true
-    };
-  }
 
   if (admin) {
     return {
@@ -108,8 +87,7 @@ function resolveScopes(scopes = {}) {
   const role = scopes.user?.role || scopes.user?.role_name;
   const userId = scopes.user?.id ?? null;
   const fullVisibility = isAdministrator(role) || isPropertyManager(role);
-  const staffView = isEmployee(role);
-  const modules = buildDashboardModules(role, staffView);
+  const modules = buildDashboardModules(role);
 
   let inventoryScope;
   let borrowScope;
@@ -119,10 +97,6 @@ function resolveScopes(scopes = {}) {
     inventoryScope = { type: 'all' };
     borrowScope = { type: 'all' };
     operationalScope = { type: 'all' };
-  } else if (staffView) {
-    inventoryScope = { type: 'none' };
-    borrowScope = { type: 'own', userId };
-    operationalScope = { type: 'none' };
   } else {
     inventoryScope = scopes.inventoryScope ?? { type: 'none', userId };
     borrowScope = scopes.borrowScope ?? { type: 'none', userId };
@@ -133,7 +107,6 @@ function resolveScopes(scopes = {}) {
     role,
     userId,
     fullVisibility,
-    staffView,
     modules,
     showUserStats: modules.usersStats,
     showDisposalStats: modules.disposalStats,
@@ -186,27 +159,6 @@ function buildActivityQuery(ctx) {
     return {
       sql: `${baseSelect} ORDER BY al.created_at DESC LIMIT 8`,
       params: []
-    };
-  }
-
-  if (isEmployee(ctx.role)) {
-    return {
-      sql: `${baseSelect}
-        WHERE al.user_id = ?
-           OR (
-             al.module IN ('Borrow', 'Process Return')
-             AND ${BORROW_ACTIVITY_MATCH}
-           )
-        ORDER BY al.created_at DESC LIMIT 8`,
-      params: [
-        ctx.userId,
-        ctx.userId,
-        null, null,
-        null, null,
-        ctx.userId,
-        null, null,
-        null, null
-      ]
     };
   }
 

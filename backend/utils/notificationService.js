@@ -5,8 +5,7 @@ const InventoryModel = require('../models/InventoryModel');
 const {
   isAdministrator,
   isPropertyManager,
-  isCustodian,
-  isEmployee
+  isCustodian
 } = require('./roleHelpers');
 const { borrowLink } = require('./notificationLinks');
 
@@ -104,7 +103,7 @@ async function notifyCustodiansForBorrowTransaction(transaction, buildPayload) {
 }
 
 async function checkDueDateReminders(userId, roleName) {
-  if (!isEmployee(roleName) && !isCustodian(roleName) && !isAdministrator(roleName) && !isPropertyManager(roleName)) {
+  if (!isCustodian(roleName) && !isAdministrator(roleName) && !isPropertyManager(roleName)) {
     return;
   }
 

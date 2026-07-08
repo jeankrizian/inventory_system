@@ -10,9 +10,23 @@ const MaintenanceModel = require('../models/MaintenanceModel');
 const pool = require('../config/database');
 const { sendSuccess, sendError } = require('../utils/response');
 const { parseReportFilters } = require('../utils/reportFilters');
+const {
+  validateConsumableFilter,
+  shouldExcludeConsumableFromLists
+} = require('../utils/assetClassification');
 
 function getFilters(query) {
-  return parseReportFilters(query);
+  const filters = parseReportFilters(query);
+  const filterError = validateConsumableFilter(filters.asset_classification);
+  if (filterError) {
+    const err = new Error(filterError);
+    err.statusCode = 400;
+    throw err;
+  }
+  if (shouldExcludeConsumableFromLists()) {
+    filters.exclude_consumable = true;
+  }
+  return filters;
 }
 
 const ReportController = {
@@ -21,7 +35,7 @@ const ReportController = {
       const items = await InventoryModel.getAll(getFilters(req.query));
       sendSuccess(res, items);
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -30,7 +44,7 @@ const ReportController = {
       const data = await BorrowModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -39,7 +53,7 @@ const ReportController = {
       const data = await ReturnModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -50,7 +64,7 @@ const ReportController = {
       const items = await InventoryModel.getAll(filters);
       sendSuccess(res, items);
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -59,7 +73,7 @@ const ReportController = {
       const suppliers = await SupplierModel.getAll();
       sendSuccess(res, suppliers);
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -67,21 +81,21 @@ const ReportController = {
     try {
       const data = await TransferModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getMaintenanceReport(req, res) {
     try {
       const data = await MaintenanceModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getDisposalReport(req, res) {
     try {
       const data = await DisposalModel.getAll(getFilters(req.query));
       sendSuccess(res, data);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getDepartmentReport(req, res) {
@@ -100,14 +114,14 @@ const ReportController = {
       sql += ' ORDER BY d.name';
       const [rows] = await pool.query(sql, params);
       sendSuccess(res, rows);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getAssetStatusReport(req, res) {
     try {
       const items = await InventoryModel.getAll(getFilters(req.query));
       sendSuccess(res, items);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getCustodianReport(req, res) {
@@ -115,7 +129,7 @@ const ReportController = {
       const filters = getFilters(req.query);
       let sql = `
         SELECT u.full_name AS custodian_name, u.email,
-               i.custodian_type, COUNT(i.id) AS assigned_assets
+               COUNT(i.id) AS assigned_assets
         FROM inventory_items i
         JOIN users u ON i.custodian_id = u.id
         WHERE i.status != 'Disposed'`;
@@ -124,11 +138,11 @@ const ReportController = {
         sql += ' AND i.department_id = ?';
         params.push(filters.department_id);
       }
-      sql += ` GROUP BY u.id, u.full_name, u.email, i.custodian_type
+      sql += ` GROUP BY u.id, u.full_name, u.email
         ORDER BY assigned_assets DESC`;
       const [rows] = await pool.query(sql, params);
       sendSuccess(res, rows);
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async exportPDF(req, res) {
@@ -212,7 +226,7 @@ const ReportController = {
 
       doc.end();
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   },
 
@@ -286,7 +300,7 @@ const ReportController = {
       await workbook.xlsx.write(res);
       res.end();
     } catch (err) {
-      sendError(res, err.message, 500);
+      sendError(res, err.message, err.statusCode || 500);
     }
   }
 };

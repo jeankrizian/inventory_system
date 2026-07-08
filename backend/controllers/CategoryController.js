@@ -2,24 +2,6 @@ const CategoryModel = require('../models/CategoryModel');
 const UserModel = require('../models/UserModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const {
-  ASSET_CUSTODIAN_TYPES,
-  normalizeAssetCustodianType,
-  isValidAssetCustodianType
-} = require('../utils/custodianTypeLabels');
-
-function validateDepartmentCustodian(data) {
-  const hasCustodian = Boolean(data.custodian_id);
-  const normalizedType = normalizeAssetCustodianType(data.custodian_type);
-  const hasType = Boolean(normalizedType);
-  if (hasCustodian !== hasType) {
-    return 'Both assigned custodian and custodian type are required when assigning a custodian';
-  }
-  if (normalizedType && !isValidAssetCustodianType(normalizedType)) {
-    return 'Invalid custodian type';
-  }
-  return null;
-}
 
 const CategoryController = {
   async getAll(req, res) {
@@ -43,18 +25,12 @@ const CategoryController = {
 
   async create(req, res) {
     try {
-      const custodianError = validateDepartmentCustodian(req.body);
-      if (custodianError) return sendError(res, custodianError, 400);
       if (req.body.custodian_id) {
         const user = await UserModel.findById(req.body.custodian_id);
         if (!user || !user.is_active) return sendError(res, 'Assigned custodian not found or inactive', 400);
       }
 
-      const payload = {
-        ...req.body,
-        custodian_type: normalizeAssetCustodianType(req.body.custodian_type)
-      };
-      const id = await CategoryModel.create(payload);
+      const id = await CategoryModel.create(req.body);
       await logActivity(req.session.user.id, 'CREATE', 'Category', `Added category ${req.body.name}`, req.ip);
       const category = await CategoryModel.findById(id);
       sendSuccess(res, category, 'Category created successfully', 201);
@@ -69,23 +45,13 @@ const CategoryController = {
       const existing = await CategoryModel.findById(req.params.id);
       if (!existing) return sendError(res, 'Category not found', 404);
 
-      const merged = {
-        custodian_id: req.body.custodian_id !== undefined ? req.body.custodian_id : existing.custodian_id,
-        custodian_type: normalizeAssetCustodianType(
-          req.body.custodian_type !== undefined ? req.body.custodian_type : existing.custodian_type
-        )
-      };
-      const custodianError = validateDepartmentCustodian(merged);
-      if (custodianError) return sendError(res, custodianError, 400);
-      if (merged.custodian_id) {
-        const user = await UserModel.findById(merged.custodian_id);
+      const custodianId = req.body.custodian_id !== undefined ? req.body.custodian_id : existing.custodian_id;
+      if (custodianId) {
+        const user = await UserModel.findById(custodianId);
         if (!user || !user.is_active) return sendError(res, 'Assigned custodian not found or inactive', 400);
       }
 
-      const updated = await CategoryModel.update(req.params.id, {
-        ...req.body,
-        custodian_type: merged.custodian_type
-      });
+      const updated = await CategoryModel.update(req.params.id, req.body);
       if (!updated) return sendError(res, 'Category not found', 404);
       await logActivity(req.session.user.id, 'UPDATE', 'Category', `Updated category ${req.body.name}`, req.ip);
       const category = await CategoryModel.findById(req.params.id);

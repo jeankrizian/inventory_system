@@ -1,15 +1,25 @@
 const bcrypt = require('bcryptjs');
 const UserModel = require('../models/UserModel');
 const CategoryModel = require('../models/CategoryModel');
-const LocationModel = require('../models/LocationModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyAdministrators } = require('../utils/notificationService');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
 const {
   isCustodian,
-  normalizeRoleName
+  normalizeRoleName,
+  isAllowedRole,
+  formatRoleDisplayName: formatRoleLabel
 } = require('../utils/roleHelpers');
+
+const LEGACY_ROLE_NAMES = new Set([
+  'Department Custodian',
+  'Laboratory Custodian',
+  'staff',
+  'Staff',
+  'employee',
+  'Employee'
+]);
 
 function parseAssignmentId(value) {
   if (value === '' || value === undefined || value === null) return null;
@@ -26,7 +36,7 @@ function resolveRoleAssignments(roleName, body) {
 
   if (isCustodian(normalized)) {
     updates.assigned_department_id = parseAssignmentId(body.assigned_department_id);
-    updates.assigned_location_id = parseAssignmentId(body.assigned_location_id);
+    updates.assigned_location_id = null;
   }
 
   return updates;
@@ -60,23 +70,16 @@ async function validateCustodianAssignments(roleName, assignments) {
     return null;
   }
 
-  const hasDepartment = assignments.assigned_department_id != null;
-  const hasLocation = assignments.assigned_location_id != null;
-
-  if (isCustodian(normalized)) {
-    if (hasDepartment === hasLocation) {
-      return 'Custodian requires either an assigned department or an assigned laboratory, but not both.';
-    }
-    if (hasDepartment) {
-      const dept = await CategoryModel.findById(assignments.assigned_department_id);
-      if (!dept) return 'Selected department does not exist.';
-      return null;
-    }
-    const loc = await LocationModel.findById(assignments.assigned_location_id);
-    if (!loc) return 'Selected laboratory does not exist.';
-    return null;
+  if (assignments.assigned_location_id != null) {
+    return 'Custodian cannot be assigned to a laboratory.';
   }
 
+  if (assignments.assigned_department_id == null) {
+    return 'Custodian requires an assigned department.';
+  }
+
+  const dept = await CategoryModel.findById(assignments.assigned_department_id);
+  if (!dept) return 'Selected department does not exist.';
   return null;
 }
 
@@ -84,11 +87,13 @@ const UserController = {
   async getRoles(req, res) {
     try {
       const roles = await UserModel.getAllRoles();
-      const legacyCustodianRoles = new Set(['Department Custodian', 'Laboratory Custodian']);
-      const hasUnifiedCustodian = roles.some((role) => role.name === 'Custodian');
-      const filteredRoles = hasUnifiedCustodian
-        ? roles.filter((role) => !legacyCustodianRoles.has(role.name))
-        : roles;
+      const filteredRoles = roles
+        .filter((role) => !LEGACY_ROLE_NAMES.has(role.name))
+        .filter((role) => isAllowedRole(role.name))
+        .map((role) => ({
+          ...role,
+          display_name: formatRoleLabel(role.name)
+        }));
       sendSuccess(res, filteredRoles);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -143,6 +148,7 @@ const UserController = {
         return sendError(res, 'Only @caviteinstitute.edu.ph email addresses are allowed', 400);
       }
       if (!role) return sendError(res, 'Role is required', 400);
+      if (!isAllowedRole(role)) return sendError(res, 'Selected role is not available', 400);
       if (!password || password.length < 8) {
         return sendError(res, 'Password must be at least 8 characters', 400);
       }
@@ -223,6 +229,7 @@ const UserController = {
         updates.email = normalizedEmail;
       }
       if (role !== undefined) {
+        if (!isAllowedRole(role)) return sendError(res, 'Selected role is not available', 400);
         const roleRecord = await UserModel.findRoleByName(role);
         if (!roleRecord) return sendError(res, 'Selected role is not available', 400);
         updates.role_id = roleRecord.id;

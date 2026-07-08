@@ -6,6 +6,8 @@ const CLASSIFICATIONS = [
 
 /** Temporarily disable new Consumable items while keeping existing records compatible */
 const CONSUMABLE_TEMPORARILY_DISABLED = true;
+const CONSUMABLE_DISABLED_MESSAGE = 'Consumable items are currently disabled.';
+const DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED = 'Semi-Durable';
 
 const FIXED_ASSET = 'Non-Consumable (Fixed Asset)';
 const LEGACY_FIXED_ASSET = 'Fixed Asset';
@@ -25,7 +27,9 @@ function isValidPropertyTagFormat(value) {
 }
 
 function normalizeClassification(value) {
-  if (!value) return 'Consumable';
+  if (!value || String(value).trim() === '') {
+    return CONSUMABLE_TEMPORARILY_DISABLED ? '' : 'Consumable';
+  }
   if (value === LEGACY_FIXED_ASSET) return FIXED_ASSET;
   return value;
 }
@@ -40,13 +44,40 @@ function isConsumableEnabled() {
 }
 
 function canUseConsumableClassification(existingClassification) {
-  if (isConsumableEnabled()) return true;
-  return isConsumableClassification(existingClassification);
+  if (!isConsumableEnabled()) return false;
+  return true;
+}
+
+function shouldExcludeConsumableFromLists() {
+  return CONSUMABLE_TEMPORARILY_DISABLED;
+}
+
+function validateConsumableFilter(classification) {
+  if (!classification) return null;
+  if (isConsumableClassification(classification) && !isConsumableEnabled()) {
+    return CONSUMABLE_DISABLED_MESSAGE;
+  }
+  return null;
+}
+
+function isConsumableEditBlocked(classification) {
+  return !isConsumableEnabled() && isConsumableClassification(classification);
+}
+
+function getFilterClassifications() {
+  return getSelectableClassifications(null);
+}
+
+function formatClassificationDisplay(value) {
+  if (!isConsumableEnabled() && isConsumableClassification(value)) {
+    return '—';
+  }
+  const normalized = normalizeClassification(value);
+  return normalized || '—';
 }
 
 function getSelectableClassifications(existingClassification) {
   if (isConsumableEnabled()) return [...CLASSIFICATIONS];
-  if (canUseConsumableClassification(existingClassification)) return [...CLASSIFICATIONS];
   return CLASSIFICATIONS.filter((c) => c !== 'Consumable');
 }
 
@@ -94,7 +125,6 @@ function sanitizeInventoryByClassification(data) {
   if (classification === 'Consumable') {
     sanitized.property_tag = null;
     sanitized.custodian_id = null;
-    sanitized.custodian_type = null;
     sanitized.maintenance_schedule = null;
     sanitized.next_maintenance_date = null;
     sanitized.maintenance_status = null;
@@ -120,11 +150,8 @@ function validateInventoryClassification(body, options = {}) {
   const classification = normalizeClassification(body.asset_classification);
   const existingClassification = options.existingClassification ?? null;
 
-  if (
-    isConsumableClassification(classification)
-    && !canUseConsumableClassification(existingClassification)
-  ) {
-    return { valid: false, message: 'Consumable classification is temporarily disabled' };
+  if (isConsumableClassification(classification) && !isConsumableEnabled()) {
+    return { valid: false, message: CONSUMABLE_DISABLED_MESSAGE };
   }
 
   const propertyTag = normalizePropertyTag(body.property_tag);
@@ -140,10 +167,6 @@ function validateInventoryClassification(body, options = {}) {
     };
   }
 
-  if (requiresCustodian(classification) && !body.custodian_type) {
-    return { valid: false, message: 'Custodian type is required for Non-Consumable (Fixed Asset) items' };
-  }
-
   if (requiresCustodian(classification) && !body.custodian_id) {
     return { valid: false, message: 'Assigned custodian is required for Non-Consumable (Fixed Asset) items' };
   }
@@ -154,6 +177,8 @@ function validateInventoryClassification(body, options = {}) {
 module.exports = {
   CLASSIFICATIONS,
   CONSUMABLE_TEMPORARILY_DISABLED,
+  CONSUMABLE_DISABLED_MESSAGE,
+  DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED,
   FIXED_ASSET,
   LEGACY_FIXED_ASSET,
   normalizeClassification,
@@ -161,6 +186,11 @@ module.exports = {
   isConsumableClassification,
   isConsumableEnabled,
   canUseConsumableClassification,
+  shouldExcludeConsumableFromLists,
+  validateConsumableFilter,
+  isConsumableEditBlocked,
+  getFilterClassifications,
+  formatClassificationDisplay,
   getSelectableClassifications,
   isFixedAsset,
   canTransfer,

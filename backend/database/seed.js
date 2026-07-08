@@ -10,17 +10,15 @@ async function seed() {
     await connection.query(`
       INSERT IGNORE INTO roles (id, name, description) VALUES
       (1, 'admin', 'Full system access'),
-      (2, 'staff', 'Limited access for inventory operations')
+      (2, 'Property Manager', 'Property management office access'),
+      (3, 'Custodian', 'Asset custodian access scoped by department assignment')
     `);
 
-    // Users (password: admin123 / staff123)
     const adminHash = await bcrypt.hash('admin123', 10);
-    const staffHash = await bcrypt.hash('staff123', 10);
     await connection.query(`
       INSERT IGNORE INTO users (id, role_id, username, email, password_hash, full_name, is_active) VALUES
-      (1, 1, 'admin', 'admin@caviteinstitute.edu', ?, 'System Administrator', 1),
-      (2, 2, 'staff', 'staff@caviteinstitute.edu', ?, 'Inventory Staff', 1)
-    `, [adminHash, staffHash]);
+      (1, 1, 'admin', 'admin@caviteinstitute.edu', ?, 'System Administrator', 1)
+    `, [adminHash]);
 
     // Departments
     await connection.query(`
@@ -84,14 +82,14 @@ async function seed() {
     await connection.query(`
       INSERT IGNORE INTO borrow_transactions 
       (id, transaction_code, borrower_id, borrower_name, borrower_department, purpose, borrow_date, expected_return_date, status, approved_by, approved_at) VALUES
-      (1, 'BRW-2024-001', 2, 'Inventory Staff', 'ICT Department', 'Classroom presentation', '2024-06-01', '2024-06-15', 'Returned', 1, '2024-06-01 08:00:00'),
-      (2, 'BRW-2024-002', 2, 'Inventory Staff', 'Science Department', 'Lab experiment', '2024-06-05', '2024-06-20', 'Borrowed', 1, '2024-06-05 09:00:00'),
-      (3, 'BRW-2024-003', 2, 'Inventory Staff', 'PE Department', 'Sports event', '2024-06-10', '2024-06-25', 'Approved', 1, '2024-06-10 10:00:00'),
-      (4, 'BRW-2024-004', 2, 'Inventory Staff', 'Library', 'Research activity', '2024-06-15', '2024-06-30', 'Pending', NULL, NULL),
-      (5, 'BRW-2024-005', 2, 'Inventory Staff', 'Faculty', 'Faculty meeting', '2024-05-20', '2024-06-05', 'Returned', 1, '2024-05-20 14:00:00'),
-      (6, 'BRW-2024-006', 2, 'Inventory Staff', 'ICT Department', 'Training session', '2024-05-15', '2024-05-30', 'Returned', 1, '2024-05-15 08:30:00'),
-      (7, 'BRW-2024-007', 2, 'Inventory Staff', 'Science Department', 'Chemistry lab', '2024-07-01', '2024-07-15', 'Borrowed', 1, '2024-07-01 09:00:00'),
-      (8, 'BRW-2024-008', 2, 'Inventory Staff', 'Office', 'Inventory audit', '2024-07-05', '2024-07-20', 'Rejected', 1, '2024-07-05 11:00:00')
+      (1, 'BRW-2024-001', 1, 'System Administrator', 'ICT Department', 'Classroom presentation', '2024-06-01', '2024-06-15', 'Returned', 1, '2024-06-01 08:00:00'),
+      (2, 'BRW-2024-002', 1, 'System Administrator', 'Science Department', 'Lab experiment', '2024-06-05', '2024-06-20', 'Borrowed', 1, '2024-06-05 09:00:00'),
+      (3, 'BRW-2024-003', 1, 'System Administrator', 'PE Department', 'Sports event', '2024-06-10', '2024-06-25', 'Approved', 1, '2024-06-10 10:00:00'),
+      (4, 'BRW-2024-004', 1, 'System Administrator', 'Library', 'Research activity', '2024-06-15', '2024-06-30', 'Pending', NULL, NULL),
+      (5, 'BRW-2024-005', 1, 'System Administrator', 'Faculty', 'Faculty meeting', '2024-05-20', '2024-06-05', 'Returned', 1, '2024-05-20 14:00:00'),
+      (6, 'BRW-2024-006', 1, 'System Administrator', 'ICT Department', 'Training session', '2024-05-15', '2024-05-30', 'Returned', 1, '2024-05-15 08:30:00'),
+      (7, 'BRW-2024-007', 1, 'System Administrator', 'Science Department', 'Chemistry lab', '2024-07-01', '2024-07-15', 'Borrowed', 1, '2024-07-01 09:00:00'),
+      (8, 'BRW-2024-008', 1, 'System Administrator', 'Office', 'Inventory audit', '2024-07-05', '2024-07-20', 'Rejected', 1, '2024-07-05 11:00:00')
     `);
 
     // Borrow Items
@@ -121,19 +119,18 @@ async function seed() {
       INSERT IGNORE INTO activity_logs (id, user_id, action, module, description) VALUES
       (1, 1, 'LOGIN', 'Auth', 'Admin logged in'),
       (2, 1, 'CREATE', 'Inventory', 'Added new inventory item ICT-004'),
-      (3, 2, 'BORROW', 'Borrow', 'Created borrow request BRW-2024-004'),
+      (3, 1, 'BORROW', 'Borrow', 'Created borrow request BRW-2024-004'),
       (4, 1, 'APPROVE', 'Borrow', 'Approved borrow request BRW-2024-003'),
-      (5, 2, 'RETURN', 'Return', 'Processed return RTN-2024-001'),
+      (5, 1, 'RETURN', 'Return', 'Processed return RTN-2024-001'),
       (6, 1, 'UPDATE', 'Inventory', 'Updated stock for OFF-002'),
       (7, 1, 'CREATE', 'Supplier', 'Added supplier TechPro Solutions'),
-      (8, 2, 'LOGIN', 'Auth', 'Staff logged in')
+      (8, 1, 'LOGIN', 'Auth', 'Administrator logged in')
     `);
 
     await connection.commit();
     console.log('Database seeded successfully!');
     console.log('Login credentials:');
     console.log('  Admin: admin / admin123');
-    console.log('  Staff: staff / staff123');
   } catch (error) {
     await connection.rollback();
     console.error('Seed failed:', error.message);

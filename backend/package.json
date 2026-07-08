@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "seed": "node database/seed.js",
     "seed:test-accounts": "node database/seed-test-accounts.js",
+    "verify:demo-accounts": "node database/verify-demo-accounts.js",
     "seed:sample-data": "node database/seed-sample-data.js",
     "cleanup:sample-data": "node database/cleanup-sample-data.js",
     "reset:system-data": "node database/reset-system-data.js",

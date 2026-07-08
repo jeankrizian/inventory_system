@@ -1,7 +1,7 @@
 /**
  * Full system data reset for development/testing.
  * Removes all operational and master data except:
- *   - system roles (admin, staff, Property Manager, Custodian)
+ *   - system roles (admin, Property Manager, Custodian)
  *   - the Administrator account (admin / admin123)
  *
  * Run: npm run reset:system-data
@@ -14,7 +14,6 @@ const PRESERVED_USERNAME = 'admin';
 
 const REQUIRED_ROLES = [
   'admin',
-  'staff',
   'Property Manager',
   'Custodian'
 ];
@@ -132,9 +131,8 @@ async function resetAutoIncrement(connection, tableName) {
 async function ensureRoles(connection) {
   const roleSeeds = [
     ['admin', 'Full system access'],
-    ['staff', 'Limited access for inventory operations'],
     ['Property Manager', 'Property management office access'],
-    ['Custodian', 'Asset custodian access scoped by department or laboratory assignment']
+    ['Custodian', 'Asset custodian access scoped by department assignment']
   ];
   let affected = 0;
   for (const [name, description] of roleSeeds) {
@@ -254,6 +252,7 @@ async function verifyStartupMigrations() {
   const { runMaterialMigration } = require('./runMaterialMigration');
   const { runCustodianRoleMigration } = require('./runCustodianRoleMigration');
   const { runCustodianTypeMigration } = require('./runCustodianTypeMigration');
+  const { runStaffRoleRemovalMigration } = require('./runStaffRoleRemovalMigration');
 
   const migrations = [
     ['SOP', runSopMigration],
@@ -269,7 +268,8 @@ async function verifyStartupMigrations() {
     ['Item Description', runItemDescriptionMigration],
     ['Material', runMaterialMigration],
     ['Custodian Role', runCustodianRoleMigration],
-    ['Custodian Type', runCustodianTypeMigration]
+    ['Custodian Type', runCustodianTypeMigration],
+    ['Staff Role Removal', runStaffRoleRemovalMigration]
   ];
 
   for (const [name, run] of migrations) {

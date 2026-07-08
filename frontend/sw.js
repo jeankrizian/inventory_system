@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ci-pms-static-v1';
+const CACHE_NAME = 'ci-pms-static-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',

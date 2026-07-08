@@ -9,10 +9,13 @@ const {
   sanitizeInventoryByClassification,
   validateInventoryClassification,
   isFixedAsset,
-  normalizeClassification
+  normalizeClassification,
+  validateConsumableFilter,
+  isConsumableEditBlocked,
+  shouldExcludeConsumableFromLists,
+  CONSUMABLE_DISABLED_MESSAGE
 } = require('../utils/assetClassification');
 const { normalizeMaterial, isValidMaterial } = require('../utils/materialOptions');
-const { normalizeAssetCustodianType } = require('../utils/custodianTypeLabels');
 
 function isSemiDurableClassification(value) {
   return normalizeClassification(value) === 'Semi-Durable';
@@ -23,9 +26,6 @@ function normalizeItemBody(body) {
   if (data.category_id && !data.department_id) data.department_id = data.category_id;
   if (Object.prototype.hasOwnProperty.call(data, 'material')) {
     data.material = normalizeMaterial(data.material);
-  }
-  if (Object.prototype.hasOwnProperty.call(data, 'custodian_type')) {
-    data.custodian_type = normalizeAssetCustodianType(data.custodian_type);
   }
   return data;
 }
@@ -101,15 +101,20 @@ async function notifyLowStockIfNeeded(item) {
 const InventoryController = {
   async getAll(req, res) {
     try {
+      const classificationFilter = req.query.asset_classification;
+      const filterError = validateConsumableFilter(classificationFilter);
+      if (filterError) return sendError(res, filterError, 400);
+
       const scope = getAccessScope(req.session.user);
       const filters = {
         search: req.query.search,
         department_id: req.query.department_id || req.query.category_id,
-        asset_classification: req.query.asset_classification,
+        asset_classification: classificationFilter,
         status: req.query.status,
         location_id: req.query.location_id,
         parent_asset_id: req.query.parent_asset_id,
         low_stock: req.query.low_stock === 'true',
+        exclude_consumable: shouldExcludeConsumableFromLists(),
         scope
       };
 
@@ -244,13 +249,16 @@ const InventoryController = {
       const item = await InventoryModel.findById(req.params.id);
       if (!item) return sendError(res, 'Item not found', 404);
 
+      if (isConsumableEditBlocked(item.asset_classification)) {
+        return sendError(res, CONSUMABLE_DISABLED_MESSAGE, 400);
+      }
+
       const normalized = normalizePurchaseFields(normalizeItemBody(req.body));
       const forValidation = {
         ...normalized,
         asset_classification: normalized.asset_classification ?? item.asset_classification,
         material: normalized.material !== undefined ? normalized.material : item.material,
         property_tag: normalized.property_tag ?? item.property_tag,
-        custodian_type: normalized.custodian_type ?? item.custodian_type,
         custodian_id: normalized.custodian_id ?? item.custodian_id
       };
       const validation = validateInventoryClassification(forValidation, {

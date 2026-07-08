@@ -310,9 +310,6 @@ async function initInventoryPage() {
         <select class="form-control-custom" id="filterCategory"><option value="">All Departments</option></select>
         <select class="form-control-custom" id="filterClassification">
           <option value="">All Classifications</option>
-          <option>Consumable</option>
-          <option>Semi-Durable</option>
-          <option>Non-Consumable (Fixed Asset)</option>
         </select>
         <select class="form-control-custom" id="filterStatus">
           <option value="">All Status</option>
@@ -330,6 +327,7 @@ async function initInventoryPage() {
   `;
 
   await loadDropdowns();
+  populateClassificationFilter();
   initItemFormSearchableSelects();
   await loadItems();
   bindInventoryActionsListeners();
@@ -354,6 +352,14 @@ async function initInventoryPage() {
     document.getElementById('filterLowStock').checked = true;
     loadItems();
   }
+}
+
+function populateClassificationFilter() {
+  const select = document.getElementById('filterClassification');
+  if (!select) return;
+  const options = getFilterClassifications();
+  select.innerHTML = '<option value="">All Classifications</option>'
+    + options.map((option) => `<option>${option}</option>`).join('');
 }
 
 async function loadDropdowns() {
@@ -423,7 +429,7 @@ function renderTable() {
       </thead>
       <tbody>
         ${items.map(item => {
-          const classification = normalizeAssetClassification(item.asset_classification);
+          const classification = formatClassificationDisplay(item.asset_classification);
           return `
           <tr>
             <td>${item.item_code}</td>
@@ -479,13 +485,11 @@ function applyClassificationFormState() {
 
   if (isConsumable) {
     document.getElementById('itemPropertyTag').value = '';
-    document.getElementById('itemCustodianType').value = '';
     document.getElementById('itemCustodian').value = '';
     document.getElementById('itemMaintenanceSchedule').value = '';
     document.getElementById('itemNextMaintenance').value = '';
     document.getElementById('itemServiceProvider').value = '';
   } else if (!isFixed) {
-    document.getElementById('itemCustodianType').value = '';
     document.getElementById('itemCustodian').value = '';
     document.getElementById('itemMaintenanceSchedule').value = '';
     document.getElementById('itemNextMaintenance').value = '';
@@ -546,6 +550,10 @@ async function editItem(id) {
   try {
     const res = await API.getInventoryItem(id);
     const item = res.data;
+    if (isConsumableEditBlocked(item.asset_classification)) {
+      showToast(CONSUMABLE_DISABLED_MESSAGE, 'error');
+      return;
+    }
     document.getElementById('itemModalTitle').textContent = 'Edit Item';
     document.getElementById('itemId').value = item.id;
     document.getElementById('itemCode').value = item.item_code;
@@ -573,7 +581,6 @@ async function editItem(id) {
     syncClassificationOptions(item.asset_classification);
     document.getElementById('itemMaterial').value = item.material || '';
     document.getElementById('itemPropertyTag').value = item.property_tag || '';
-    document.getElementById('itemCustodianType').value = normalizeAssetCustodianType(item.custodian_type) || '';
     document.getElementById('itemCustodian').value = item.custodian_id || '';
     document.getElementById('itemMaintenanceSchedule').value = item.maintenance_schedule || '';
     document.getElementById('itemNextMaintenance').value = item.next_maintenance_date ? item.next_maintenance_date.split('T')[0] : '';
@@ -612,7 +619,6 @@ function getItemFormData() {
     asset_classification: document.getElementById('itemClassification').value,
     material: document.getElementById('itemMaterial').value || null,
     property_tag: normalizePropertyTag(document.getElementById('itemPropertyTag').value),
-    custodian_type: document.getElementById('itemCustodianType').value || null,
     custodian_id: document.getElementById('itemCustodian').value ? parseInt(document.getElementById('itemCustodian').value) : null,
     maintenance_schedule: document.getElementById('itemMaintenanceSchedule').value || null,
     next_maintenance_date: document.getElementById('itemNextMaintenance').value || null,
@@ -635,8 +641,8 @@ async function saveItem(e) {
 
   data.asset_classification = classification;
 
-  if (isConsumableClassification(classification) && !isConsumableEnabled() && !document.getElementById('itemId').value) {
-    showToast('Consumable classification is temporarily disabled', 'error');
+  if (isConsumableClassification(classification) && !isConsumableEnabled()) {
+    showToast(CONSUMABLE_DISABLED_MESSAGE, 'error');
     return;
   }
 
@@ -647,11 +653,6 @@ async function saveItem(e) {
 
   if (data.property_tag && !isValidPropertyTagFormat(data.property_tag)) {
     showToast('Property tag format is invalid. Use values like 2025-0001 or 2025/0001.', 'error');
-    return;
-  }
-
-  if (isFixedAssetClassification(classification) && !data.custodian_type) {
-    showToast('Custodian type is required for Non-Consumable (Fixed Asset) items', 'error');
     return;
   }
 
@@ -703,7 +704,7 @@ function openTransferModal(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   if (!canTransferAsset(item.asset_classification)) {
-    showToast('Consumable items cannot be transferred', 'error');
+    showToast('This item cannot be transferred', 'error');
     return;
   }
   document.getElementById('transferItemId').value = id;
@@ -891,7 +892,7 @@ function renderComponentHistory(replacements, linkedParts) {
         ${linkedParts.map(p => `<tr>
           <td>${p.item_code}</td>
           <td>${p.item_name}</td>
-          <td>${normalizeAssetClassification(p.asset_classification)}</td>
+          <td>${formatClassificationDisplay(p.asset_classification)}</td>
           <td>${getStatusBadge(p.status)}</td>
         </tr>`).join('')}
       </tbody></table></div>`

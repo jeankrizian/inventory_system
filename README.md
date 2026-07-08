@@ -11,7 +11,7 @@ A fully functional property management system built with **HTML5, CSS3, Bootstra
 - **Borrow/Return** — Borrow requests, admin approval, return processing
 - **Reports** — View, print, export to PDF and Excel
 - **Authentication** — Session-based login with bcrypt password hashing
-- **Role-based Access** — Admin and Staff roles
+- **Role-based Access** — Administrator, Property Manager, and Custodian roles
 
 ## Tech Stack
 
@@ -88,10 +88,13 @@ Open your browser at: **http://localhost:3000**
 
 ## Default Login Credentials
 
-| Role  | Username | Password  |
-|-------|----------|-----------|
-| Admin | admin    | admin123  |
-| Staff | staff    | staff123  |
+| Role | Username | Password |
+|------|----------|----------|
+| Administrator | admin | admin123 |
+| Property Manager | pm_test | pm123456 |
+| Custodian | ict_custodian | cust123456 |
+
+See `TEST_ACCOUNTS.md` for full demo account list.
 
 ## Project Structure
 
@@ -141,7 +144,7 @@ OJT_InventorySystem/
 
 ## Database Tables
 
-- `roles` — User roles (admin, staff)
+- `roles` — User roles (admin, Property Manager, Custodian)
 - `users` — System users
 - `categories` — Item categories
 - `suppliers` — Supplier directory

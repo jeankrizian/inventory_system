@@ -1,7 +1,6 @@
 let users = [];
 let roles = [];
 let departments = [];
-let locations = [];
 let currentUser = null;
 
 async function initManageUsers() {
@@ -40,18 +39,8 @@ async function initManageUsers() {
   document.getElementById('filterStatus').addEventListener('change', loadUsers);
   document.getElementById('userForm').addEventListener('submit', saveUser);
   document.getElementById('userRole').addEventListener('change', updateAssignmentFields);
-  document.getElementById('userAssignedDepartment')?.addEventListener('change', () => {
-    if ((document.getElementById('userRole').value || '').toLowerCase().trim() === 'custodian') {
-      document.getElementById('userAssignedLocation').value = '';
-    }
-  });
-  document.getElementById('userAssignedLocation')?.addEventListener('change', () => {
-    if ((document.getElementById('userRole').value || '').toLowerCase().trim() === 'custodian') {
-      document.getElementById('userAssignedDepartment').value = '';
-    }
-  });
 
-  await Promise.all([loadRoles(), loadDepartments(), loadLocations()]);
+  await Promise.all([loadRoles(), loadDepartments()]);
   await loadUsers();
 }
 
@@ -65,45 +54,20 @@ async function loadDepartments() {
   }
 }
 
-async function loadLocations() {
-  try {
-    const res = await API.getLocations();
-    locations = res?.data || [];
-    populateSelect(document.getElementById('userAssignedLocation'), locations, 'id', 'name', 'Select location...');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
 function updateAssignmentFields() {
   const role = (document.getElementById('userRole').value || '').toLowerCase().trim();
   const assignmentFields = document.getElementById('assignmentFields');
   const deptGroup = document.getElementById('departmentAssignmentGroup');
-  const locGroup = document.getElementById('locationAssignmentGroup');
   const deptSelect = document.getElementById('userAssignedDepartment');
-  const locSelect = document.getElementById('userAssignedLocation');
-  const deptLabel = document.getElementById('departmentAssignmentLabel');
-  const locLabel = document.getElementById('locationAssignmentLabel');
 
-  const isUnified = role === 'custodian';
+  const isCustodianRole = role === 'custodian';
 
-  assignmentFields.style.display = isUnified ? 'flex' : 'none';
-  deptGroup.style.display = isUnified ? 'block' : 'none';
-  locGroup.style.display = isUnified ? 'block' : 'none';
+  assignmentFields.style.display = isCustodianRole ? 'flex' : 'none';
+  deptGroup.style.display = isCustodianRole ? 'block' : 'none';
 
-  if (deptLabel) {
-    deptLabel.textContent = 'Assigned Department';
-  }
-  if (locLabel) {
-    locLabel.textContent = 'Assigned Laboratory';
-  }
   if (deptSelect) {
-    deptSelect.required = false;
-    if (!isUnified) deptSelect.value = '';
-  }
-  if (locSelect) {
-    locSelect.required = false;
-    if (!isUnified) locSelect.value = '';
+    deptSelect.required = isCustodianRole;
+    if (!isCustodianRole) deptSelect.value = '';
   }
 }
 
@@ -114,8 +78,9 @@ async function loadRoles() {
     const filterEl = document.getElementById('filterRole');
     const roleEl = document.getElementById('userRole');
     roles.forEach(r => {
-      filterEl.innerHTML += `<option value="${r.name}">${r.name}</option>`;
-      roleEl.innerHTML += `<option value="${r.name}">${r.name}</option>`;
+      const label = r.display_name || formatRoleDisplayName(r.name);
+      filterEl.innerHTML += `<option value="${r.name}">${label}</option>`;
+      roleEl.innerHTML += `<option value="${r.name}">${label}</option>`;
     });
   } catch (err) {
     showToast(err.message, 'error');
@@ -156,7 +121,7 @@ function renderUsers() {
       <thead>
         <tr>
           <th>Full Name</th><th>Username</th><th>Email</th><th>Role</th>
-          <th>Assigned Department</th><th>Assigned Laboratory</th>
+          <th>Assigned Department</th>
           <th>Status</th><th>Date Created</th><th>Actions</th>
         </tr>
       </thead>
@@ -168,7 +133,6 @@ function renderUsers() {
             <td>${u.email}</td>
             <td>${formatRoleDisplayName(u.role_name)}</td>
             <td>${formatAssignment(u.assigned_department_name)}</td>
-            <td>${formatAssignment(u.assigned_location_name)}</td>
             <td>${u.is_active ? 'Active' : 'Inactive'}</td>
             <td>${formatDate(u.created_at)}</td>
             <td>
@@ -203,7 +167,6 @@ function editUser(id) {
   document.getElementById('userEmail').value = u.email;
   document.getElementById('userRole').value = u.role_name || '';
   document.getElementById('userAssignedDepartment').value = u.assigned_department_id || '';
-  document.getElementById('userAssignedLocation').value = u.assigned_location_id || '';
   document.getElementById('userStatus').value = u.is_active ? 'Active' : 'Inactive';
   document.getElementById('userPassword').value = '';
   document.getElementById('userPassword').required = false;
@@ -216,15 +179,9 @@ function editUser(id) {
 function validateCustodianAssignments(role) {
   const roleLower = (role || '').toLowerCase().trim();
   const deptId = document.getElementById('userAssignedDepartment').value;
-  const locId = document.getElementById('userAssignedLocation').value;
 
-  if (roleLower === 'custodian') {
-    if (!deptId && !locId) {
-      return 'Custodian requires an assigned department or laboratory.';
-    }
-    if (deptId && locId) {
-      return 'Custodian can be assigned to a department or a laboratory, but not both.';
-    }
+  if (roleLower === 'custodian' && !deptId) {
+    return 'Custodian requires an assigned department.';
   }
   return null;
 }
@@ -239,14 +196,17 @@ async function saveUser(e) {
     return;
   }
 
+  const isCustodianRole = (role || '').toLowerCase().trim() === 'custodian';
   const data = {
     full_name: document.getElementById('userFullName').value,
     username: document.getElementById('userUsername').value,
     email: document.getElementById('userEmail').value,
     role,
     is_active: document.getElementById('userStatus').value,
-    assigned_department_id: document.getElementById('userAssignedDepartment').value || null,
-    assigned_location_id: document.getElementById('userAssignedLocation').value || null
+    assigned_department_id: isCustodianRole
+      ? (document.getElementById('userAssignedDepartment').value || null)
+      : null,
+    assigned_location_id: null
   };
   const password = document.getElementById('userPassword').value;
   if (password) data.password = password;

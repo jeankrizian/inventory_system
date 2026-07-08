@@ -1,5 +1,5 @@
 /**
- * Registration page logic — public registration creates Employee (Staff) accounts only.
+ * Registration page logic — public registration is disabled.
  */
 const SCHOOL_EMAIL_DOMAIN = '@caviteinstitute.edu.ph';
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.]{4,30}$/;

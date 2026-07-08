@@ -91,12 +91,6 @@
             <div class="form-group" id="propertyTagGroup"><label>Property Tag</label><input type="text" class="form-control-custom" id="itemPropertyTag" placeholder="e.g. 2025-0001 or 2025/0001"></div>
           </div>
           <div class="form-row" id="custodianRow">
-            <div class="form-group"><label>Custodian Type</label>
-              <select class="form-control-custom" id="itemCustodianType">
-                <option value="">None</option>
-                <option>Property Custodian</option><option>Department</option><option>Laboratory</option>
-              </select>
-            </div>
             <div class="form-group"><label>Assigned Custodian</label>
               <select class="form-control-custom" id="itemCustodian">
                 <option value="">Select custodian...</option>
@@ -242,7 +236,7 @@
               <select class="form-control-custom" id="componentNewItem">
                 <option value="">Manual entry / not in stock</option>
               </select>
-              <small style="font-size:12px;color:var(--text-muted);">Optional — select a Semi-Durable or Consumable part to link to this asset</small>
+              <small style="font-size:12px;color:var(--text-muted);">Optional — select a Semi-Durable part to link to this asset</small>
             </div>
             <div class="form-group"><label>New Component Name</label><input type="text" class="form-control-custom" id="componentNewName" placeholder="If not selected from inventory"></div>
           </div>
@@ -293,7 +287,6 @@
   <script src="/js/assetClassification.js"></script>
   <script src="/js/itemAvailability.js"></script>
   <script src="/js/searchableSelect.js"></script>
-  <script src="/js/custodianTypes.js"></script>
   <script src="/js/pages/inventory.js"></script>
 </body>
 </html>

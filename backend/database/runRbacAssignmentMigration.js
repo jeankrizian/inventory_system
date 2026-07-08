@@ -19,34 +19,28 @@ function isIgnorable(err) {
 }
 
 async function assignSampleCustodians() {
+  await pool.query(
+    `UPDATE users u
+     JOIN roles r ON u.role_id = r.id
+     SET u.assigned_location_id = NULL
+     WHERE r.name = 'Custodian'`
+  );
+
   const [deptCustodians] = await pool.query(
     `SELECT u.id FROM users u
      JOIN roles r ON u.role_id = r.id
      WHERE r.name = 'Custodian'
        AND u.assigned_department_id IS NULL
-       AND u.assigned_location_id IS NULL
      LIMIT 1`
   );
   if (deptCustodians.length) {
-    await pool.query(
-      'UPDATE users SET assigned_department_id = 1 WHERE id = ?',
-      [deptCustodians[0].id]
-    );
-  }
-
-  const [labCustodians] = await pool.query(
-    `SELECT u.id FROM users u
-     JOIN roles r ON u.role_id = r.id
-     WHERE r.name = 'Custodian'
-       AND u.assigned_location_id IS NULL
-       AND u.assigned_department_id IS NULL
-     LIMIT 1`
-  );
-  if (labCustodians.length) {
-    await pool.query(
-      'UPDATE users SET assigned_location_id = 3 WHERE id = ?',
-      [labCustodians[0].id]
-    );
+    const [depts] = await pool.query('SELECT id FROM departments ORDER BY id LIMIT 1');
+    if (depts.length) {
+      await pool.query(
+        'UPDATE users SET assigned_department_id = ? WHERE id = ?',
+        [depts[0].id, deptCustodians[0].id]
+      );
+    }
   }
 }
 

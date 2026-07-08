@@ -110,8 +110,7 @@ const TransferController = {
       await InventoryModel.updateLocationAndDepartment(transfer.inventory_item_id, {
         location_id: transfer.to_location_id,
         department_id: transfer.to_department_id || transfer.from_department_id,
-        custodian_id: toDept?.custodian_id || undefined,
-        custodian_type: toDept?.custodian_type || undefined
+        custodian_id: toDept?.custodian_id || undefined
       });
 
       try {

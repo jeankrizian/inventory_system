@@ -156,7 +156,7 @@ function getRoleKey(role) {
   if (normalized === 'custodian' || normalized === 'department custodian' || normalized === 'laboratory custodian') {
     return 'custodian';
   }
-  return 'employee';
+  return null;
 }
 
 function getUserRoleName(user) {
@@ -186,13 +186,11 @@ function formatRoleDisplayName(userOrRole) {
   }
   if (role === 'admin' || role === 'administrator') return 'Administrator';
   if (role === 'property manager') return 'Property Manager';
-  if (role === 'staff' || role === 'employee') return 'Employee';
   return userOrRole?.role_name || userOrRole?.role || userOrRole || '-';
 }
 
 function isEmployee(user) {
-  const role = getUserRoleName(user);
-  return role === 'staff' || role === 'employee';
+  return false;
 }
 
 /** @deprecated Use isAdministrator or isPropertyManager — former admin tier */
@@ -217,7 +215,7 @@ function canViewInventory(user) {
 }
 
 function canSubmitBorrow(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user) || isEmployee(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function canSubmitTransfer(user) {
@@ -281,11 +279,11 @@ function canSubmitDisposal(user) {
 }
 
 function canViewPersonalBorrowStats(user) {
-  return isEmployee(user);
+  return false;
 }
 
 function canViewInventoryDashboard(user) {
-  return !isEmployee(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function canViewUsersDashboard(user) {
@@ -313,7 +311,7 @@ function canViewOperationalDashboard(user) {
 }
 
 function canViewPersonalDashboardOnly(user) {
-  return isEmployee(user);
+  return false;
 }
 
 function canViewDashboardCharts(user) {
@@ -329,15 +327,15 @@ function canViewAssetsNeedingAttention(user) {
 }
 
 function canViewRecentBorrowsDashboard(user) {
-  return isEmployee(user) || isPropertyManager(user);
+  return isPropertyManager(user);
 }
 
 function canViewRecentReturnsDashboard(user) {
-  return isEmployee(user) || isPropertyManager(user);
+  return isPropertyManager(user);
 }
 
 function canViewDashboardActivities(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isEmployee(user) || isCustodian(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function getDashboardStatTitle(user, module) {
@@ -358,7 +356,6 @@ function getDashboardSubtitle(user) {
   if (isAdministrator(user)) return 'Administrative summary';
   if (isPropertyManager(user)) return 'Operational summary';
   if (isCustodian(user)) return 'Assigned assets overview';
-  if (isEmployee(user)) return 'My borrowing summary';
   return 'Overview';
 }
 

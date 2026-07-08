@@ -3,16 +3,16 @@ const ROLES = {
   PROPERTY_MANAGER: 'property manager',
   CUSTODIAN: 'custodian',
   DEPARTMENT_CUSTODIAN: 'department custodian',
-  LABORATORY_CUSTODIAN: 'laboratory custodian',
-  EMPLOYEE: 'staff'
+  LABORATORY_CUSTODIAN: 'laboratory custodian'
 };
 
 const NAV_ROLES = {
   ADMINISTRATOR: 'administrator',
   PROPERTY_MANAGER: 'property_manager',
-  CUSTODIAN: 'custodian',
-  EMPLOYEE: 'employee'
+  CUSTODIAN: 'custodian'
 };
+
+const ALLOWED_ROLE_NAMES = new Set(['admin', 'Property Manager', 'Custodian']);
 
 /** @deprecated Use isAdministrator — kept for minimal migration churn */
 const ADMIN_ROLES = [ROLES.ADMINISTRATOR, ROLES.PROPERTY_MANAGER];
@@ -25,7 +25,6 @@ function normalizeRoleName(role) {
 function resolveRoleDbName(role) {
   if (!role) return role;
   const normalized = normalizeRoleName(role);
-  if (normalized === ROLES.EMPLOYEE || normalized === 'employee') return 'staff';
   if (normalized === ROLES.ADMINISTRATOR || normalized === 'administrator') return 'admin';
   if (normalized === ROLES.PROPERTY_MANAGER) return 'Property Manager';
   if (
@@ -38,11 +37,15 @@ function resolveRoleDbName(role) {
   return String(role).trim();
 }
 
+function isAllowedRole(role) {
+  const dbName = resolveRoleDbName(role);
+  return ALLOWED_ROLE_NAMES.has(dbName);
+}
+
 function formatRoleDisplayName(role) {
   if (isCustodian(role)) return 'Custodian';
   if (isAdministrator(role)) return 'Administrator';
   if (isPropertyManager(role)) return 'Property Manager';
-  if (isEmployee(role)) return 'Employee';
   return String(role || '').trim();
 }
 
@@ -50,10 +53,14 @@ function getRoleKey(role) {
   const normalized = normalizeRoleName(role);
   if (normalized === ROLES.ADMINISTRATOR) return NAV_ROLES.ADMINISTRATOR;
   if (normalized === ROLES.PROPERTY_MANAGER) return NAV_ROLES.PROPERTY_MANAGER;
-  if (normalized === ROLES.DEPARTMENT_CUSTODIAN || normalized === ROLES.LABORATORY_CUSTODIAN || normalized === ROLES.CUSTODIAN) {
+  if (
+    normalized === ROLES.CUSTODIAN
+    || normalized === ROLES.DEPARTMENT_CUSTODIAN
+    || normalized === ROLES.LABORATORY_CUSTODIAN
+  ) {
     return NAV_ROLES.CUSTODIAN;
   }
-  return NAV_ROLES.EMPLOYEE;
+  return null;
 }
 
 function isAdministrator(role) {
@@ -88,20 +95,16 @@ function isCustodian(role) {
 
 function getCustodianScopeFromAssignments(user) {
   const departmentId = user?.assigned_department_id ?? null;
-  const locationId = user?.assigned_location_id ?? null;
 
-  if (departmentId && !locationId) {
+  if (departmentId) {
     return { type: 'department', departmentId };
-  }
-  if (locationId && !departmentId) {
-    return { type: 'location', locationId };
   }
   return null;
 }
 
+/** @deprecated Staff/Employee role removed */
 function isEmployee(role) {
-  const normalized = normalizeRoleName(role);
-  return normalized === ROLES.EMPLOYEE || normalized === 'staff' || normalized === 'employee';
+  return false;
 }
 
 /** @deprecated Former admin tier — use specific permission helpers instead */
@@ -126,7 +129,7 @@ function canViewInventory(role) {
 }
 
 function canSubmitBorrow(role) {
-  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role) || isEmployee(role);
+  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
 }
 
 function canSubmitTransfer(role) {
@@ -198,32 +201,21 @@ function getAccessScope(user) {
     return { type: 'all', userId };
   }
 
-  if (isEmployee(role)) {
-    return { type: 'denied', userId };
-  }
-
   if (isCustodian(role)) {
     const assignmentScope = getCustodianScopeFromAssignments(user);
     if (assignmentScope?.type === 'department') {
       return { type: 'department', userId, departmentId: assignmentScope.departmentId };
     }
-    if (assignmentScope?.type === 'location') {
-      return { type: 'location', userId, locationId: assignmentScope.locationId };
-    }
     return { type: 'denied', userId };
   }
 
-  return { type: 'all', userId };
+  return { type: 'denied', userId };
 }
 
-/** Borrow list scope — school-wide for admin/PM; custodians see own requests; employees see own only */
+/** Borrow list scope — school-wide for admin/PM; custodians see own requests */
 function getBorrowListScope(user) {
   const role = user?.role;
   const userId = user?.id;
-
-  if (isEmployee(role)) {
-    return { type: 'own', userId };
-  }
 
   if (isCustodian(role)) {
     return { type: 'own', userId };
@@ -371,9 +363,11 @@ function buildSessionUser(dbUser) {
 module.exports = {
   ROLES,
   NAV_ROLES,
+  ALLOWED_ROLE_NAMES,
   ADMIN_ROLES,
   normalizeRoleName,
   resolveRoleDbName,
+  isAllowedRole,
   formatRoleDisplayName,
   getRoleKey,
   isAdministrator,

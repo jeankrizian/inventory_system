@@ -27,10 +27,10 @@ const DepartmentModel = {
 
   async create(data) {
     const [result] = await pool.query(
-      `INSERT INTO departments (name, code, description, department_head, custodian_id, custodian_type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO departments (name, code, description, department_head, custodian_id, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [data.name, data.code, data.description || null, data.department_head || null,
-        data.custodian_id || null, data.custodian_type || null, data.status || 'Active']
+        data.custodian_id || null, data.status || 'Active']
     );
     return result.insertId;
   },
@@ -38,9 +38,9 @@ const DepartmentModel = {
   async update(id, data) {
     const [result] = await pool.query(
       `UPDATE departments SET name = ?, code = ?, description = ?, department_head = ?,
-        custodian_id = ?, custodian_type = ?, status = ? WHERE id = ?`,
+        custodian_id = ?, status = ? WHERE id = ?`,
       [data.name, data.code, data.description || null, data.department_head || null,
-        data.custodian_id || null, data.custodian_type || null, data.status || 'Active', id]
+        data.custodian_id || null, data.status || 'Active', id]
     );
     return result.affectedRows > 0;
   },

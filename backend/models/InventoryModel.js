@@ -4,6 +4,10 @@ const { appendInventoryScopeSql, isInventoryScopeDenied } = require('../utils/ro
 const { generateNextItemCode } = require('../utils/itemCodeGenerator');
 const { isItemAvailableForBorrow, getItemUnavailableReason } = require('../utils/itemAvailability');
 const { appendDateRangeSql } = require('../utils/reportFilters');
+const {
+  CONSUMABLE_TEMPORARILY_DISABLED,
+  DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED
+} = require('../utils/assetClassification');
 
 const EMPTY_INVENTORY_STATS = {
   total_items: 0,
@@ -95,6 +99,10 @@ const InventoryModel = {
 
       params.push(filters.asset_classification);
 
+    }
+
+    if (filters.exclude_consumable) {
+      sql += " AND i.asset_classification != 'Consumable'";
     }
 
     if (filters.status) {
@@ -208,7 +216,7 @@ const InventoryModel = {
 
       `INSERT INTO inventory_items 
 
-       (item_code, item_name, description, department_id, asset_classification, material, property_tag, custodian_id, custodian_type,
+       (item_code, item_name, description, department_id, asset_classification, material, property_tag, custodian_id,
 
         parent_asset_id, brand, model, quantity, available_quantity, unit,
 
@@ -218,7 +226,7 @@ const InventoryModel = {
 
         maintenance_schedule, next_maintenance_date, maintenance_status, service_provider)
 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
       [
 
@@ -228,15 +236,15 @@ const InventoryModel = {
 
         data.department_id,
 
-        data.asset_classification || 'Consumable',
+        data.asset_classification || (CONSUMABLE_TEMPORARILY_DISABLED
+          ? DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED
+          : 'Consumable'),
 
         data.material || null,
 
         data.property_tag || null,
 
         data.custodian_id || null,
-
-        data.custodian_type || null,
 
         data.parent_asset_id || null,
 
@@ -310,7 +318,7 @@ const InventoryModel = {
 
         item_code = ?, item_name = ?, description = ?, department_id = ?, asset_classification = ?, material = ?,
 
-        property_tag = ?, custodian_id = ?, custodian_type = ?, parent_asset_id = ?,
+        property_tag = ?, custodian_id = ?, parent_asset_id = ?,
 
         brand = ?, model = ?, quantity = ?, available_quantity = ?, unit = ?, supplier_id = ?,
 
@@ -341,8 +349,6 @@ const InventoryModel = {
         data.property_tag !== undefined ? data.property_tag : existing.property_tag,
 
         data.custodian_id !== undefined ? data.custodian_id : existing.custodian_id,
-
-        data.custodian_type ?? existing.custodian_type,
 
         data.parent_asset_id !== undefined ? data.parent_asset_id : existing.parent_asset_id,
 
@@ -517,16 +523,12 @@ const InventoryModel = {
 
 
 
-  async updateLocationAndDepartment(id, { location_id, department_id, custodian_id, custodian_type }) {
+  async updateLocationAndDepartment(id, { location_id, department_id, custodian_id }) {
     const fields = ['location_id = ?', 'department_id = ?'];
     const params = [location_id, department_id];
     if (custodian_id !== undefined) {
       fields.push('custodian_id = ?');
       params.push(custodian_id);
-    }
-    if (custodian_type !== undefined) {
-      fields.push('custodian_type = ?');
-      params.push(custodian_type);
     }
     params.push(id);
     await pool.query(

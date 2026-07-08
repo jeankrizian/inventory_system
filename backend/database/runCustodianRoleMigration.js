@@ -5,7 +5,7 @@ async function runCustodianRoleMigration() {
 
   await pool.query(
     `INSERT IGNORE INTO roles (name, description) VALUES (?, ?)`,
-    ['Custodian', 'Asset custodian access scoped by department or laboratory assignment']
+    ['Custodian', 'Asset custodian access scoped by department assignment']
   );
 
   const [custodianRoleRows] = await pool.query(

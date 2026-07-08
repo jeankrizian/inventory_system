@@ -81,7 +81,7 @@ function renderDepartments(list) {
             <td>${d.code || '-'}</td>
             <td>${d.name}</td>
             <td>${d.department_head || '-'}</td>
-            <td>${d.custodian_name ? `${d.custodian_name}${d.custodian_type ? ` (${normalizeAssetCustodianType(d.custodian_type)})` : ''}` : '-'}</td>
+            <td>${d.custodian_name || '-'}</td>
             <td>${getStatusBadge(d.status || 'Active')}</td>
             <td>
               <button class="btn-icon" onclick="editDepartment(${d.id})" title="Edit"><i class="bi bi-pencil"></i></button>
@@ -112,7 +112,6 @@ function editDepartment(id) {
   document.getElementById('departmentCode').value = d.code || '';
   document.getElementById('departmentCode').disabled = false;
   document.getElementById('departmentHead').value = d.department_head || '';
-  document.getElementById('departmentCustodianType').value = normalizeAssetCustodianType(d.custodian_type) || '';
   document.getElementById('departmentCustodian').value = d.custodian_id || '';
   document.getElementById('departmentStatus').value = d.status || 'Active';
   document.getElementById('departmentDesc').value = d.description || '';
@@ -121,13 +120,11 @@ function editDepartment(id) {
 
 function getDepartmentFormData() {
   const custodianId = document.getElementById('departmentCustodian').value;
-  const custodianType = document.getElementById('departmentCustodianType').value;
   return {
     name: document.getElementById('departmentName').value.trim(),
     code: document.getElementById('departmentCode').value.trim(),
     department_head: document.getElementById('departmentHead').value.trim() || null,
     custodian_id: custodianId ? parseInt(custodianId, 10) : null,
-    custodian_type: custodianType || null,
     status: document.getElementById('departmentStatus').value,
     description: document.getElementById('departmentDesc').value.trim() || null
   };
@@ -140,13 +137,6 @@ async function saveDepartment(e) {
 
   if (!data.code) {
     showToast('Department code is required', 'error');
-    return;
-  }
-
-  const hasCustodian = Boolean(data.custodian_id);
-  const hasType = Boolean(data.custodian_type);
-  if (hasCustodian !== hasType) {
-    showToast('Both assigned custodian and custodian type are required when assigning a custodian', 'error');
     return;
   }
 

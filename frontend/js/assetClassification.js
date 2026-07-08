@@ -6,6 +6,7 @@ const ASSET_CLASSIFICATIONS = [
 
 /** Temporarily disable new Consumable items while keeping existing records compatible */
 const CONSUMABLE_TEMPORARILY_DISABLED = true;
+const CONSUMABLE_DISABLED_MESSAGE = 'Consumable items are currently disabled.';
 
 const FIXED_ASSET_CLASS = 'Non-Consumable (Fixed Asset)';
 const PROPERTY_TAG_MAX_LENGTH = 50;
@@ -24,7 +25,9 @@ function isValidPropertyTagFormat(value) {
 }
 
 function normalizeAssetClassification(value) {
-  if (!value) return 'Consumable';
+  if (!value || String(value).trim() === '') {
+    return CONSUMABLE_TEMPORARILY_DISABLED ? '' : 'Consumable';
+  }
   if (value === 'Fixed Asset') return FIXED_ASSET_CLASS;
   return value;
 }
@@ -38,10 +41,25 @@ function isConsumableEnabled() {
   return !CONSUMABLE_TEMPORARILY_DISABLED;
 }
 
+function isConsumableEditBlocked(value) {
+  return !isConsumableEnabled() && isConsumableClassification(value);
+}
+
 function getSelectableClassifications(currentValue) {
   if (isConsumableEnabled()) return [...ASSET_CLASSIFICATIONS];
-  if (isConsumableClassification(currentValue)) return [...ASSET_CLASSIFICATIONS];
   return ASSET_CLASSIFICATIONS.filter((c) => c !== 'Consumable');
+}
+
+function getFilterClassifications() {
+  return getSelectableClassifications(null);
+}
+
+function formatClassificationDisplay(value) {
+  if (!isConsumableEnabled() && isConsumableClassification(value)) {
+    return '—';
+  }
+  const normalized = normalizeAssetClassification(value);
+  return normalized || '—';
 }
 
 function isFixedAssetClassification(value) {
@@ -49,7 +67,7 @@ function isFixedAssetClassification(value) {
 }
 
 function canTransferAsset(value) {
-  return normalizeAssetClassification(value) !== 'Consumable';
+  return !isConsumableClassification(value);
 }
 
 function canMaintainAsset(value) {

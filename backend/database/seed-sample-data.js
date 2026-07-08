@@ -142,7 +142,7 @@ const SAMPLE_INVENTORY = [
 const SAMPLE_BORROWS = [
   {
     transaction_code: 'BRW-SMP-001',
-    borrower: 'staff',
+    borrower: 'ict_custodian',
     borrower_department: 'Accounting Office',
     purpose: 'Quarterly inventory audit paperwork',
     borrow_date: '2025-06-01',
@@ -186,7 +186,7 @@ const SAMPLE_BORROWS = [
   },
   {
     transaction_code: 'BRW-SMP-005',
-    borrower: 'staff',
+    borrower: 'ict_custodian',
     borrower_department: 'Library',
     purpose: 'Research week book display',
     borrow_date: '2025-05-01',
@@ -209,7 +209,7 @@ const SAMPLE_BORROWS = [
   },
   {
     transaction_code: 'BRW-SMP-007',
-    borrower: 'staff',
+    borrower: 'ict_custodian',
     borrower_department: 'Junior High School',
     purpose: 'Classroom multimedia lesson',
     borrow_date: '2025-04-01',
@@ -265,7 +265,7 @@ const SAMPLE_RETURNS = [
   {
     transaction_code: 'RTN-SMP-002',
     borrow_code: 'BRW-SMP-005',
-    returned_by: 'staff',
+    returned_by: 'ict_custodian',
     return_date: '2025-05-12',
     condition: 'Good',
     notes: 'All textbooks accounted for'
@@ -332,7 +332,7 @@ const SAMPLE_TRANSFERS = [
     to_department_id: 9,
     reason: 'Projector for library research presentation',
     status: 'Rejected',
-    requested_by: 'staff',
+    requested_by: 'ict_custodian',
     approved_by: 'admin',
     notes: 'Item currently borrowed — transfer deferred'
   },
@@ -425,7 +425,7 @@ const SAMPLE_MAINTENANCE = [
   {
     transaction_code: 'MNT-SMP-005',
     item_code: 'SMP-INV-006',
-    requested_by: 'staff',
+    requested_by: 'ict_custodian',
     requested_date: '2025-06-18',
     reported_problem: 'Bulk HDMI cables showing bent connectors',
     maintenance_type: 'Emergency',
@@ -455,7 +455,7 @@ const SAMPLE_DISPOSALS = [
     quantity: 20,
     reason: 'Dried-out whiteboard markers beyond usable life',
     status: 'Inspected',
-    requested_by: 'staff',
+    requested_by: 'ict_custodian',
     inspected_by: 'pm_test',
     inspection_notes: 'Confirmed unusable — no ink remaining in 18 of 20 markers'
   },
@@ -477,7 +477,7 @@ const SAMPLE_DISPOSALS = [
     quantity: 1,
     reason: 'Network switch with intermittent port failures',
     status: 'Rejected',
-    requested_by: 'staff',
+    requested_by: 'ict_custodian',
     approved_by: 'admin',
     notes: 'Sent for repair instead — still under warranty'
   },
@@ -902,7 +902,7 @@ async function verifyPrerequisites(connection) {
     throw new Error('No departments found. Run "npm run seed" first.');
   }
 
-  const requiredUsers = ['admin', 'staff', 'pm_test', 'deptcust_test', 'labcust_test'];
+  const requiredUsers = ['admin', 'pm_test', 'ict_custodian', 'eng_custodian', 'shs_custodian'];
   for (const username of requiredUsers) {
     await getUser(connection, username);
   }

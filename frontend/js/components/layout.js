@@ -5,14 +5,13 @@
 const NAV_ROLES = {
   ADMINISTRATOR: 'administrator',
   PROPERTY_MANAGER: 'property_manager',
-  CUSTODIAN: 'custodian',
-  EMPLOYEE: 'employee'
+  CUSTODIAN: 'custodian'
 };
 
 const NAV_ITEMS = [
-  { href: '/pages/dashboard.html', icon: 'bi-grid-1x2-fill', label: 'Dashboard', page: 'dashboard', roles: ['administrator', 'property_manager', 'custodian', 'employee'] },
+  { href: '/pages/dashboard.html', icon: 'bi-grid-1x2-fill', label: 'Dashboard', page: 'dashboard', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/inventory.html', icon: 'bi-box-seam', label: 'Inventory', page: 'inventory', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/orders.html', icon: 'bi-box-arrow-in-right', label: 'Borrow', page: 'orders', roles: ['administrator', 'property_manager', 'custodian', 'employee'] },
+  { href: '/pages/orders.html', icon: 'bi-box-arrow-in-right', label: 'Borrow', page: 'orders', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/transfer-requests.html', icon: 'bi-arrow-left-right', label: 'Transfers', page: 'transfer-requests', roles: ['property_manager', 'custodian'] },
   { href: '/pages/maintenance-requests.html', icon: 'bi-tools', label: 'Maintenance', page: 'maintenance-requests', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/disposal-requests.html', icon: 'bi-trash3', label: 'Disposals', page: 'disposal-requests', roles: ['administrator', 'property_manager', 'custodian'] },
@@ -35,16 +34,16 @@ const NAV_ITEMS = [
 ];
 
 const FOOTER_NAV = [
-  { href: '/pages/settings.html', icon: 'bi-gear', label: 'Settings', page: 'settings', roles: ['administrator', 'property_manager', 'custodian', 'employee'] },
-  { action: 'logout', icon: 'bi-box-arrow-right', label: 'Log Out', roles: ['administrator', 'property_manager', 'custodian', 'employee'] }
+  { href: '/pages/settings.html', icon: 'bi-gear', label: 'Settings', page: 'settings', roles: ['administrator', 'property_manager', 'custodian'] },
+  { action: 'logout', icon: 'bi-box-arrow-right', label: 'Log Out', roles: ['administrator', 'property_manager', 'custodian'] }
 ];
 
 const PAGE_PERMISSIONS = {
-  dashboard: ['administrator', 'property_manager', 'custodian', 'employee'],
+  dashboard: ['administrator', 'property_manager', 'custodian'],
   inventory: ['administrator', 'property_manager', 'custodian'],
   reports: ['administrator', 'property_manager', 'custodian'],
   suppliers: ['administrator', 'property_manager'],
-  orders: ['administrator', 'property_manager', 'custodian', 'employee'],
+  orders: ['administrator', 'property_manager', 'custodian'],
   'maintenance-requests': ['administrator', 'property_manager', 'custodian'],
   'transfer-requests': ['property_manager', 'custodian'],
   'disposal-requests': ['administrator', 'property_manager', 'custodian'],
@@ -53,9 +52,9 @@ const PAGE_PERMISSIONS = {
   'manage-users': ['administrator'],
   'manage-store': ['administrator'],
   archive: ['administrator', 'property_manager'],
-  settings: ['administrator', 'property_manager', 'custodian', 'employee'],
+  settings: ['administrator', 'property_manager', 'custodian'],
   documents: ['administrator', 'property_manager'],
-  'document-preview': ['administrator', 'property_manager', 'custodian', 'employee']
+  'document-preview': ['administrator', 'property_manager', 'custodian']
 };
 
 const MANAGE_PAGES = ['manage-departments', 'manage-locations', 'manage-users', 'suppliers', 'manage-store'];

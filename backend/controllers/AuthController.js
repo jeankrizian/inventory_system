@@ -6,8 +6,6 @@ const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUser
 const { buildSessionUser } = require('../utils/roleHelpers');
 const { requestPasswordReset } = require('../utils/passwordResetService');
 
-const REGISTRATION_ROLES = ['staff'];
-const REGISTRATION_ROLE = 'staff';
 const PUBLIC_REGISTRATION_DISABLED = true;
 
 const AuthController = {
@@ -131,23 +129,7 @@ const AuthController = {
         return sendError(res, 'An account with this email already exists', 409);
       }
 
-      const roleRecord = await UserModel.findRoleByName(REGISTRATION_ROLE);
-      if (!roleRecord) {
-        return sendError(res, 'Employee registration is not available', 400);
-      }
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      const userId = await UserModel.create({
-        role_id: roleRecord.id,
-        username: normalizedUsername,
-        email: normalizedEmail,
-        password_hash: passwordHash,
-        full_name: trimmedFullName
-      });
-
-      await logActivity(userId, 'CREATE', 'Auth', `New account registered: ${normalizedUsername}`, req.ip);
-
-      sendSuccess(res, { username: normalizedUsername, email: normalizedEmail }, 'Account created successfully. You may now log in.', 201);
+      return sendError(res, 'Public registration is disabled. Contact an administrator to create an account.', 403);
     } catch (err) {
       sendError(res, err.message, 500);
     }
@@ -174,10 +156,7 @@ const AuthController = {
   },
 
   getRegistrationRoles(req, res) {
-    if (PUBLIC_REGISTRATION_DISABLED) {
-      return sendError(res, 'Public registration is disabled', 403);
-    }
-    sendSuccess(res, REGISTRATION_ROLES);
+    return sendError(res, 'Public registration is disabled', 403);
   }
 };
 

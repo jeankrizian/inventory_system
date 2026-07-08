@@ -9,7 +9,6 @@ const pool = require('../config/database');
 
 const TEST_USERNAMES = [
   'admin',
-  'staff',
   'pm_test',
   'deptcust_test',
   'labcust_test'
