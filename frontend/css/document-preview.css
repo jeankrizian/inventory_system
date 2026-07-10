@@ -41,17 +41,19 @@ body {
 .doc-office { text-align: center; font-size: 13px; font-weight: 700; margin: 4px 0 0; }
 .doc-institution { text-align: center; font-size: 12px; margin: 2px 0 18px; }
 .doc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 14px; font-size: 12px; }
+.doc-meta > div { word-break: break-word; overflow-wrap: break-word; line-height: 1.45; }
 .doc-meta .right { text-align: right; }
-.doc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; }
-.doc-table th, .doc-table td { border: 1px solid #111; padding: 6px 8px; vertical-align: top; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; table-layout: fixed; }
+.doc-table th, .doc-table td { border: 1px solid #111; padding: 6px 8px; vertical-align: top; word-break: break-word; overflow-wrap: break-word; line-height: 1.35; }
 .doc-table th { font-weight: 700; text-align: left; }
-.doc-ack { font-size: 10px; font-style: italic; margin: 12px 0 18px; line-height: 1.45; }
-.signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 40px; margin-top: 10px; }
-.signature-block { font-size: 11px; }
-.signature-line { border-bottom: 1px solid #111; height: 28px; margin: 18px 0 4px; }
-.signature-caption { text-align: center; font-size: 10px; }
-.signature-name { text-align: center; font-weight: 600; min-height: 16px; }
-.doc-footer { margin-top: 24px; font-size: 10px; }
+.doc-ack { font-size: 10px; font-style: italic; margin: 12px 0 18px; line-height: 1.45; word-break: break-word; overflow-wrap: break-word; }
+.doc-body-text { font-size: 12px; line-height: 1.45; margin: 0 0 14px; word-break: break-word; overflow-wrap: break-word; }
+.signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 40px; margin-top: 10px; }
+.signature-block { font-size: 11px; word-break: break-word; overflow-wrap: break-word; line-height: 1.4; }
+.signature-line { border-bottom: 1px solid #111; min-height: 28px; margin: 10px 0 4px; }
+.signature-caption { text-align: center; font-size: 10px; line-height: 1.35; word-break: break-word; overflow-wrap: break-word; }
+.signature-name { text-align: center; font-weight: 600; min-height: 16px; word-break: break-word; overflow-wrap: break-word; }
+.doc-footer { margin-top: 24px; font-size: 10px; line-height: 1.4; word-break: break-word; overflow-wrap: break-word; }
 .loading { text-align: center; padding: 40px; color: #666; }
 @media print {
   body { background: #fff; }

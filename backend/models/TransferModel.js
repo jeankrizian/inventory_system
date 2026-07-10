@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
 const { appendTransferRequestScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
+const { appendInventoryItemFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const TransferModel = {
   async getAll(filters = {}) {
@@ -18,18 +19,25 @@ const TransferModel = {
       LEFT JOIN locations tl ON t.to_location_id = tl.id
       LEFT JOIN departments fd ON t.from_department_id = fd.id
       LEFT JOIN departments td ON t.to_department_id = td.id
+      LEFT JOIN departments idpt ON i.department_id = idpt.id
+      LEFT JOIN suppliers s ON i.supplier_id = s.id
       WHERE 1=1`;
     const params = [];
-    if (filters.status) { sql += ' AND t.status = ?'; params.push(filters.status); }
+    if (filters.status) { sql += ' AND t.status LIKE ?'; params.push(`%${filters.status}%`); }
+    sql += appendInventoryItemFieldFilters(filters, 'i', params, { supplierAlias: 's', departmentAlias: 'idpt' });
+    if (filters.transaction_code) { sql += ' AND t.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+    if (filters.from_department_name) { sql += ' AND fd.name LIKE ?'; params.push(`%${filters.from_department_name}%`); }
+    if (filters.to_department_name) { sql += ' AND td.name LIKE ?'; params.push(`%${filters.to_department_name}%`); }
+    if (filters.requested_by_name) { sql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
+    if (filters.request_date) {
+      sql += ' AND DATE(COALESCE(t.request_date, t.created_at)) = ?';
+      params.push(filters.request_date);
+    }
     if (filters.inventory_item_id) { sql += ' AND t.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
     if (filters.search) {
       sql += ' AND (t.transaction_code LIKE ? OR i.item_name LIKE ? OR i.property_tag LIKE ?)';
       const term = `%${filters.search}%`;
       params.push(term, term, term);
-    }
-    if (filters.department_id) {
-      sql += ' AND i.department_id = ?';
-      params.push(filters.department_id);
     }
     sql += appendDateRangeSql(filters, 'COALESCE(t.request_date, DATE(t.created_at))', params);
     const scopeFilter = appendTransferRequestScopeSql(filters.scope, 'i', 't');

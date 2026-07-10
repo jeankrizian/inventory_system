@@ -112,7 +112,7 @@ function renderRDF(p) {
       ['Item Description', 'Qty/Unit', 'Property Tag', 'PAR No.', 'ICT/FCU Evaluation/Recommendation'],
       (p.items || []).map(i => [i.description, i.qtyUnit, i.propertyTag, i.parNo, i.recommendation])
     )}
-    <p><strong>Reason for disposal:</strong> ${esc(p.reason)}</p>
+    <p class="doc-body-text"><strong>Reason for disposal:</strong> ${esc(p.reason)}</p>
     <div class="signatures">
       ${signatureBlock('Requested by:', p.requestedBy)}
       ${signatureBlock('Request Noted by:', p.departmentHead, 'Department Head')}
@@ -167,7 +167,7 @@ function renderTRF(p) {
       <div class="right"><strong>To Location:</strong> ${esc(p.toLocation)}</div>
       <div><strong>Request Date:</strong> ${esc(p.requestDate)}</div>
     </div>
-    <p><strong>Reason for Transfer:</strong> ${esc(p.reason)}</p>
+    <p class="doc-body-text"><strong>Reason for Transfer:</strong> ${esc(p.reason)}</p>
     ${renderItemsTable(['Property Tag', 'Item Description', 'Quantity', 'Unit'],
       (p.items || []).map(i => [i.propertyTag, i.description, i.quantity, i.unit]))}
     <p class="doc-ack">${esc(p.acknowledgement)}</p>

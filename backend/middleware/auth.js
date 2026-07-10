@@ -10,6 +10,7 @@ const {
   canOperateMaintenance,
   canOperateDisposal,
   canAccessReports,
+  canAccessReportType,
   canAccessArchive,
   canManageSystem,
   canManageSuppliers,
@@ -20,7 +21,9 @@ const {
   canViewTransfers,
   canViewMaintenance,
   canViewDisposal,
-  canSubmitDisposal
+  canSubmitDisposal,
+  canViewBackups,
+  canManageBackups
 } = require('../utils/roleHelpers');
 
 function getSessionRole(req) {
@@ -108,9 +111,42 @@ const requireReportsAccess = requireRole(
   'Reports access requires Administrator, Property Manager, or Custodian role'
 );
 
+function requireReportType(reportType) {
+  return (req, res, next) => {
+    if (!req.session || !req.session.user) {
+      return sendError(res, 'Authentication required', 401);
+    }
+    if (!canAccessReportType(getSessionRole(req), reportType)) {
+      return sendError(res, 'You do not have permission to access this report', 403);
+    }
+    next();
+  };
+}
+
+function requireExportReportType(req, res, next) {
+  if (!req.session || !req.session.user) {
+    return sendError(res, 'Authentication required', 401);
+  }
+  const reportType = req.params.type;
+  if (!canAccessReportType(getSessionRole(req), reportType)) {
+    return sendError(res, 'You do not have permission to access this report', 403);
+  }
+  next();
+}
+
 const requireArchiveAccess = requireRole(
   canAccessArchive,
   'Archive access requires Administrator or Property Manager role'
+);
+
+const requireManageBackups = requireRole(
+  canManageBackups,
+  'Administrator access required for backup management'
+);
+
+const requireViewBackups = requireRole(
+  canViewBackups,
+  'Backup access requires Administrator or Property Manager role'
 );
 
 const requireSystemManage = requireRole(
@@ -182,6 +218,8 @@ module.exports = {
   requireOperateMaintenance,
   requireOperateDisposal,
   requireReportsAccess,
+  requireReportType,
+  requireExportReportType,
   requireArchiveAccess,
   requireSystemManage,
   requireSuppliersManage,
@@ -192,5 +230,7 @@ module.exports = {
   requireViewMaintenance,
   requireViewDisposal,
   requireSubmitDisposal,
+  requireViewBackups,
+  requireManageBackups,
   validate
 };

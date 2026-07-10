@@ -73,7 +73,9 @@ const InventoryModel = {
 
     const params = [];
 
-
+    if (filters.department_scope_mismatch) {
+      return [];
+    }
 
     if (filters.search) {
 
@@ -83,6 +85,87 @@ const InventoryModel = {
 
       params.push(term, term, term, term, term);
 
+    }
+
+    if (filters.item_code) {
+      sql += ' AND i.item_code LIKE ?';
+      params.push(`%${filters.item_code}%`);
+    }
+
+    if (filters.item_name) {
+      sql += ' AND i.item_name LIKE ?';
+      params.push(`%${filters.item_name}%`);
+    }
+
+    if (filters.property_tag) {
+      sql += ' AND i.property_tag LIKE ?';
+      params.push(`%${filters.property_tag}%`);
+    }
+
+    if (filters.brand) {
+      sql += ' AND i.brand LIKE ?';
+      params.push(`%${filters.brand}%`);
+    }
+
+    if (filters.model) {
+      sql += ' AND i.model LIKE ?';
+      params.push(`%${filters.model}%`);
+    }
+
+    if (filters.unit) {
+      sql += ' AND i.unit LIKE ?';
+      params.push(`%${filters.unit}%`);
+    }
+
+    if (filters.condition) {
+      sql += ' AND i.`condition` LIKE ?';
+      params.push(`%${filters.condition}%`);
+    }
+
+    if (filters.material) {
+      sql += ' AND i.material = ?';
+      params.push(filters.material);
+    }
+
+    if (filters.custodian_id) {
+      sql += ' AND i.custodian_id = ?';
+      params.push(filters.custodian_id);
+    }
+
+    if (filters.custodian_name) {
+      sql += ' AND c.full_name LIKE ?';
+      params.push(`%${filters.custodian_name}%`);
+    }
+
+    if (filters.supplier_id) {
+      sql += ' AND i.supplier_id = ?';
+      params.push(filters.supplier_id);
+    }
+
+    if (filters.supplier_name) {
+      sql += ' AND s.name LIKE ?';
+      params.push(`%${filters.supplier_name}%`);
+    }
+
+    if (filters.quantity != null && filters.quantity !== '') {
+      const qty = parseInt(filters.quantity, 10);
+      if (!Number.isNaN(qty)) {
+        sql += ' AND i.quantity = ?';
+        params.push(qty);
+      }
+    }
+
+    if (filters.unit_cost != null && filters.unit_cost !== '') {
+      const cost = parseFloat(filters.unit_cost);
+      if (!Number.isNaN(cost)) {
+        sql += ' AND (i.unit_cost = ? OR i.acquisition_cost = ?)';
+        params.push(cost, cost);
+      }
+    }
+
+    if (filters.purchase_date) {
+      sql += ' AND DATE(i.purchase_date) = ?';
+      params.push(filters.purchase_date);
     }
 
     if (filters.department_id) {
@@ -95,9 +178,9 @@ const InventoryModel = {
 
     if (filters.asset_classification) {
 
-      sql += ' AND i.asset_classification = ?';
+      sql += ' AND i.asset_classification LIKE ?';
 
-      params.push(filters.asset_classification);
+      params.push(`%${filters.asset_classification}%`);
 
     }
 
@@ -107,10 +190,20 @@ const InventoryModel = {
 
     if (filters.status) {
 
-      sql += ' AND i.status = ?';
+      sql += ' AND i.status LIKE ?';
 
-      params.push(filters.status);
+      params.push(`%${filters.status}%`);
 
+    }
+
+    if (filters.department_name) {
+      sql += ' AND d.name LIKE ?';
+      params.push(`%${filters.department_name}%`);
+    }
+
+    if (filters.location_name) {
+      sql += ' AND l.name LIKE ?';
+      params.push(`%${filters.location_name}%`);
     }
 
     if (filters.location_id) {
@@ -135,7 +228,11 @@ const InventoryModel = {
 
     }
 
-    sql += appendDateRangeSql(filters, 'COALESCE(i.acquisition_date, DATE(i.created_at))', params);
+    sql += appendDateRangeSql(
+      filters,
+      filters.date_column || 'COALESCE(i.acquisition_date, DATE(i.created_at))',
+      params
+    );
 
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
     if (scopeFilter.denied) {
@@ -618,6 +715,15 @@ const InventoryModel = {
 
     const item = rows[0] ? this.enrichBorrowCatalogItem(rows[0]) : null;
     return item?.is_borrowable ? item : null;
+  },
+
+  async getDistinctMaterials() {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT material FROM inventory_items
+       WHERE material IS NOT NULL AND material != '' AND is_archived = 0
+       ORDER BY material`
+    );
+    return rows.map((row) => row.material);
   }
 
 };

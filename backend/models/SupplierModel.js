@@ -2,8 +2,16 @@ const pool = require('../config/database');
 const { archiveRecord } = require('../utils/archiveService');
 
 const SupplierModel = {
-  async getAll() {
-    const [rows] = await pool.query('SELECT * FROM suppliers WHERE is_archived = 0 ORDER BY name');
+  async getAll(filters = {}) {
+    let sql = 'SELECT * FROM suppliers WHERE is_archived = 0';
+    const params = [];
+    if (filters.name) { sql += ' AND name LIKE ?'; params.push(`%${filters.name}%`); }
+    if (filters.contact_person) { sql += ' AND contact_person LIKE ?'; params.push(`%${filters.contact_person}%`); }
+    if (filters.phone) { sql += ' AND phone LIKE ?'; params.push(`%${filters.phone}%`); }
+    if (filters.email) { sql += ' AND email LIKE ?'; params.push(`%${filters.email}%`); }
+    if (filters.address) { sql += ' AND address LIKE ?'; params.push(`%${filters.address}%`); }
+    sql += ' ORDER BY name';
+    const [rows] = await pool.query(sql, params);
     return rows;
   },
 

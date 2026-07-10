@@ -1,33 +1,192 @@
 const REPORTS = [
-  { type: 'inventory', title: 'Inventory Report', desc: 'Complete list of all inventory items with stock levels and status', icon: 'bi-box-seam', filters: ['department', 'classification', 'date'] },
-  { type: 'borrow', title: 'Borrow Report', desc: 'All borrow transactions with borrower details and status', icon: 'bi-cart3', filters: ['department', 'date'] },
-  { type: 'return', title: 'Process Return Report', desc: 'All process return transactions with condition and notes', icon: 'bi-arrow-return-left', filters: ['department', 'date'] },
-  { type: 'low-stock', title: 'Low Stock Report', desc: 'Items below their low stock threshold', icon: 'bi-exclamation-triangle', filters: ['department'] },
-  { type: 'supplier', title: 'Supplier Report', desc: 'Complete supplier directory with contact information', icon: 'bi-truck', filters: [] },
-  { type: 'transfers', title: 'Transfer Report', desc: 'Asset movement and transfer request history', icon: 'bi-arrow-left-right', filters: ['department', 'date'] },
-  { type: 'maintenance', title: 'Maintenance Report', desc: 'Preventive and corrective maintenance records', icon: 'bi-tools', filters: ['department', 'date'] },
-  { type: 'disposals', title: 'Disposal Report', desc: 'Disposal requests, inspections, and approvals', icon: 'bi-trash3', filters: ['department', 'date'] },
-  { type: 'departments', title: 'Department Report', desc: 'Departments with custodians and asset counts', icon: 'bi-building', filters: ['department'] },
-  { type: 'custodians', title: 'Custodian Report', desc: 'Custodian assignments and asset responsibilities', icon: 'bi-person-badge', filters: ['department'] },
-  { type: 'asset-status', title: 'Asset Status Report', desc: 'Full asset status overview with classifications', icon: 'bi-clipboard-data', filters: ['department', 'classification', 'date'] },
+  { type: 'inventory', title: 'Inventory Report', desc: 'Complete list of all inventory items with stock levels and status', icon: 'bi-box-seam', hasFilters: true },
+  { type: 'borrow', title: 'Borrow Report', desc: 'All borrow transactions with borrower details and status', icon: 'bi-cart3', hasFilters: true },
+  { type: 'return', title: 'Process Return Report', desc: 'All process return transactions with condition and notes', icon: 'bi-arrow-return-left', hasFilters: true },
+  { type: 'low-stock', title: 'Low Stock Report', desc: 'Items below their low stock threshold', icon: 'bi-exclamation-triangle', hasFilters: true },
+  { type: 'supplier', title: 'Supplier Report', desc: 'Complete supplier directory with contact information', icon: 'bi-truck', hasFilters: true },
+  { type: 'transfers', title: 'Transfer Report', desc: 'Asset movement and transfer request history', icon: 'bi-arrow-left-right', hasFilters: true },
+  { type: 'maintenance', title: 'Maintenance Report', desc: 'Preventive and corrective maintenance records', icon: 'bi-tools', hasFilters: true },
+  { type: 'disposals', title: 'Disposal Report', desc: 'Disposal requests, inspections, and approvals', icon: 'bi-trash3', hasFilters: true },
+  { type: 'departments', title: 'Department Report', desc: 'Departments with custodians and asset counts', icon: 'bi-building', hasFilters: true },
+  { type: 'custodians', title: 'Custodian Report', desc: 'Custodian assignments and asset responsibilities', icon: 'bi-person-badge', hasFilters: true },
+  { type: 'asset-status', title: 'Asset Status Report', desc: 'Full asset status overview with classifications', icon: 'bi-clipboard-data', hasFilters: true },
   { type: 'documents', title: 'Official Documents', desc: 'PAR, GRN, and RDF document history with preview and PDF export', icon: 'bi-file-earmark-text', link: '/pages/documents.html' }
 ];
 
-let activeReportType = null;
-let departments = [];
+const REPORT_FILTER_FIELD_IDS = [
+  'reportFilterItemCode',
+  'reportFilterItemName',
+  'reportFilterDepartment',
+  'reportFilterStatus',
+  'reportFilterCondition',
+  'reportFilterQuantity',
+  'reportFilterUnitCost',
+  'reportFilterSupplier',
+  'reportFilterMaterial',
+  'reportFilterPurchaseDate'
+];
 
-const CLASSIFICATION_OPTIONS = getFilterClassifications();
+let activeReportType = null;
+let currentUser = null;
+let departments = [];
+let filterOptions = {
+  materials: ['Metal', 'Plastic', 'Wood', 'Paper', 'Glass', 'Fabric', 'Rubber', 'Electronic', 'Composite', 'Other'],
+  statuses: ['Available', 'Low Stock', 'Out of Stock', 'Under Maintenance'],
+  conditions: ['New', 'Good', 'Fair', 'Poor', 'Damaged']
+};
+
+const REPORT_STATUS_LABELS = {
+  'Under Maintenance': 'For Maintenance'
+};
+
+function getVisibleReports(user) {
+  return REPORTS.filter((report) => {
+    if (report.link) {
+      return isAdministrator(user) || isPropertyManager(user);
+    }
+    return canAccessReportType(user, report.type);
+  });
+}
+
+function denyReportAccess(type) {
+  showToast('You do not have permission to access this report.', 'error');
+}
+
+function getReportConfig(type) {
+  return REPORTS.find(r => r.type === type);
+}
+
+function getReportFilterParams() {
+  const params = {};
+  const itemCode = document.getElementById('reportFilterItemCode')?.value?.trim();
+  const itemName = document.getElementById('reportFilterItemName')?.value?.trim();
+  const department = document.getElementById('reportFilterDepartment')?.value;
+  const status = document.getElementById('reportFilterStatus')?.value;
+  const condition = document.getElementById('reportFilterCondition')?.value;
+  const quantity = document.getElementById('reportFilterQuantity')?.value?.trim();
+  const unitCost = document.getElementById('reportFilterUnitCost')?.value?.trim();
+  const supplier = document.getElementById('reportFilterSupplier')?.value?.trim();
+  const material = document.getElementById('reportFilterMaterial')?.value;
+  const purchaseDate = document.getElementById('reportFilterPurchaseDate')?.value;
+
+  if (itemCode) params.item_code = itemCode;
+  if (itemName) params.item_name = itemName;
+  if (department) {
+    const departmentId = parseInt(department, 10);
+    if (!Number.isNaN(departmentId)) params.department_id = departmentId;
+  }
+  if (status) params.status = status;
+  if (condition) params.condition = condition;
+  if (quantity) params.quantity = quantity;
+  if (unitCost) params.unit_cost = unitCost;
+  if (supplier) params.supplier_name = supplier;
+  if (material) params.material = material;
+  if (purchaseDate) params.purchase_date = purchaseDate;
+
+  return params;
+}
+
+function clearReportFilters() {
+  REPORT_FILTER_FIELD_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+async function loadReportFilterData() {
+  const [deptRes, filterRes] = await Promise.allSettled([
+    API.getDepartments(),
+    API.getReportFilterOptions()
+  ]);
+
+  if (deptRes.status === 'fulfilled' && Array.isArray(deptRes.value?.data)) {
+    departments = deptRes.value.data;
+  }
+
+  if (filterRes.status === 'fulfilled' && filterRes.value?.data) {
+    filterOptions = {
+      materials: filterRes.value.data.materials || filterOptions.materials,
+      statuses: filterRes.value.data.statuses || filterOptions.statuses,
+      conditions: filterRes.value.data.conditions || filterOptions.conditions
+    };
+  }
+}
+
+async function renderReportFilters(type) {
+  const config = getReportConfig(type);
+  const bar = document.getElementById('reportFiltersBar');
+
+  if (!config?.hasFilters) {
+    bar.innerHTML = '';
+    bar.style.display = 'none';
+    return;
+  }
+
+  if (!departments.length) {
+    await loadReportFilterData();
+  }
+
+  const deptOptions = departments.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+  const statusOptions = filterOptions.statuses.map((s) => `<option value="${s}">${REPORT_STATUS_LABELS[s] || s}</option>`).join('');
+  const conditionOptions = filterOptions.conditions.map((c) => `<option value="${c}">${c}</option>`).join('');
+  const materialOptions = filterOptions.materials.map((m) => `<option value="${m}">${m}</option>`).join('');
+
+  bar.style.display = 'grid';
+  bar.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))';
+  bar.style.gap = '8px';
+  bar.style.alignItems = 'end';
+
+  bar.innerHTML = `
+    <input type="text" class="form-control-custom" id="reportFilterItemCode" placeholder="Item Code" title="Item Code">
+    <input type="text" class="form-control-custom" id="reportFilterItemName" placeholder="Item Name" title="Item Name">
+    <select class="form-control-custom" id="reportFilterDepartment" title="Department">
+      <option value="">All Departments</option>
+      ${deptOptions}
+    </select>
+    <select class="form-control-custom" id="reportFilterStatus" title="Status">
+      <option value="">All Status</option>
+      ${statusOptions}
+    </select>
+    <select class="form-control-custom" id="reportFilterCondition" title="Condition">
+      <option value="">All Conditions</option>
+      ${conditionOptions}
+    </select>
+    <input type="number" class="form-control-custom" id="reportFilterQuantity" placeholder="Quantity" title="Quantity" min="0" step="1">
+    <input type="number" class="form-control-custom" id="reportFilterUnitCost" placeholder="Price / Cost" title="Price / Cost" min="0" step="0.01">
+    <input type="text" class="form-control-custom" id="reportFilterSupplier" placeholder="Supplier" title="Supplier">
+    <select class="form-control-custom" id="reportFilterMaterial" title="Material">
+      <option value="">All Materials</option>
+      ${materialOptions}
+    </select>
+    <input type="date" class="form-control-custom" id="reportFilterPurchaseDate" title="Purchase Date">
+    <div style="display:flex;gap:8px;grid-column:1/-1;">
+      <button class="btn-primary-custom btn-sm-custom" type="button" id="reportApplyFilters"><i class="bi bi-funnel"></i> Apply Filters</button>
+      <button class="btn-outline-custom btn-sm-custom" type="button" id="reportClearFilters">Clear</button>
+    </div>
+  `;
+
+  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type));
+  document.getElementById('reportClearFilters')?.addEventListener('click', () => {
+    clearReportFilters();
+    loadReportData(type);
+  });
+
+  bar.querySelectorAll('input').forEach((input) => {
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loadReportData(type);
+      }
+    });
+  });
+}
 
 async function initReportsPage() {
   const user = await initLayout('reports');
   if (!user) return;
+  currentUser = user;
 
-  try {
-    const deptRes = await API.getDepartments();
-    departments = deptRes?.data || [];
-  } catch (err) {
-    departments = [];
-  }
+  await loadReportFilterData();
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -35,7 +194,7 @@ async function initReportsPage() {
       <p>Generate, view, and export inventory reports</p>
     </div>
     <div class="report-grid" id="reportGrid">
-      ${REPORTS.map(r => `
+      ${getVisibleReports(user).map(r => `
         <div class="report-card">
           <h4><i class="bi ${r.icon}" style="color:var(--primary);margin-right:8px;"></i>${r.title}</h4>
           <p>${r.desc}</p>
@@ -68,66 +227,17 @@ async function initReportsPage() {
   `;
 }
 
-function getReportConfig(type) {
-  return REPORTS.find(r => r.type === type);
-}
-
-function getReportFilterParams() {
-  const params = {};
-  const dept = document.getElementById('reportFilterDepartment')?.value;
-  const classification = document.getElementById('reportFilterClassification')?.value;
-  const dateFrom = document.getElementById('reportFilterDateFrom')?.value;
-  const dateTo = document.getElementById('reportFilterDateTo')?.value;
-
-  if (dept) params.department_id = dept;
-  if (classification) params.asset_classification = classification;
-  if (dateFrom) params.date_from = dateFrom;
-  if (dateTo) params.date_to = dateTo;
-
-  return params;
-}
-
-function renderReportFilters(type) {
-  const config = getReportConfig(type);
-  const bar = document.getElementById('reportFiltersBar');
-  if (!config?.filters?.length) {
-    bar.innerHTML = '';
-    bar.style.display = 'none';
-    return;
+function ensureReportAccess(type) {
+  if (!canAccessReportType(currentUser, type)) {
+    denyReportAccess(type);
+    return false;
   }
-
-  bar.style.display = 'flex';
-  const deptOptions = departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
-  bar.innerHTML = `
-    ${config.filters.includes('department') ? `
-      <select class="form-control-custom" id="reportFilterDepartment">
-        <option value="">All Departments</option>
-        ${deptOptions}
-      </select>` : ''}
-    ${config.filters.includes('classification') ? `
-      <select class="form-control-custom" id="reportFilterClassification">
-        <option value="">All Classifications</option>
-        ${CLASSIFICATION_OPTIONS.map(c => `<option>${c}</option>`).join('')}
-      </select>` : ''}
-    ${config.filters.includes('date') ? `
-      <input type="date" class="form-control-custom" id="reportFilterDateFrom" title="From date">
-      <input type="date" class="form-control-custom" id="reportFilterDateTo" title="To date">` : ''}
-    <button class="btn-primary-custom btn-sm-custom" type="button" id="reportApplyFilters"><i class="bi bi-funnel"></i> Apply Filters</button>
-    <button class="btn-outline-custom btn-sm-custom" type="button" id="reportClearFilters">Clear</button>
-  `;
-
-  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type));
-  document.getElementById('reportClearFilters')?.addEventListener('click', () => {
-    document.getElementById('reportFilterDepartment') && (document.getElementById('reportFilterDepartment').value = '');
-    document.getElementById('reportFilterClassification') && (document.getElementById('reportFilterClassification').value = '');
-    document.getElementById('reportFilterDateFrom') && (document.getElementById('reportFilterDateFrom').value = '');
-    document.getElementById('reportFilterDateTo') && (document.getElementById('reportFilterDateTo').value = '');
-    loadReportData(type);
-  });
+  return true;
 }
 
 async function loadReportData(type) {
-  const report = getReportConfig(type);
+  if (!ensureReportAccess(type)) return;
+
   document.getElementById('reportTable').innerHTML = '<div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>';
 
   try {
@@ -140,21 +250,25 @@ async function loadReportData(type) {
 }
 
 async function viewReport(type) {
+  if (!ensureReportAccess(type)) return;
+
   const report = getReportConfig(type);
   activeReportType = type;
   document.getElementById('reportPreviewTitle').textContent = report.title;
   document.getElementById('reportPreview').style.display = 'block';
-  renderReportFilters(type);
+  await renderReportFilters(type);
   await loadReportData(type);
   document.getElementById('reportPreview').scrollIntoView({ behavior: 'smooth' });
 }
 
 function exportReportPDF(type) {
+  if (!ensureReportAccess(type)) return;
   const params = activeReportType === type ? getReportFilterParams() : {};
   API.exportPDF(type, params);
 }
 
 function exportReportExcel(type) {
+  if (!ensureReportAccess(type)) return;
   const params = activeReportType === type ? getReportFilterParams() : {};
   API.exportExcel(type, params);
 }
@@ -226,12 +340,13 @@ function renderReportTable(type, data) {
 }
 
 function printReport(type) {
+  if (!ensureReportAccess(type)) return;
   viewReport(type).then(() => {
     setTimeout(() => {
       const content = document.getElementById('printableReport');
       if (!content) return;
       const win = window.open('', '_blank');
-      win.document.write(`<html><head><title>Report</title><style>body{font-family:Inter,sans-serif;padding:20px;color:#2d2d2d;}h2{font-family:Poppins,Inter,sans-serif;font-weight:800;letter-spacing:0.08em;line-height:1.35;color:#800000;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #e8e8e4;padding:8px;text-align:left;}th{background:#f7f7f5;color:#800000;}</style></head><body><h2>CAVITE INSTITUTE PROPERTY MANAGEMENT SYSTEM</h2>${content.outerHTML}</body></html>`);
+      win.document.write(`<html><head><title>Report</title><style>body{font-family:Inter,sans-serif;padding:20px;color:#2d2d2d;}h2{font-family:Poppins,Inter,sans-serif;font-weight:800;letter-spacing:0.08em;line-height:1.35;color:#800000;}table{width:100%;border-collapse:collapse;table-layout:fixed;}th,td{border:1px solid #e8e8e4;padding:8px;text-align:left;vertical-align:top;word-break:break-word;overflow-wrap:break-word;line-height:1.35;}th{background:#f7f7f5;color:#800000;}</style></head><body><h2>CAVITE INSTITUTE PROPERTY MANAGEMENT SYSTEM</h2>${content.outerHTML}</body></html>`);
       win.document.close();
       win.print();
     }, 500);

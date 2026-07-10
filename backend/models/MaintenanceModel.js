@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
+const { appendInventoryItemFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const MaintenanceModel = {
   _baseSelect() {
@@ -14,6 +15,7 @@ const MaintenanceModel = {
       JOIN inventory_items i ON m.inventory_item_id = i.id
       LEFT JOIN departments d ON i.department_id = d.id
       LEFT JOIN locations l ON i.location_id = l.id
+      LEFT JOIN suppliers s ON i.supplier_id = s.id
       LEFT JOIN users ru ON m.requested_by = ru.id
       LEFT JOIN users au ON m.approved_by = au.id
       LEFT JOIN users pu ON m.performed_by = pu.id`;
@@ -23,15 +25,17 @@ const MaintenanceModel = {
     let sql = `${this._baseSelect()} WHERE 1=1`;
     const params = [];
     if (filters.inventory_item_id) { sql += ' AND m.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.status) { sql += ' AND m.status = ?'; params.push(filters.status); }
+    if (filters.status) { sql += ' AND m.status LIKE ?'; params.push(`%${filters.status}%`); }
+    sql += appendInventoryItemFieldFilters(filters, 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
+    if (filters.transaction_code) { sql += ' AND m.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+    if (filters.maintenance_type) { sql += ' AND m.maintenance_type LIKE ?'; params.push(`%${filters.maintenance_type}%`); }
+    if (filters.service_provider) { sql += ' AND m.service_provider LIKE ?'; params.push(`%${filters.service_provider}%`); }
+    if (filters.scheduled_date) { sql += ' AND DATE(m.scheduled_date) = ?'; params.push(filters.scheduled_date); }
+    if (filters.priority) { sql += ' AND m.priority LIKE ?'; params.push(`%${filters.priority}%`); }
     if (filters.search) {
       sql += ' AND (m.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ?)';
       const term = `%${filters.search}%`;
       params.push(term, term, term);
-    }
-    if (filters.department_id) {
-      sql += ' AND i.department_id = ?';
-      params.push(filters.department_id);
     }
     sql += appendDateRangeSql(filters, 'm.scheduled_date', params);
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');

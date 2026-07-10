@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
+const { appendInventoryItemFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const DisposalModel = {
   async getAll(filters = {}) {
@@ -10,20 +11,23 @@ const DisposalModel = {
              ins.full_name AS inspected_by_name, app.full_name AS approved_by_name
       FROM disposal_requests d
       JOIN inventory_items i ON d.inventory_item_id = i.id
+      LEFT JOIN departments dept ON i.department_id = dept.id
+      LEFT JOIN suppliers s ON i.supplier_id = s.id
       JOIN users u ON d.requested_by = u.id
       LEFT JOIN users ins ON d.inspected_by = ins.id
       LEFT JOIN users app ON d.approved_by = app.id
       WHERE 1=1`;
     const params = [];
-    if (filters.status) { sql += ' AND d.status = ?'; params.push(filters.status); }
+    if (filters.status) { sql += ' AND d.status LIKE ?'; params.push(`%${filters.status}%`); }
+    sql += appendInventoryItemFieldFilters(filters, 'i', params, { supplierAlias: 's', departmentAlias: 'dept' });
+    if (filters.transaction_code) { sql += ' AND d.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+    if (filters.disposal_method) { sql += ' AND d.disposal_method LIKE ?'; params.push(`%${filters.disposal_method}%`); }
+    if (filters.requested_by_name) { sql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
+    if (filters.reason) { sql += ' AND d.reason LIKE ?'; params.push(`%${filters.reason}%`); }
     if (filters.search) {
       sql += ' AND (d.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ?)';
       const term = `%${filters.search}%`;
       params.push(term, term, term);
-    }
-    if (filters.department_id) {
-      sql += ' AND i.department_id = ?';
-      params.push(filters.department_id);
     }
     sql += appendDateRangeSql(filters, 'DATE(d.created_at)', params);
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');

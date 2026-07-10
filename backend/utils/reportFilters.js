@@ -1,3 +1,9 @@
+function assignTrimmed(filters, query, field) {
+  if (query[field] && String(query[field]).trim()) {
+    filters[field] = String(query[field]).trim();
+  }
+}
+
 function parseReportFilters(query = {}) {
   const filters = {};
 
@@ -27,6 +33,121 @@ function parseReportFilters(query = {}) {
     filters.low_stock = true;
   }
 
+  const textFields = [
+    'transaction_code',
+    'borrower_name',
+    'borrower_department',
+    'purpose',
+    'borrow_code',
+    'returned_by_name',
+    'item_code',
+    'item_name',
+    'property_tag',
+    'from_department_name',
+    'to_department_name',
+    'requested_by_name',
+    'maintenance_type',
+    'service_provider',
+    'department_name',
+    'disposal_method',
+    'reason',
+    'name',
+    'contact_person',
+    'phone',
+    'email',
+    'address',
+    'code',
+    'department_head',
+    'custodian_name'
+  ];
+  for (const field of textFields) {
+    assignTrimmed(filters, query, field);
+  }
+
+  const exactFields = ['condition', 'borrow_date', 'return_date', 'request_date', 'scheduled_date', 'priority'];
+  for (const field of exactFields) {
+    assignTrimmed(filters, query, field);
+  }
+
+  if (query.material) {
+    filters.material = String(query.material);
+  }
+
+  if (query.purchase_date) {
+    filters.purchase_date = String(query.purchase_date);
+  }
+
+  if (query.quantity != null && String(query.quantity).trim() !== '') {
+    filters.quantity = String(query.quantity).trim();
+  }
+
+  if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {
+    filters.unit_cost = String(query.unit_cost).trim();
+  }
+
+  return filters;
+}
+
+function parseInventoryReportFilters(query = {}) {
+  const filters = parseReportFilters(query);
+  delete filters.date_from;
+  delete filters.date_to;
+
+  const textFields = [
+    'item_code',
+    'item_name',
+    'property_tag',
+    'brand',
+    'model',
+    'unit',
+    'custodian_name',
+    'supplier_name',
+    'department_name',
+    'location_name'
+  ];
+  for (const field of textFields) {
+    assignTrimmed(filters, query, field);
+  }
+
+  if (query.condition) {
+    filters.condition = String(query.condition);
+  }
+
+  if (query.material) {
+    filters.material = String(query.material);
+  }
+
+  if (query.purchase_date) {
+    filters.purchase_date = String(query.purchase_date);
+  }
+
+  if (query.quantity != null && String(query.quantity).trim() !== '') {
+    filters.quantity = String(query.quantity).trim();
+  }
+
+  if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {
+    filters.unit_cost = String(query.unit_cost).trim();
+  }
+
+  if (query.custodian_id) {
+    const parsed = parseInt(query.custodian_id, 10);
+    if (!Number.isNaN(parsed)) filters.custodian_id = parsed;
+  }
+
+  if (query.location_id) {
+    const parsed = parseInt(query.location_id, 10);
+    if (!Number.isNaN(parsed)) filters.location_id = parsed;
+  }
+
+  if (query.supplier_id) {
+    const parsed = parseInt(query.supplier_id, 10);
+    if (!Number.isNaN(parsed)) filters.supplier_id = parsed;
+  }
+
+  if (filters.department_id) {
+    delete filters.department_name;
+  }
+
   return filters;
 }
 
@@ -45,5 +166,6 @@ function appendDateRangeSql(filters, columnExpr, params) {
 
 module.exports = {
   parseReportFilters,
+  parseInventoryReportFilters,
   appendDateRangeSql
 };

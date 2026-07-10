@@ -156,11 +156,40 @@ function canAccessReports(role) {
   return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
 }
 
+const CUSTODIAN_ALLOWED_REPORT_TYPES = new Set([
+  'inventory',
+  'borrow',
+  'return',
+  'low-stock',
+  'transfers',
+  'maintenance',
+  'disposals',
+  'asset-status'
+]);
+
+function canAccessReportType(role, reportType) {
+  if (isAdministrator(role) || isPropertyManager(role)) {
+    return true;
+  }
+  if (isCustodian(role)) {
+    return CUSTODIAN_ALLOWED_REPORT_TYPES.has(reportType);
+  }
+  return false;
+}
+
 function canAccessArchive(role) {
   return isAdministrator(role) || isPropertyManager(role);
 }
 
 function canManageSystem(role) {
+  return isAdministrator(role);
+}
+
+function canViewBackups(role) {
+  return isAdministrator(role) || isPropertyManager(role);
+}
+
+function canManageBackups(role) {
   return isAdministrator(role);
 }
 
@@ -328,6 +357,9 @@ function appendBorrowTransactionScopeSql(scope, tableAlias = 'bt') {
       params: [scope.departmentId]
     };
   }
+  if (scope.type === 'denied') {
+    return { clause: ' AND 1=0', params: [] };
+  }
   if (scope.type === 'location') {
     if (!scope.locationId) return { clause: ' AND 1=0', params: [] };
     return {
@@ -390,8 +422,12 @@ module.exports = {
   canOperateMaintenance,
   canOperateDisposal,
   canAccessReports,
+  canAccessReportType,
+  CUSTODIAN_ALLOWED_REPORT_TYPES,
   canAccessArchive,
   canManageSystem,
+  canViewBackups,
+  canManageBackups,
   canManageSuppliers,
   canViewAllBorrows,
   canViewReturnHistory,

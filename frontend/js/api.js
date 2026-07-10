@@ -133,6 +133,7 @@ const API = {
     const query = new URLSearchParams(params).toString();
     return API.get(`/reports/${type}${query ? '?' + query : ''}`);
   },
+  getReportFilterOptions: () => API.get('/reports/filter-options'),
   exportPDF: (type, params = {}) => {
     const query = new URLSearchParams(params).toString();
     window.open(`${API.baseURL}/reports/export/pdf/${type}${query ? '?' + query : ''}`, '_blank');
@@ -213,5 +214,12 @@ const API = {
   lookupDocument: (type, module, transactionId) =>
     API.get(`/documents/lookup?type=${encodeURIComponent(type)}&module=${encodeURIComponent(module)}&transaction_id=${transactionId}`),
   openDocumentPreview: (id) => window.open(`/pages/document-preview.html?id=${id}`, '_blank'),
-  downloadDocumentPdf: (id) => window.open(`${API.baseURL}/documents/${id}/pdf`, '_blank')
+  downloadDocumentPdf: (id) => window.open(`${API.baseURL}/documents/${id}/pdf`, '_blank'),
+
+  getBackups: () => API.get('/backups'),
+  createBackup: () => API.post('/backups'),
+  deleteBackup: (id) => API.request(`/backups/${id}`, { method: 'DELETE' }),
+  restoreBackup: (id) => API.post(`/backups/${id}/restore`),
+  restoreBackupUpload: (content) => API.request('/backups/restore-upload', { method: 'POST', body: { content } }),
+  downloadBackup: (id) => window.open(`${API.baseURL}/backups/${id}/download`, '_blank')
 };

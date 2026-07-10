@@ -242,11 +242,36 @@ function canAccessReports(user) {
   return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
+const CUSTODIAN_REPORT_TYPES = new Set([
+  'inventory',
+  'borrow',
+  'return',
+  'low-stock',
+  'transfers',
+  'maintenance',
+  'disposals',
+  'asset-status'
+]);
+
+function canAccessReportType(user, reportType) {
+  if (isAdministrator(user) || isPropertyManager(user)) return true;
+  if (isCustodian(user)) return CUSTODIAN_REPORT_TYPES.has(reportType);
+  return false;
+}
+
 function canAccessArchive(user) {
   return isAdministrator(user) || isPropertyManager(user);
 }
 
 function canManageSystem(user) {
+  return isAdministrator(user);
+}
+
+function canViewBackups(user) {
+  return isAdministrator(user) || isPropertyManager(user);
+}
+
+function canManageBackups(user) {
   return isAdministrator(user);
 }
 

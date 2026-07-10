@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
+const { appendBorrowInventoryExistsFilters } = require('../utils/inventoryReportFilterSql');
 
 const BorrowModel = {
   async getAll(filters = {}) {
@@ -17,22 +18,34 @@ const BorrowModel = {
     }
 
     if (filters.status) {
-      sql += ' AND bt.status = ?';
-      params.push(filters.status);
+      sql += ' AND bt.status LIKE ?';
+      params.push(`%${filters.status}%`);
     }
+    if (filters.transaction_code) {
+      sql += ' AND bt.transaction_code LIKE ?';
+      params.push(`%${filters.transaction_code}%`);
+    }
+    if (filters.borrower_name) {
+      sql += ' AND bt.borrower_name LIKE ?';
+      params.push(`%${filters.borrower_name}%`);
+    }
+    if (filters.borrower_department) {
+      sql += ' AND bt.borrower_department LIKE ?';
+      params.push(`%${filters.borrower_department}%`);
+    }
+    if (filters.purpose) {
+      sql += ' AND bt.purpose LIKE ?';
+      params.push(`%${filters.purpose}%`);
+    }
+    if (filters.borrow_date) {
+      sql += ' AND DATE(bt.borrow_date) = ?';
+      params.push(filters.borrow_date);
+    }
+    sql += appendBorrowInventoryExistsFilters(filters, 'bt', params);
     if (filters.search) {
       sql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ? OR bt.purpose LIKE ?)';
       const term = `%${filters.search}%`;
       params.push(term, term, term);
-    }
-
-    if (filters.department_id) {
-      sql += ` AND EXISTS (
-        SELECT 1 FROM borrow_items bi
-        JOIN inventory_items ii ON bi.inventory_item_id = ii.id
-        WHERE bi.borrow_transaction_id = bt.id AND ii.department_id = ?
-      )`;
-      params.push(filters.department_id);
     }
 
     sql += appendDateRangeSql(filters, 'bt.borrow_date', params);

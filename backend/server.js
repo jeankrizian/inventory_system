@@ -34,9 +34,13 @@ const { runMaterialMigration } = require('./database/runMaterialMigration');
 const { runCustodianRoleMigration } = require('./database/runCustodianRoleMigration');
 const { runCustodianTypeMigration } = require('./database/runCustodianTypeMigration');
 const { runStaffRoleRemovalMigration } = require('./database/runStaffRoleRemovalMigration');
+const { runBackupMigration } = require('./database/runBackupMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
+const backupRoutes = require('./routes/backupRoutes');
+const BackupController = require('./controllers/BackupController');
+const { requireManageBackups } = require('./middleware/auth');
 const { startArchiveCleanupScheduler } = require('./utils/archiveCleanup');
 const { requireAuth } = require('./middleware/auth');
 const {
@@ -98,6 +102,14 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/archive', archiveRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/documents', documentRoutes);
+app.post(
+  '/api/backups/restore-upload',
+  requireAuth,
+  express.json({ limit: '50mb' }),
+  requireManageBackups,
+  BackupController.restoreUpload
+);
+app.use('/api/backups', backupRoutes);
 
 // Global search endpoint
 app.get('/api/search', requireAuth, async (req, res) => {
@@ -210,6 +222,7 @@ async function startServer() {
     await runCustodianRoleMigration();
     await runCustodianTypeMigration();
     await runStaffRoleRemovalMigration();
+    await runBackupMigration();
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);
