@@ -8,8 +8,8 @@ router.use(requireAuth, requireSuppliersManage);
 
 router.get('/', SupplierController.getAll);
 router.get('/:id', SupplierController.getById);
-router.post('/', requireSuppliersManage, [body('name').notEmpty(), validate], SupplierController.create);
-router.put('/:id', requireSuppliersManage, SupplierController.update);
+router.post('/', requireSuppliersManage, [body('name').notEmpty().withMessage('Supplier name is required'), validate], SupplierController.create);
+router.put('/:id', requireSuppliersManage, [body('name').notEmpty().withMessage('Supplier name is required'), validate], SupplierController.update);
 router.delete('/:id', requireSuppliersManage, SupplierController.remove);
 
 module.exports = router;

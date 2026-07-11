@@ -27,9 +27,15 @@ const LocationController = {
 
   async create(req, res) {
     try {
-      const id = await LocationModel.create(req.body);
+      const name = (req.body.name || '').trim();
+      if (!name) return sendError(res, 'Location name is required', 400);
+
+      const id = await LocationModel.create({
+        name,
+        description: req.body.description
+      });
       const location = await LocationModel.findById(id);
-      await logActivity(req.session.user.id, 'CREATE', 'Location', `Added location ${req.body.name}`, req.ip, {
+      await logActivity(req.session.user.id, 'CREATE', 'Location', `Added location ${location.name}`, req.ip, {
         entity_type: 'location',
         entity_id: id,
         reference_code: location.name
@@ -56,7 +62,13 @@ const LocationController = {
       const before = await LocationModel.findById(req.params.id);
       if (!before) return sendError(res, 'Location not found', 404);
 
-      const updated = await LocationModel.update(req.params.id, req.body);
+      const name = (req.body.name || '').trim();
+      if (!name) return sendError(res, 'Location name is required', 400);
+
+      const updated = await LocationModel.update(req.params.id, {
+        name,
+        description: req.body.description
+      });
       if (!updated) return sendError(res, 'Location not found', 404);
       const location = await LocationModel.findById(req.params.id);
       await logActivityWithChanges(
@@ -68,7 +80,7 @@ const LocationController = {
         'location',
         location.id,
         location.name,
-        collectChanges(before, location, ['name', 'description', 'status'])
+        collectChanges(before, location, ['name', 'description'])
       );
       await notifyAdministrators({
         title: 'Location Updated',

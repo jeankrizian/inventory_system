@@ -1,6 +1,7 @@
 let currentUser = null;
 let disposals = [];
 let disposableItems = [];
+let disposalPendingQueue = false;
 
 async function initDisposalRequestsPage() {
   currentUser = await initLayout('disposal-requests');
@@ -41,7 +42,10 @@ async function initDisposalRequestsPage() {
   document.getElementById('submitDisposalBtn')?.addEventListener('click', openSubmitModal);
 
   document.getElementById('searchInput').addEventListener('input', debounce(loadDisposals, 300));
-  document.getElementById('filterStatus').addEventListener('change', loadDisposals);
+  document.getElementById('filterStatus').addEventListener('change', () => {
+    disposalPendingQueue = false;
+    loadDisposals();
+  });
   bindGuardedFormSubmit(document.getElementById('submitForm'), submitCreate, { loadingText: 'Submitting...' });
   document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
   initActionMenus();
@@ -50,7 +54,8 @@ async function initDisposalRequestsPage() {
 
   const params = new URLSearchParams(window.location.search);
   const statusFilter = params.get('status');
-  if (statusFilter && document.getElementById('filterStatus')) {
+  disposalPendingQueue = params.get('queue') === 'pending';
+  if (!disposalPendingQueue && statusFilter && document.getElementById('filterStatus')) {
     document.getElementById('filterStatus').value = statusFilter;
   }
 
@@ -137,11 +142,19 @@ async function loadDisposals() {
   const search = document.getElementById('searchInput')?.value;
   const status = document.getElementById('filterStatus')?.value;
   if (search) params.search = search;
-  if (status) params.status = status;
 
   try {
-    const res = await API.getDisposals(params);
-    disposals = res?.data || [];
+    if (!status && disposalPendingQueue) {
+      const [pendingRes, inspectedRes] = await Promise.all([
+        API.getDisposals({ ...params, status: 'Pending' }),
+        API.getDisposals({ ...params, status: 'Inspected' })
+      ]);
+      disposals = [...(pendingRes?.data || []), ...(inspectedRes?.data || [])];
+    } else {
+      if (status) params.status = status;
+      const res = await API.getDisposals(params);
+      disposals = res?.data || [];
+    }
     renderDisposals();
   } catch (err) {
     showToast(err.message, 'error');

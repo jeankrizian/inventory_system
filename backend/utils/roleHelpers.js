@@ -6,16 +6,7 @@ const ROLES = {
   LABORATORY_CUSTODIAN: 'laboratory custodian'
 };
 
-const NAV_ROLES = {
-  ADMINISTRATOR: 'administrator',
-  PROPERTY_MANAGER: 'property_manager',
-  CUSTODIAN: 'custodian'
-};
-
 const ALLOWED_ROLE_NAMES = new Set(['admin', 'Property Manager', 'Custodian']);
-
-/** @deprecated Use isAdministrator — kept for minimal migration churn */
-const ADMIN_ROLES = [ROLES.ADMINISTRATOR, ROLES.PROPERTY_MANAGER];
 
 function normalizeRoleName(role) {
   return (role || '').toLowerCase().trim();
@@ -49,20 +40,6 @@ function formatRoleDisplayName(role) {
   return String(role || '').trim();
 }
 
-function getRoleKey(role) {
-  const normalized = normalizeRoleName(role);
-  if (normalized === ROLES.ADMINISTRATOR) return NAV_ROLES.ADMINISTRATOR;
-  if (normalized === ROLES.PROPERTY_MANAGER) return NAV_ROLES.PROPERTY_MANAGER;
-  if (
-    normalized === ROLES.CUSTODIAN
-    || normalized === ROLES.DEPARTMENT_CUSTODIAN
-    || normalized === ROLES.LABORATORY_CUSTODIAN
-  ) {
-    return NAV_ROLES.CUSTODIAN;
-  }
-  return null;
-}
-
 function isAdministrator(role) {
   const normalized = normalizeRoleName(role);
   return normalized === ROLES.ADMINISTRATOR || normalized === 'administrator';
@@ -70,20 +47,6 @@ function isAdministrator(role) {
 
 function isPropertyManager(role) {
   return normalizeRoleName(role) === ROLES.PROPERTY_MANAGER;
-}
-
-function isUnifiedCustodian(role) {
-  return isCustodian(role);
-}
-
-/** @deprecated Legacy role names normalize to Custodian — use isCustodian instead */
-function isDepartmentCustodian(role) {
-  return false;
-}
-
-/** @deprecated Legacy role names normalize to Custodian — use isCustodian instead */
-function isLaboratoryCustodian(role) {
-  return false;
 }
 
 function isCustodian(role) {
@@ -100,16 +63,6 @@ function getCustodianScopeFromAssignments(user) {
     return { type: 'department', departmentId };
   }
   return null;
-}
-
-/** @deprecated Staff/Employee role removed */
-function isEmployee(role) {
-  return false;
-}
-
-/** @deprecated Former admin tier — use specific permission helpers instead */
-function isAdminRole(role) {
-  return ADMIN_ROLES.includes(normalizeRoleName(role));
 }
 
 function canApproveBorrow(role) {
@@ -211,10 +164,6 @@ function canManageBackups(role) {
 }
 
 function canManageSuppliers(role) {
-  return isAdministrator(role) || isPropertyManager(role);
-}
-
-function canViewAllBorrows(role) {
   return isAdministrator(role) || isPropertyManager(role);
 }
 
@@ -415,23 +364,15 @@ function buildSessionUser(dbUser) {
 
 module.exports = {
   ROLES,
-  NAV_ROLES,
   ALLOWED_ROLE_NAMES,
-  ADMIN_ROLES,
   normalizeRoleName,
   resolveRoleDbName,
   isAllowedRole,
   formatRoleDisplayName,
-  getRoleKey,
   isAdministrator,
   isPropertyManager,
-  isUnifiedCustodian,
-  isDepartmentCustodian,
-  isLaboratoryCustodian,
   isCustodian,
   getCustodianScopeFromAssignments,
-  isEmployee,
-  isAdminRole,
   canApproveBorrow,
   canProcessReturn,
   canManageInventory,
@@ -452,7 +393,6 @@ module.exports = {
   canViewBackups,
   canManageBackups,
   canManageSuppliers,
-  canViewAllBorrows,
   canViewReturnHistory,
   canViewTransfers,
   canViewAssetTransferHistory,

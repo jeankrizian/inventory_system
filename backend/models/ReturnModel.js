@@ -90,35 +90,14 @@ const ReturnModel = {
     }
   },
 
-  async getRecent(limit = 5, scope) {
-    if (scope?.type === 'none') {
-      return [];
-    }
-    let sql = `SELECT rt.transaction_code, bt.borrower_name, rt.return_date, rt.\`condition\`
-       FROM return_transactions rt
-       JOIN borrow_transactions bt ON rt.borrow_transaction_id = bt.id
-       WHERE 1=1`;
-    const params = [];
-    if (scope?.type === 'own' && scope.userId) {
-      sql += ' AND bt.borrower_id = ?';
-      params.push(scope.userId);
-    } else if (scope && scope.type !== 'all') {
-      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
-      sql += scopeFilter.clause;
-      params.push(...scopeFilter.params);
-    }
-    sql += ' ORDER BY rt.created_at DESC LIMIT ?';
-    params.push(limit);
-    const [rows] = await pool.query(sql, params);
-    return rows || [];
-  },
-
   async getMonthlyReturned(scope) {
     if (scope?.type === 'none') {
       return [];
     }
     let sql = `
-      SELECT DATE_FORMAT(rt.return_date, '%b') AS month, MONTH(rt.return_date) AS month_num,
+      SELECT DATE_FORMAT(rt.return_date, '%b') AS month,
+             YEAR(rt.return_date) AS year_num,
+             MONTH(rt.return_date) AS month_num,
              COUNT(*) AS count
       FROM return_transactions rt
       JOIN borrow_transactions bt ON rt.borrow_transaction_id = bt.id
@@ -132,28 +111,10 @@ const ReturnModel = {
       sql += scopeFilter.clause;
       params.push(...scopeFilter.params);
     }
-    sql += ` GROUP BY MONTH(rt.return_date), DATE_FORMAT(rt.return_date, '%b')
-      ORDER BY month_num`;
+    sql += ` GROUP BY YEAR(rt.return_date), MONTH(rt.return_date), DATE_FORMAT(rt.return_date, '%b')
+      ORDER BY year_num, month_num`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
-  },
-
-  async countTotal(scope) {
-    if (scope?.type === 'none') {
-      return 0;
-    }
-    let sql = 'SELECT COUNT(*) AS count FROM return_transactions rt JOIN borrow_transactions bt ON rt.borrow_transaction_id = bt.id WHERE 1=1';
-    const params = [];
-    if (scope?.type === 'own' && scope.userId) {
-      sql += ' AND bt.borrower_id = ?';
-      params.push(scope.userId);
-    } else if (scope && scope.type !== 'all') {
-      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
-      sql += scopeFilter.clause;
-      params.push(...scopeFilter.params);
-    }
-    const [rows] = await pool.query(sql, params);
-    return Number(rows[0]?.count ?? 0);
   }
 };
 

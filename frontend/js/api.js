@@ -79,7 +79,6 @@ const API = {
   login: (username, password) => API.post('/auth/login', { username, password }),
   register: (data) => API.post('/auth/register', data),
   forgotPassword: (data) => API.post('/auth/forgot-password', data),
-  getRegistrationRoles: () => API.get('/auth/registration-roles'),
   logout: () => API.post('/auth/logout'),
   getMe: () => API.get('/auth/me'),
 
@@ -94,34 +93,27 @@ const API = {
   getNextItemCode: (departmentId) => API.get(`/inventory/next-code?department_id=${departmentId}`),
   createInventoryItem: (data) => API.post('/inventory', data),
   updateInventoryItem: (id, data) => API.put(`/inventory/${id}`, data),
-  deleteInventoryItem: (id) => API.delete(`/inventory/${id}`),
   archiveInventoryItem: (id) => API.delete(`/inventory/${id}`),
 
   getCategories: () => API.get('/categories'),
   createCategory: (data) => API.post('/categories', data),
   updateCategory: (id, data) => API.put(`/categories/${id}`, data),
-  deleteCategory: (id) => API.delete(`/categories/${id}`),
   archiveCategory: (id) => API.delete(`/categories/${id}`),
 
   getSuppliers: () => API.get('/suppliers'),
   createSupplier: (data) => API.post('/suppliers', data),
   updateSupplier: (id, data) => API.put(`/suppliers/${id}`, data),
-  deleteSupplier: (id) => API.delete(`/suppliers/${id}`),
   archiveSupplier: (id) => API.delete(`/suppliers/${id}`),
 
   getLocations: () => API.get('/locations'),
   createLocation: (data) => API.post('/locations', data),
   updateLocation: (id, data) => API.put(`/locations/${id}`, data),
-  deleteLocation: (id) => API.delete(`/locations/${id}`),
   archiveLocation: (id) => API.delete(`/locations/${id}`),
 
   getBorrowableItems: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return API.get(`/borrow/borrowable-items${query ? '?' + query : ''}`);
   },
-  getBorrowableModelAssets: (itemCode, limit = 10) =>
-    API.get(`/borrow/borrowable-models/${encodeURIComponent(itemCode)}/assets?limit=${limit}`),
-  previewBorrowAllocation: (data) => API.post('/borrow/preview-allocation', data),
   getBorrowHistory: (inventoryItemId) => API.get(`/borrow/asset/${inventoryItemId}/history`),
   getBorrows: (params = {}) => {
     const query = new URLSearchParams(params).toString();

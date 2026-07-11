@@ -1,7 +1,7 @@
 const { sendError } = require('../utils/response');
+const UserModel = require('../models/UserModel');
 const {
   isAdministrator,
-  isPropertyManager,
   canManageInventory,
   canViewInventory,
   canApproveBorrow,
@@ -24,7 +24,8 @@ const {
   canViewDisposal,
   canSubmitDisposal,
   canViewBackups,
-  canManageBackups
+  canManageBackups,
+  buildSessionUser
 } = require('../utils/roleHelpers');
 
 function getSessionRole(req) {
@@ -32,12 +33,31 @@ function getSessionRole(req) {
   return user?.role || user?.role_name;
 }
 
-/** Require authenticated session */
-const requireAuth = (req, res, next) => {
+function clearSessionCookie(res) {
+  res.clearCookie('cavite.sid');
+}
+
+/**
+ * Require authenticated session with a still-valid account.
+ * Rejects missing sessions and users who are inactive or archived.
+ */
+const requireAuth = async (req, res, next) => {
   if (!req.session || !req.session.user) {
     return sendError(res, 'Authentication required', 401);
   }
-  next();
+  try {
+    const user = await UserModel.findById(req.session.user.id);
+    if (!user || !Number(user.is_active)) {
+      return req.session.destroy(() => {
+        clearSessionCookie(res);
+        sendError(res, 'Authentication required', 401);
+      });
+    }
+    req.session.user = buildSessionUser(user);
+    next();
+  } catch (err) {
+    sendError(res, err.message, 500);
+  }
 };
 
 function requireRole(checkFn, message) {
@@ -57,15 +77,6 @@ const requireAdministrator = requireRole(
   isAdministrator,
   'Administrator access required'
 );
-
-/** Property Manager only — full operational lifecycle */
-const requirePropertyManager = requireRole(
-  isPropertyManager,
-  'Property Manager access required'
-);
-
-/** @deprecated Use requirePropertyManager or requireAdministrator */
-const requireAdmin = requirePropertyManager;
 
 const requireViewInventory = requireRole(
   canViewInventory,
@@ -212,9 +223,7 @@ const validate = (req, res, next) => {
 
 module.exports = {
   requireAuth,
-  requireAdmin,
   requireAdministrator,
-  requirePropertyManager,
   requireViewInventory,
   requireManageInventory,
   requireApproveBorrow,

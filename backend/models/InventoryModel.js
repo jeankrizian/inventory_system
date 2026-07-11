@@ -13,7 +13,8 @@ const { isItemAvailableForBorrow, getItemUnavailableReason } = require('../utils
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const {
   CONSUMABLE_TEMPORARILY_DISABLED,
-  DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED
+  DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED,
+  shouldExcludeConsumableFromLists
 } = require('../utils/assetClassification');
 
 const EMPTY_INVENTORY_STATS = {
@@ -552,6 +553,10 @@ const InventoryModel = {
     if (scopeFilter.denied) {
       return { ...EMPTY_INVENTORY_STATS };
     }
+    // Match Inventory list: exclude consumables while that classification is disabled.
+    const consumableClause = shouldExcludeConsumableFromLists()
+      ? " AND i.asset_classification != 'Consumable'"
+      : '';
     const [rows] = await pool.query(`
       SELECT
         COUNT(*) AS total_items,
@@ -560,32 +565,9 @@ const InventoryModel = {
         COALESCE(SUM(CASE WHEN i.status = 'Under Maintenance' THEN 1 ELSE 0 END), 0) AS under_maintenance,
         COALESCE(SUM(CASE WHEN i.status = 'Disposed' THEN 1 ELSE 0 END), 0) AS disposed
       FROM inventory_items i
-      WHERE i.is_archived = 0${scopeFilter.clause}
+      WHERE i.is_archived = 0${consumableClause}${scopeFilter.clause}
     `, scopeFilter.params);
     return normalizeInventoryStats(rows[0]);
-  },
-
-  async getRecent(limit = 5, scope) {
-    if (isInventoryScopeDenied(scope)) {
-      return [];
-    }
-    const scopeFilter = appendInventoryScopeSql(scope, 'i');
-    if (scopeFilter.denied) {
-      return [];
-    }
-    const [rows] = await pool.query(
-      `SELECT i.id, i.item_code, i.item_name, i.property_tag, d.name AS department, d.name AS category, i.status
-       FROM inventory_items i
-       LEFT JOIN departments d ON i.department_id = d.id
-       WHERE i.is_archived = 0${scopeFilter.clause}
-       ORDER BY i.updated_at DESC LIMIT ?`,
-      [...scopeFilter.params, limit]
-    );
-    return rows || [];
-  },
-
-  async getLowStock(_limit = 5, _scope) {
-    return [];
   },
 
   async getDepartmentDistribution(scope) {
@@ -596,10 +578,13 @@ const InventoryModel = {
     if (scopeFilter.denied) {
       return [];
     }
+    const consumableClause = shouldExcludeConsumableFromLists()
+      ? " AND i.asset_classification != 'Consumable'"
+      : '';
     const [rows] = await pool.query(`
       SELECT d.name AS department, d.name AS category, COUNT(i.id) AS count
       FROM departments d
-      LEFT JOIN inventory_items i ON d.id = i.department_id AND i.is_archived = 0 AND i.status != 'Disposed'
+      LEFT JOIN inventory_items i ON d.id = i.department_id AND i.is_archived = 0 AND i.status != 'Disposed'${consumableClause}
       WHERE 1=1${scopeFilter.clause}
       GROUP BY d.id, d.name
       ORDER BY count DESC

@@ -37,7 +37,7 @@ function buildDashboardModules(role) {
       maintenanceStats: false,
       disposalStats: false,
       charts: true,
-      recentInventory: true,
+      recentInventory: false,
       recentBorrows: false,
       recentReturns: false,
       activities: true
@@ -55,9 +55,9 @@ function buildDashboardModules(role) {
       maintenanceStats: true,
       disposalStats: true,
       charts: true,
-      recentInventory: true,
-      recentBorrows: true,
-      recentReturns: true,
+      recentInventory: false,
+      recentBorrows: false,
+      recentReturns: false,
       activities: true
     };
   }
@@ -72,7 +72,7 @@ function buildDashboardModules(role) {
     maintenanceStats: true,
     disposalStats: true,
     charts: false,
-    recentInventory: true,
+    recentInventory: false,
     recentBorrows: false,
     recentReturns: false,
     activities: true
@@ -266,15 +266,12 @@ const DashboardModel = {
       departmentCount,
       totalUsers,
       activeUsers,
-      returnCount,
       pendingBorrows,
       pendingTransfers,
       pendingDisposals,
-      maintenanceDue,
       pendingMaintenance,
       ongoingMaintenance,
       scheduledMaintenance,
-      approvedTransfers,
       currentBorrowed,
       approvedBorrows,
       overdueBorrows,
@@ -285,17 +282,13 @@ const DashboardModel = {
       ctx.fullVisibility ? DepartmentModel.count() : Promise.resolve(0),
       ctx.showUserStats ? UserModel.countTotal() : Promise.resolve(0),
       ctx.showUserStats ? UserModel.countActive() : Promise.resolve(0),
-      ctx.modules.recentReturns ? ReturnModel.countTotal(borrowScope) : Promise.resolve(0),
       ctx.modules.pendingApprovals || ctx.modules.pendingWorkflow || ctx.modules.personalBorrowStats
         ? BorrowModel.countPending(borrowScope) : Promise.resolve(0),
       ctx.modules.transferStats ? TransferModel.countPending(ctx.operationalScope) : Promise.resolve(0),
       ctx.showDisposalStats ? DisposalModel.countPending(ctx.operationalScope) : Promise.resolve(0),
-      ctx.modules.maintenanceStats
-        ? MaintenanceModel.countDue(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.maintenanceStats ? MaintenanceModel.countPending(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.maintenanceStats ? MaintenanceModel.countOngoing(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.maintenanceStats ? MaintenanceModel.countScheduled(ctx.operationalScope) : Promise.resolve(0),
-      ctx.modules.transferStats ? TransferModel.countApproved(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.personalBorrowStats ? BorrowModel.countCurrentBorrowed(borrowScope) : Promise.resolve(0),
       ctx.modules.personalBorrowStats ? BorrowModel.countByStatus(borrowScope, 'Approved') : Promise.resolve(0),
       ctx.modules.personalBorrowStats ? BorrowModel.countOverdue(borrowScope) : Promise.resolve(0),
@@ -312,19 +305,14 @@ const DashboardModel = {
       disposed: Number(inventoryStats.disposed ?? 0),
       suppliers: Number(supplierCount ?? 0),
       departments: Number(departmentCount ?? 0),
-      categories: Number(departmentCount ?? 0),
       total_users: Number(totalUsers ?? 0),
       active_users: Number(activeUsers ?? 0),
-      returned_items: Number(returnCount ?? 0),
-      pending_requests: Number(pendingBorrows ?? 0) + Number(pendingTransfers ?? 0) + Number(pendingDisposals ?? 0) + Number(pendingMaintenance ?? 0),
       pending_borrows: Number(pendingBorrows ?? 0),
       pending_transfers: Number(pendingTransfers ?? 0),
       pending_disposals: Number(pendingDisposals ?? 0),
       pending_maintenance: Number(pendingMaintenance ?? 0),
       ongoing_maintenance: Number(ongoingMaintenance ?? 0),
       scheduled_maintenance: Number(scheduledMaintenance ?? 0),
-      approved_transfers: Number(approvedTransfers ?? 0),
-      maintenance_due: Number(maintenanceDue ?? 0),
       current_borrowed: Number(currentBorrowed ?? 0),
       approved_borrows: Number(approvedBorrows ?? 0),
       overdue_borrows: Number(overdueBorrows ?? 0),
@@ -353,11 +341,7 @@ const DashboardModel = {
       monthlyBorrowed: Array.isArray(monthlyBorrowed) ? monthlyBorrowed : [],
       monthlyReturned: Array.isArray(monthlyReturned) ? monthlyReturned : [],
       departmentDistribution: safeDepartmentDistribution,
-      categoryDistribution: safeDepartmentDistribution.map(d => ({
-        category: d.category,
-        department: d.department,
-        count: Number(d.count ?? 0)
-      }))
+      categoryDistribution: safeDepartmentDistribution
     };
   },
 
@@ -365,19 +349,14 @@ const DashboardModel = {
     const ctx = resolveScopes(scopes);
     const { sql: activitySql, params: activityParams } = buildActivityQuery(ctx);
 
-    const [recentInventory, recentBorrows, recentReturns, recentActivities] = await Promise.all([
-      ctx.modules.recentInventory ? InventoryModel.getRecent(5, ctx.inventoryScope) : Promise.resolve([]),
-      ctx.modules.recentBorrows ? BorrowModel.getRecent(5, ctx.borrowScope) : Promise.resolve([]),
-      ctx.modules.recentReturns ? ReturnModel.getRecent(5, ctx.borrowScope) : Promise.resolve([]),
-      ctx.modules.activities
-        ? pool.query(activitySql, activityParams).then(([rows]) => rows || [])
-        : Promise.resolve([])
-    ]);
+    const recentActivities = ctx.modules.activities
+      ? await pool.query(activitySql, activityParams).then(([rows]) => rows || [])
+      : [];
 
     return {
-      recentInventory: Array.isArray(recentInventory) ? recentInventory : [],
-      recentBorrows: Array.isArray(recentBorrows) ? recentBorrows : [],
-      recentReturns: Array.isArray(recentReturns) ? recentReturns : [],
+      recentInventory: [],
+      recentBorrows: [],
+      recentReturns: [],
       recentActivities: Array.isArray(recentActivities) ? recentActivities : []
     };
   }

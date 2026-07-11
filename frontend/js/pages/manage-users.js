@@ -238,8 +238,24 @@ function openAddUser() {
 }
 
 function editUser(id) {
-  const u = users.find(x => x.id === id);
-  if (!u) return;
+  const numericId = parseInt(id, 10);
+  const u = users.find((x) => Number(x.id) === numericId);
+  if (!u) {
+    // Deep links / stale list: fetch the record directly
+    API.getManagedUser(numericId).then((res) => {
+      const user = res?.data;
+      if (!user) {
+        showToast('User not found', 'error');
+        return;
+      }
+      populateUserForm(user);
+    }).catch((err) => showToast(err.message || 'User not found', 'error'));
+    return;
+  }
+  populateUserForm(u);
+}
+
+function populateUserForm(u) {
   document.getElementById('userModalTitle').textContent = 'Edit User';
   document.getElementById('userId').value = u.id;
   document.getElementById('userFullName').value = u.full_name;

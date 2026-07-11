@@ -212,7 +212,7 @@ function renderNavEntry(item, activePage) {
 
 function renderLayout(activePage, user) {
   const initials = getInitials(user.full_name);
-  const roleLabel = user.role_name || user.role || 'User';
+  const roleLabel = formatRoleDisplayName(user);
   const role = getUserRole(user);
   const collapsed = isSidebarCollapsed();
   const navItems = filterNavByRole(NAV_ITEMS, role);

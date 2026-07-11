@@ -84,18 +84,6 @@ const UserModel = {
     return result.insertId;
   },
 
-  async generateUniqueUsername(email) {
-    let base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '');
-    if (!base) base = 'user';
-    let candidate = base;
-    let counter = 1;
-    while (await this.isUsernameTaken(candidate)) {
-      candidate = `${base}${counter}`;
-      counter += 1;
-    }
-    return candidate;
-  },
-
   async findById(id, { includeArchived = false } = {}) {
     let sql = `
       SELECT ${USER_SELECT}
@@ -206,12 +194,18 @@ const UserModel = {
   },
 
   async countActive() {
-    const [rows] = await pool.query('SELECT COUNT(*) AS count FROM users WHERE is_active = 1');
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS count FROM users
+       WHERE is_active = 1 AND (is_archived = 0 OR is_archived IS NULL)`
+    );
     return rows[0].count;
   },
 
   async countTotal() {
-    const [rows] = await pool.query('SELECT COUNT(*) AS count FROM users');
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS count FROM users
+       WHERE (is_archived = 0 OR is_archived IS NULL)`
+    );
     return rows[0].count;
   }
 };

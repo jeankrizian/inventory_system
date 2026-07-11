@@ -155,21 +155,6 @@ const TransferModel = {
     params.push(...scopeFilter.params);
     const [rows] = await pool.query(sql, params);
     return Number(rows[0]?.count ?? 0);
-  },
-
-  async countApproved(scope) {
-    const scopeFilter = appendTransferRequestScopeSql(scope, 'i', 't');
-    if (scopeFilter.denied) {
-      return 0;
-    }
-    let sql = `SELECT COUNT(*) AS count FROM transfer_requests t
-      JOIN inventory_items i ON t.inventory_item_id = i.id
-      WHERE t.status IN ('Approved', 'Completed')`;
-    const params = [];
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-    const [rows] = await pool.query(sql, params);
-    return Number(rows[0]?.count ?? 0);
   }
 };
 

@@ -152,32 +152,8 @@ function formatArchiveBlockedMessage(entityLabel, blockers) {
   return `Cannot archive this ${entityLabel} because it is still referenced by ${detail}. Reassign or complete those records first.`;
 }
 
-const ENTITY_LABELS = {
-  departments: 'department',
-  locations: 'location',
-  suppliers: 'supplier',
-  users: 'user'
-};
-
-async function validateArchiveAllowed(table, id) {
-  if (!ENTITY_LABELS[table]) return;
-
-  const blockers = await getArchiveBlockers(table, id);
-  if (!blockers.length) return;
-
-  throw new ArchiveBlockedError(formatArchiveBlockedMessage(ENTITY_LABELS[table], blockers));
-}
-
-async function canPermanentlyDelete(table, id) {
-  if (!ENTITY_LABELS[table]) return true;
-  const blockers = await getArchiveBlockers(table, id);
-  return blockers.length === 0;
-}
-
 module.exports = {
   ArchiveBlockedError,
   getArchiveBlockers,
-  validateArchiveAllowed,
-  canPermanentlyDelete,
   formatArchiveBlockedMessage
 };

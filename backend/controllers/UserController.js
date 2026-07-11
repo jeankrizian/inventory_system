@@ -66,14 +66,16 @@ function computeEffectiveAssignments(user, role, body) {
   return { effectiveRole, assignments };
 }
 
-async function validateCustodianAssignments(roleName, assignments) {
+async function validateCustodianAssignments(roleName, assignments, body = {}) {
   const normalized = normalizeRoleName(roleName);
 
   if (!isCustodian(normalized)) {
     return null;
   }
 
-  if (assignments.assigned_location_id != null) {
+  // Reject explicit lab/location assignment before it is stripped from the payload.
+  if (parseAssignmentId(body.assigned_location_id) != null
+    || assignments.assigned_location_id != null) {
     return 'Custodian cannot be assigned to a laboratory.';
   }
 
@@ -166,7 +168,7 @@ const UserController = {
       if (!roleRecord) return sendError(res, 'Selected role is not available', 400);
 
       const assignmentUpdates = resolveRoleAssignments(role, req.body);
-      const assignmentError = await validateCustodianAssignments(role, assignmentUpdates);
+      const assignmentError = await validateCustodianAssignments(role, assignmentUpdates, req.body);
       if (assignmentError) return sendError(res, assignmentError, 400);
 
       const passwordHash = await bcrypt.hash(password, 10);
@@ -256,7 +258,7 @@ const UserController = {
       }
 
       const { effectiveRole, assignments } = computeEffectiveAssignments(user, role, req.body);
-      const assignmentError = await validateCustodianAssignments(effectiveRole, assignments);
+      const assignmentError = await validateCustodianAssignments(effectiveRole, assignments, req.body);
       if (assignmentError) return sendError(res, assignmentError, 400);
 
       const updated = await UserModel.update(req.params.id, updates);

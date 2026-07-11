@@ -184,15 +184,6 @@ function formatRoleDisplayName(userOrRole) {
   return userOrRole?.role_name || userOrRole?.role || userOrRole || '-';
 }
 
-function isEmployee(user) {
-  return false;
-}
-
-/** @deprecated Use isAdministrator or isPropertyManager — former admin tier */
-function isAdminUser(user) {
-  return isAdministrator(user) || isPropertyManager(user);
-}
-
 function canApproveBorrow(user) {
   return isPropertyManager(user);
 }
@@ -277,10 +268,6 @@ function canViewReturnHistory(user) {
   return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewAllBorrows(user) {
-  return isAdministrator(user) || isPropertyManager(user);
-}
-
 function canViewTransfers(user) {
   return canSubmitTransfer(user) || canOperateTransfers(user);
 }
@@ -326,11 +313,12 @@ function canViewPendingApprovalsDashboard(user) {
 }
 
 function getDashboardQuickLink(user, workflowType) {
+  // Disposal actionable queue = Pending + Inspected (matches dashboard/PA counts).
   const moduleLinks = {
     borrow: '/pages/orders.html?status=Pending',
     maintenance: '/pages/maintenance-requests.html?status=Pending',
     transfer: '/pages/transfer-requests.html?status=Pending',
-    disposal: '/pages/disposal-requests.html?status=Pending'
+    disposal: '/pages/disposal-requests.html?queue=pending'
   };
 
   if (isPropertyManager(user)) {
@@ -432,12 +420,6 @@ function canViewDashboardModule(user, module) {
     activities: canViewDashboardActivities(user)
   };
   return modules[module] !== false;
-}
-
-/** Validate Cavite Institute school email */
-function isSchoolEmail(email) {
-  const normalized = (email || '').trim().toLowerCase();
-  return normalized.endsWith('@caviteinstitute.edu.ph') && normalized.length > '@caviteinstitute.edu.ph'.length;
 }
 
 /** Toggle password visibility for a single control */

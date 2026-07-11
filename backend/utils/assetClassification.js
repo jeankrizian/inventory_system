@@ -48,11 +48,6 @@ function isConsumableEnabled() {
   return !CONSUMABLE_TEMPORARILY_DISABLED;
 }
 
-function canUseConsumableClassification(existingClassification) {
-  if (!isConsumableEnabled()) return false;
-  return true;
-}
-
 function shouldExcludeConsumableFromLists() {
   return CONSUMABLE_TEMPORARILY_DISABLED;
 }
@@ -210,7 +205,6 @@ module.exports = {
   isValidClassification,
   isConsumableClassification,
   isConsumableEnabled,
-  canUseConsumableClassification,
   shouldExcludeConsumableFromLists,
   validateConsumableFilter,
   isConsumableEditBlocked,

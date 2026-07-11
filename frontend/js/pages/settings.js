@@ -193,7 +193,7 @@ async function initSettingsPage() {
         <div>
           <h4 style="font-size:16px;">${user.full_name}</h4>
           <p style="color:var(--text-secondary);font-size:13px;">${user.email}</p>
-          <span class="badge badge-available" style="margin-top:4px;">${user.role_name || user.role}</span>
+          <span class="badge badge-available" style="margin-top:4px;">${formatRoleDisplayName(user)}</span>
         </div>
       </div>
       <div class="form-row">

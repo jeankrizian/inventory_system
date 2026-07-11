@@ -286,21 +286,6 @@ const MaintenanceModel = {
          AND status != 'Disposed' AND is_archived = 0`
     );
     return rows;
-  },
-
-  async countDue(scope) {
-    const scopeFilter = appendInventoryScopeSql(scope, 'i');
-    if (scopeFilter.denied) {
-      return 0;
-    }
-    let sql = `SELECT COUNT(*) AS count FROM maintenance_records m
-      JOIN inventory_items i ON m.inventory_item_id = i.id
-      WHERE m.status IN ('Pending', 'Scheduled', 'Ongoing', 'In Progress')`;
-    const params = [];
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-    const [rows] = await pool.query(sql, params);
-    return Number(rows[0]?.count ?? 0);
   }
 };
 

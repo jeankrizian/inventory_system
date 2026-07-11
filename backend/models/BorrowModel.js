@@ -150,33 +150,14 @@ const BorrowModel = {
     return true;
   },
 
-  async getRecent(limit = 5, scope) {
-    if (scope?.type === 'none') {
-      return [];
-    }
-    let sql = `SELECT bt.transaction_code, bt.borrower_name, bt.borrow_date, bt.status
-       FROM borrow_transactions bt WHERE 1=1`;
-    const params = [];
-    if (scope?.type === 'own' && scope.userId) {
-      sql += ' AND bt.borrower_id = ?';
-      params.push(scope.userId);
-    } else if (scope && scope.type !== 'all') {
-      const scopeFilter = appendBorrowTransactionScopeSql(scope, 'bt');
-      sql += scopeFilter.clause;
-      params.push(...scopeFilter.params);
-    }
-    sql += ' ORDER BY bt.created_at DESC LIMIT ?';
-    params.push(limit);
-    const [rows] = await pool.query(sql, params);
-    return rows || [];
-  },
-
   async getMonthlyBorrowed(scope) {
     if (scope?.type === 'none') {
       return [];
     }
     let sql = `
-      SELECT DATE_FORMAT(bt.borrow_date, '%b') AS month, MONTH(bt.borrow_date) AS month_num,
+      SELECT DATE_FORMAT(bt.borrow_date, '%b') AS month,
+             YEAR(bt.borrow_date) AS year_num,
+             MONTH(bt.borrow_date) AS month_num,
              COUNT(*) AS count
       FROM borrow_transactions bt
       WHERE bt.borrow_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
@@ -190,8 +171,8 @@ const BorrowModel = {
       sql += scopeFilter.clause;
       params.push(...scopeFilter.params);
     }
-    sql += ` GROUP BY MONTH(bt.borrow_date), DATE_FORMAT(bt.borrow_date, '%b')
-      ORDER BY month_num`;
+    sql += ` GROUP BY YEAR(bt.borrow_date), MONTH(bt.borrow_date), DATE_FORMAT(bt.borrow_date, '%b')
+      ORDER BY year_num, month_num`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   },

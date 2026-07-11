@@ -39,9 +39,20 @@ const CategoryModel = {
   },
 
   async create(data) {
-    let code = data.code || generateCode(data.name);
-    const [existing] = await pool.query('SELECT id FROM departments WHERE code = ? AND is_archived = 0', [code]);
-    if (existing.length) code = `${code}${Date.now().toString().slice(-4)}`;
+    let code = (data.code || '').trim() || generateCode(data.name);
+    const [existing] = await pool.query(
+      'SELECT id FROM departments WHERE code = ? AND is_archived = 0',
+      [code]
+    );
+    if (existing.length) {
+      // Explicit codes must be unique; only auto-generated codes may be rewritten.
+      if ((data.code || '').trim()) {
+        const err = new Error('Department code already exists');
+        err.code = 'ER_DUP_ENTRY';
+        throw err;
+      }
+      code = `${code}${Date.now().toString().slice(-4)}`;
+    }
 
     const [result] = await pool.query(
       `INSERT INTO departments (name, code, description, department_head, custodian_id, status)
@@ -81,15 +92,6 @@ const CategoryModel = {
 
   async archive(id, userId) {
     return archiveRecord('departments', id, userId);
-  },
-
-  async delete(id, userId) {
-    return this.archive(id, userId);
-  },
-
-  async count() {
-    const [rows] = await pool.query('SELECT COUNT(*) AS count FROM departments WHERE is_archived = 0');
-    return rows[0].count;
   }
 };
 

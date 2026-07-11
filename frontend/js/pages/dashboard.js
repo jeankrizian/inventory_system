@@ -356,14 +356,25 @@ function hasChartData(data) {
 }
 
 function getMonthLabels(dataSets) {
-  const monthSet = new Set();
+  const monthEntries = new Map();
   dataSets.forEach((data) => {
     (data || []).forEach((d) => {
-      if (d.month != null) monthSet.add(String(d.month));
+      if (d.month == null) return;
+      const label = String(d.month);
+      const yearNum = Number(d.year_num);
+      const monthNum = Number(d.month_num);
+      const sortKey = (Number.isFinite(yearNum) ? yearNum * 100 : 0)
+        + (Number.isFinite(monthNum) ? monthNum : 0);
+      const prev = monthEntries.get(label);
+      if (!prev || sortKey >= prev.sortKey) {
+        monthEntries.set(label, { label, sortKey });
+      }
     });
   });
-  const labels = [...monthSet];
-  if (labels.length) return labels.sort((a, b) => Number(a) - Number(b));
+  const labels = [...monthEntries.values()]
+    .sort((a, b) => a.sortKey - b.sortKey || a.label.localeCompare(b.label))
+    .map((entry) => entry.label);
+  if (labels.length) return labels;
   return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
 }
 

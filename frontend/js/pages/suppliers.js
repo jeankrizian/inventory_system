@@ -121,7 +121,7 @@ async function saveSupplier(e) {
 }
 
 async function archiveSupplier(id) {
-  if (!confirmAction('Archive this supplier? It will remain in the Archive for 30 days before being permanently deleted.')) return;
+  if (!await confirmAction('Archive this supplier? It will remain in the Archive for 30 days before being permanently deleted.', { variant: 'danger', title: 'Archive Supplier', confirmText: 'Archive' })) return;
   try {
     const res = await API.archiveSupplier(id);
     showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');

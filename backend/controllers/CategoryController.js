@@ -1,7 +1,7 @@
 const CategoryModel = require('../models/CategoryModel');
 const UserModel = require('../models/UserModel');
 const { sendSuccess, sendError } = require('../utils/response');
-const { logActivity } = require('../utils/activityLogger');
+const { logActivity, logActivityWithChanges, collectChanges } = require('../utils/activityLogger');
 
 const CategoryController = {
   async getAll(req, res) {
@@ -16,7 +16,7 @@ const CategoryController = {
   async getById(req, res) {
     try {
       const category = await CategoryModel.findById(req.params.id);
-      if (!category) return sendError(res, 'Category not found', 404);
+      if (!category) return sendError(res, 'Department not found', 404);
       sendSuccess(res, category);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -31,11 +31,23 @@ const CategoryController = {
       }
 
       const id = await CategoryModel.create(req.body);
-      await logActivity(req.session.user.id, 'CREATE', 'Category', `Added category ${req.body.name}`, req.ip);
       const category = await CategoryModel.findById(id);
-      sendSuccess(res, category, 'Category created successfully', 201);
+      await logActivity(req.session.user.id, 'CREATE', 'Department', `Added department ${category.name}`, req.ip, {
+        entity_type: 'department',
+        entity_id: id,
+        reference_code: category.code || category.name
+      });
+      sendSuccess(res, category, 'Department created successfully', 201);
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') return sendError(res, 'Category name already exists', 400);
+      if (err.code === 'ER_DUP_ENTRY') {
+        return sendError(
+          res,
+          err.message?.includes('code')
+            ? 'Department code already exists'
+            : 'Department name or code already exists',
+          400
+        );
+      }
       sendError(res, err.message, 500);
     }
   },
@@ -43,7 +55,7 @@ const CategoryController = {
   async update(req, res) {
     try {
       const existing = await CategoryModel.findById(req.params.id);
-      if (!existing) return sendError(res, 'Category not found', 404);
+      if (!existing) return sendError(res, 'Department not found', 404);
 
       const custodianId = req.body.custodian_id !== undefined ? req.body.custodian_id : existing.custodian_id;
       if (custodianId) {
@@ -52,12 +64,24 @@ const CategoryController = {
       }
 
       const updated = await CategoryModel.update(req.params.id, req.body);
-      if (!updated) return sendError(res, 'Category not found', 404);
-      await logActivity(req.session.user.id, 'UPDATE', 'Category', `Updated category ${req.body.name}`, req.ip);
+      if (!updated) return sendError(res, 'Department not found', 404);
       const category = await CategoryModel.findById(req.params.id);
-      sendSuccess(res, category, 'Category updated successfully');
+      await logActivityWithChanges(
+        req.session.user.id,
+        'UPDATE',
+        'Department',
+        `Updated department ${category.name}`,
+        req.ip,
+        'department',
+        category.id,
+        category.code || category.name,
+        collectChanges(existing, category, [
+          'name', 'code', 'status', 'custodian_id', 'department_head', 'description'
+        ])
+      );
+      sendSuccess(res, category, 'Department updated successfully');
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') return sendError(res, 'Category name already exists', 400);
+      if (err.code === 'ER_DUP_ENTRY') return sendError(res, 'Department name or code already exists', 400);
       sendError(res, err.message, 500);
     }
   },
@@ -65,10 +89,17 @@ const CategoryController = {
   async remove(req, res) {
     try {
       const category = await CategoryModel.findById(req.params.id);
-      if (!category) return sendError(res, 'Category not found', 404);
+      if (!category) return sendError(res, 'Department not found', 404);
       const archived = await CategoryModel.archive(req.params.id, req.session.user.id);
-      if (!archived) return sendError(res, 'Category could not be archived', 400);
-      await logActivity(req.session.user.id, 'ARCHIVE', 'Category', `Archived category ${category.name}`, req.ip);
+      if (!archived) return sendError(res, 'Department could not be archived', 400);
+      await logActivity(req.session.user.id, 'ARCHIVE', 'Department', `Archived department ${category.name}`, req.ip, {
+        entity_type: 'department',
+        entity_id: category.id,
+        reference_code: category.code || category.name,
+        field_name: 'archived',
+        old_value: 'false',
+        new_value: 'true'
+      });
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
     } catch (err) {
       sendError(res, err.message, 500);

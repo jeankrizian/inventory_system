@@ -42,6 +42,7 @@ const AuthController = {
         email: user.email,
         role: user.role_name,
         role_name: user.role_name,
+        role_id: user.role_id ?? null,
         profile_image: user.profile_image,
         assigned_department_id: user.assigned_department_id ?? null,
         assigned_location_id: user.assigned_location_id ?? null
@@ -72,8 +73,11 @@ const AuthController = {
         return sendError(res, 'Not authenticated', 401);
       }
       const user = await UserModel.findById(req.session.user.id);
-      if (!user) {
-        return sendError(res, 'Not authenticated', 401);
+      if (!user || !Number(user.is_active)) {
+        return req.session.destroy(() => {
+          res.clearCookie('cavite.sid');
+          sendError(res, 'Not authenticated', 401);
+        });
       }
       req.session.user = buildSessionUser(user);
       sendSuccess(res, {
@@ -83,6 +87,7 @@ const AuthController = {
         full_name: user.full_name,
         role: user.role_name,
         role_name: user.role_name,
+        role_id: user.role_id ?? null,
         profile_image: user.profile_image,
         assigned_department_id: user.assigned_department_id ?? null,
         assigned_location_id: user.assigned_location_id ?? null,

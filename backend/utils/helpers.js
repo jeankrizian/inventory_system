@@ -10,16 +10,4 @@ function generateCode(prefix) {
   return `${prefix}-${y}${m}${d}-${rand}`;
 }
 
-const { computeInventoryStatus } = require('./inventoryStatusService');
-
-/**
- * @deprecated Use computeInventoryStatus from inventoryStatusService
- */
-function computeItemStatus(availableQty, totalQty, threshold) {
-  return computeInventoryStatus({
-    available_quantity: availableQty,
-    low_stock_threshold: threshold
-  });
-}
-
-module.exports = { generateCode, computeItemStatus, computeInventoryStatus };
+module.exports = { generateCode };

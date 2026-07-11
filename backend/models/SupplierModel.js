@@ -51,10 +51,6 @@ const SupplierModel = {
     return archiveRecord('suppliers', id, userId);
   },
 
-  async delete(id, userId) {
-    return this.archive(id, userId);
-  },
-
   async count() {
     const [rows] = await pool.query('SELECT COUNT(*) AS count FROM suppliers WHERE is_archived = 0');
     return rows[0].count;

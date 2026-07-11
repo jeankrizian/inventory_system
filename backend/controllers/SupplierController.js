@@ -27,9 +27,15 @@ const SupplierController = {
 
   async create(req, res) {
     try {
-      const id = await SupplierModel.create(req.body);
+      const name = (req.body.name || '').trim();
+      if (!name) return sendError(res, 'Supplier name is required', 400);
+
+      const id = await SupplierModel.create({
+        ...req.body,
+        name
+      });
       const supplier = await SupplierModel.findById(id);
-      await logActivity(req.session.user.id, 'CREATE', 'Supplier', `Added supplier ${req.body.name}`, req.ip, {
+      await logActivity(req.session.user.id, 'CREATE', 'Supplier', `Added supplier ${supplier.name}`, req.ip, {
         entity_type: 'supplier',
         entity_id: id,
         reference_code: supplier.name
@@ -57,7 +63,13 @@ const SupplierController = {
       const before = await SupplierModel.findById(req.params.id);
       if (!before) return sendError(res, 'Supplier not found', 404);
 
-      const updated = await SupplierModel.update(req.params.id, req.body);
+      const name = (req.body.name || '').trim();
+      if (!name) return sendError(res, 'Supplier name is required', 400);
+
+      const updated = await SupplierModel.update(req.params.id, {
+        ...req.body,
+        name
+      });
       if (!updated) return sendError(res, 'Supplier not found', 404);
       const supplier = await SupplierModel.findById(req.params.id);
       await logActivityWithChanges(
@@ -69,7 +81,7 @@ const SupplierController = {
         'supplier',
         supplier.id,
         supplier.name,
-        collectChanges(before, supplier, ['name', 'contact_person', 'email', 'phone', 'address', 'status'])
+        collectChanges(before, supplier, ['name', 'contact_person', 'email', 'phone', 'address'])
       );
 
       await notifyAdministrators({

@@ -30,15 +30,6 @@ const LocationModel = {
 
   async archive(id, userId) {
     return archiveRecord('locations', id, userId);
-  },
-
-  async delete(id, userId) {
-    return this.archive(id, userId);
-  },
-
-  async count() {
-    const [rows] = await pool.query('SELECT COUNT(*) AS count FROM locations WHERE is_archived = 0');
-    return rows[0].count;
   }
 };
 
