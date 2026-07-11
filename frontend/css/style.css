@@ -1183,10 +1183,12 @@ a.stat-item.stat-item-link:focus-visible {
   min-height: 0;
 }
 
+/* Nested table scroll disabled — modal body is the single scroll container */
 .modal-body-custom .table-responsive,
 .modal-body-custom .table-scroll-container {
-  max-height: min(50vh, 360px);
+  max-height: none;
   min-height: 0;
+  overflow: visible;
 }
 
 .content-card:has(> .table-scroll-container:not(.table-scroll-container--static)),
@@ -1446,7 +1448,7 @@ a.stat-item.stat-item-link:focus-visible {
 .btn-outline-custom { background: white; color: var(--secondary); border: 1px solid var(--secondary); padding: 9px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .btn-outline-custom:hover { background: var(--secondary-light); border-color: var(--secondary-dark); color: var(--secondary-dark); }
 .btn-sm-custom { padding: 5px 12px; font-size: 12px; }
-.btn-danger-custom { background: var(--danger); color: white; border: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.btn-danger-custom { background: var(--danger); color: white; border: none; padding: 9px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .btn-danger-custom:hover { background: #6d0000; }
 .btn-success-custom { background: var(--success); color: white; border: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .btn-success-custom:hover { background: var(--secondary-dark); }
@@ -1553,7 +1555,7 @@ a.stat-item.stat-item-link:focus-visible {
   display: none;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 16px;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -1566,19 +1568,25 @@ a.stat-item.stat-item-link:focus-visible {
   border-radius: var(--radius);
   width: 100%;
   max-width: 640px;
-  max-height: 90vh;
+  max-height: min(90vh, 900px);
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   transform: scale(0.96);
   transition: transform 0.2s ease, opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .modal-content-custom.modal-content-enter { transform: scale(0.96); opacity: 0; }
 .modal-content-custom.modal-content-enter-active { transform: scale(1); opacity: 1; }
 .modal-content-custom.modal-content-leave { transform: scale(0.96); opacity: 0; }
-.modal-content-form {
+.modal-content-form,
+.modal-content-custom > form {
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 .modal-content-form > form {
   display: flex;
@@ -1590,7 +1598,8 @@ a.stat-item.stat-item-link:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  gap: 12px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
@@ -1604,30 +1613,55 @@ a.stat-item.stat-item-link:focus-visible {
 .modal-type-danger .modal-type-icon { color: var(--danger); }
 .modal-type-confirm .modal-type-icon { color: var(--primary); }
 .modal-body-custom {
-  padding: 24px;
+  padding: 16px 20px;
+  overflow-x: hidden;
   overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-body-custom .form-group {
+  margin-bottom: 12px;
+}
+.modal-body-custom .form-group:last-child {
+  margin-bottom: 0;
+}
+.modal-body-custom .form-section {
+  margin-bottom: 14px !important;
+}
+.modal-body-custom .form-section:last-child {
+  margin-bottom: 0 !important;
+}
+.modal-body-custom .form-section > h4 {
+  margin-bottom: 10px !important;
+}
+.modal-body-custom .nav-tabs-custom {
+  margin-bottom: 12px;
+}
+/* Prefer a single scrollbar on the modal body (avoid nested scroll regions) */
+.modal-body-custom .table-responsive,
+.modal-body-custom .table-scroll-container {
+  max-height: none;
+  overflow: visible;
 }
 .modal-footer-custom {
-  padding: 16px 24px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
   background: white;
-  position: sticky;
-  bottom: 0;
 }
 .modal-message { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+.modal-confirm-dialog { max-width: 440px; }
 .modal-detail-body { font-size: 13px; }
-.modal-detail-section { margin-bottom: 20px; }
+.modal-detail-section { margin-bottom: 16px; }
 .modal-detail-section:last-child { margin-bottom: 0; }
 .modal-detail-section-title {
   font-size: 14px;
   font-weight: 600;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   color: var(--text-primary);
 }
 .modal-detail-wrap {
@@ -1780,10 +1814,10 @@ body.modal-open { overflow: hidden; }
     flex-shrink: 0;
   }
   .modal-overlay { padding: 12px; }
-  .modal-content-custom { max-height: 92vh; }
-  .modal-body-custom { padding: 20px; }
+  .modal-content-custom { max-height: min(92vh, 900px); }
+  .modal-body-custom { padding: 14px 16px; }
   .modal-header-custom,
-  .modal-footer-custom { padding-left: 20px; padding-right: 20px; }
+  .modal-footer-custom { padding-left: 16px; padding-right: 16px; }
   .report-grid { grid-template-columns: 1fr; }
   .content-card > div:has(> .profile-avatar) {
     flex-direction: column;
@@ -1819,7 +1853,8 @@ body.modal-open { overflow: hidden; }
   }
   .modal-footer-custom .btn-primary-custom,
   .modal-footer-custom .btn-secondary-custom,
-  .modal-footer-custom .btn-outline-custom {
+  .modal-footer-custom .btn-outline-custom,
+  .modal-footer-custom .btn-danger-custom {
     flex: 1 1 auto;
     justify-content: center;
   }
@@ -1857,7 +1892,7 @@ body.modal-open { overflow: hidden; }
   .sidebar { overflow-y: auto; }
   .login-page { padding: 12px; align-items: flex-start; }
   .login-card { padding: 24px 20px; margin: auto 0; }
-  .modal-content-custom { max-height: 95vh; }
+  .modal-content-custom { max-height: min(95vh, 900px); }
   .chart-container { height: 180px; }
   .chart-container.small { height: 160px; }
 }

@@ -499,20 +499,152 @@ function debounce(fn, delay = 300) {
   };
 }
 
-/** Confirm dialog */
-function confirmAction(message, _options = {}) {
-  return Promise.resolve(window.confirm(message));
+/** Confirm dialog — custom modal (never uses window.confirm / alert / prompt) */
+let confirmActionResolver = null;
+
+function getConfirmVariantMeta(variant) {
+  const normalized = String(variant || 'confirm').toLowerCase();
+  if (normalized === 'danger' || normalized === 'error') {
+    return { typeClass: 'modal-type-danger', icon: 'bi-exclamation-triangle', confirmClass: 'btn-primary-custom' };
+  }
+  if (normalized === 'success') {
+    return { typeClass: 'modal-type-success', icon: 'bi-check-circle', confirmClass: 'btn-primary-custom' };
+  }
+  if (normalized === 'warning') {
+    return { typeClass: 'modal-type-warning', icon: 'bi-exclamation-circle', confirmClass: 'btn-primary-custom' };
+  }
+  if (normalized === 'info') {
+    return { typeClass: 'modal-type-info', icon: 'bi-info-circle', confirmClass: 'btn-primary-custom' };
+  }
+  return { typeClass: 'modal-type-confirm', icon: 'bi-question-circle', confirmClass: 'btn-primary-custom' };
+}
+
+function ensureConfirmModal() {
+  let modal = document.getElementById('appConfirmModal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'appConfirmModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'appConfirmModalTitle');
+  modal.innerHTML = `
+    <div class="modal-content-custom modal-confirm-dialog">
+      <div class="modal-header-custom" id="appConfirmModalHeader">
+        <div class="modal-title-wrap">
+          <i class="bi bi-question-circle modal-type-icon" id="appConfirmModalIcon" aria-hidden="true"></i>
+          <h3 id="appConfirmModalTitle">Confirm</h3>
+        </div>
+        <button type="button" class="btn-icon" id="appConfirmModalClose" title="Close" aria-label="Close">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="modal-body-custom">
+        <p class="modal-message" id="appConfirmModalMessage"></p>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn-outline-custom" id="appConfirmModalCancel">Cancel</button>
+        <button type="button" class="btn-primary-custom" id="appConfirmModalConfirm">Confirm</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const settle = (result) => {
+    if (!confirmActionResolver) return;
+    const resolve = confirmActionResolver;
+    confirmActionResolver = null;
+    closeModal('appConfirmModal');
+    resolve(result);
+  };
+
+  modal.querySelector('#appConfirmModalCancel')?.addEventListener('click', () => settle(false));
+  modal.querySelector('#appConfirmModalClose')?.addEventListener('click', () => settle(false));
+  modal.querySelector('#appConfirmModalConfirm')?.addEventListener('click', () => settle(true));
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) settle(false);
+  });
+
+  return modal;
+}
+
+function confirmAction(message, options = {}) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const variant = opts.variant || 'confirm';
+  const meta = getConfirmVariantMeta(variant);
+  const modal = ensureConfirmModal();
+  const header = modal.querySelector('#appConfirmModalHeader');
+  const icon = modal.querySelector('#appConfirmModalIcon');
+  const titleEl = modal.querySelector('#appConfirmModalTitle');
+  const messageEl = modal.querySelector('#appConfirmModalMessage');
+  const confirmBtn = modal.querySelector('#appConfirmModalConfirm');
+  const cancelBtn = modal.querySelector('#appConfirmModalCancel');
+
+  header?.classList.remove(
+    'modal-type-confirm', 'modal-type-danger', 'modal-type-error',
+    'modal-type-success', 'modal-type-warning', 'modal-type-info'
+  );
+  header?.classList.add(meta.typeClass);
+  if (icon) icon.className = `bi ${meta.icon} modal-type-icon`;
+  if (titleEl) titleEl.textContent = opts.title || 'Confirm';
+  if (messageEl) messageEl.textContent = message || '';
+  if (cancelBtn) cancelBtn.textContent = opts.cancelText || 'Cancel';
+  if (confirmBtn) {
+    confirmBtn.textContent = opts.confirmText || 'Confirm';
+    confirmBtn.className = (variant === 'danger' || variant === 'error')
+      ? 'btn-danger-custom'
+      : 'btn-primary-custom';
+  }
+
+  return new Promise((resolve) => {
+    if (confirmActionResolver) {
+      const previous = confirmActionResolver;
+      confirmActionResolver = null;
+      previous(false);
+    }
+    confirmActionResolver = resolve;
+    openModal('appConfirmModal');
+    setTimeout(() => confirmBtn?.focus(), 0);
+  });
 }
 
 /** Open modal */
 function openModal(modalId) {
-  document.getElementById(modalId)?.classList.add('show');
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  modal.classList.add('show');
+  document.body.classList.add('modal-open');
+  if (modal.dataset.closeOnBackdrop === 'true' && !modal.dataset.backdropBound) {
+    modal.dataset.backdropBound = '1';
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeModal(modalId);
+    });
+  }
 }
 
 /** Close modal */
 function closeModal(modalId) {
-  document.getElementById(modalId)?.classList.remove('show');
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  modal.classList.remove('show');
+  if (!document.querySelector('.modal-overlay.show')) {
+    document.body.classList.remove('modal-open');
+  }
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (confirmActionResolver) {
+    const resolve = confirmActionResolver;
+    confirmActionResolver = null;
+    closeModal('appConfirmModal');
+    resolve(false);
+    return;
+  }
+  const open = [...document.querySelectorAll('.modal-overlay.show')].pop();
+  if (open?.id) closeModal(open.id);
+});
 
 const ACTION_ICON_TOOLTIPS = {
   'bi-eye': 'View',

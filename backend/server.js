@@ -215,48 +215,63 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
+/** Silence migration chatter on startup unless MIGRATION_VERBOSE=1 */
+async function runStartupMigrationsQuietly(fn) {
+  if (process.env.MIGRATION_VERBOSE === '1') {
+    await fn();
+    return;
+  }
+  const original = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn
+  };
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  try {
+    await fn();
+  } finally {
+    console.log = original.log;
+    console.info = original.info;
+    console.warn = original.warn;
+  }
+}
+
 async function startServer() {
   try {
     await pool.testConnection();
     console.log('MySQL database connected successfully');
-    await runSopMigration();
-    await runArchiveMigration();
-    await runMaintenanceTransferMigration();
-    await runAuthMigration();
-    await runClassificationMigration();
-    await runUserArchiveMigration();
-    await runDocumentMigration();
-    await runPurchaseMigration();
-    await runExtendedDocumentMigration();
-    await runDocumentNumberMigration();
-    await runRbacAssignmentMigration();
-    await runItemDescriptionMigration();
-    await runMaterialMigration();
-    await runCustodianRoleMigration();
-    await runCustodianTypeMigration();
-    await runStaffRoleRemovalMigration();
-    await runBackupMigration();
-    await runIndividualAssetMigration();
-    console.log('Running property-based inventory migration...');
-    await runPropertyBasedInventoryMigration();
-    console.log('Running batch ID migration...');
-    await runBatchIdMigration();
-    console.log('Running status automation migration...');
-    await runStatusAutomationMigration();
-    console.log('Running remove quantity fields migration...');
-    await runRemoveQuantityFieldsMigration();
-    console.log('Running serial number migration...');
-    await runSerialNumberMigration();
-    console.log('Running serial number unique migration...');
-    await runSerialNumberUniqueMigration();
-    console.log('Running performance indexes migration...');
-    await runPerformanceIndexesMigration();
-    console.log('Running legacy data migration...');
-    await runLegacyDataMigration();
-    console.log('Running borrow UX migration...');
-    await runBorrowUxMigration();
-    console.log('Running activity log migration...');
-    await runActivityLogMigration();
+    await runStartupMigrationsQuietly(async () => {
+      await runSopMigration();
+      await runArchiveMigration();
+      await runMaintenanceTransferMigration();
+      await runAuthMigration();
+      await runClassificationMigration();
+      await runUserArchiveMigration();
+      await runDocumentMigration();
+      await runPurchaseMigration();
+      await runExtendedDocumentMigration();
+      await runDocumentNumberMigration();
+      await runRbacAssignmentMigration();
+      await runItemDescriptionMigration();
+      await runMaterialMigration();
+      await runCustodianRoleMigration();
+      await runCustodianTypeMigration();
+      await runStaffRoleRemovalMigration();
+      await runBackupMigration();
+      await runIndividualAssetMigration();
+      await runPropertyBasedInventoryMigration();
+      await runBatchIdMigration();
+      await runStatusAutomationMigration();
+      await runRemoveQuantityFieldsMigration();
+      await runSerialNumberMigration();
+      await runSerialNumberUniqueMigration();
+      await runPerformanceIndexesMigration();
+      await runLegacyDataMigration();
+      await runBorrowUxMigration();
+      await runActivityLogMigration();
+    });
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);

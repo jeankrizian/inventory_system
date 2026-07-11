@@ -129,7 +129,11 @@ async function saveCategory(e) {
 }
 
 async function archiveCategory(id) {
-  if (!confirmAction('Archive this category? It will remain in the Archive for 30 days before being permanently deleted.')) return;
+  if (!await confirmAction('Archive this category? It will remain in the Archive for 30 days before being permanently deleted.', {
+    variant: 'danger',
+    title: 'Archive Category',
+    confirmText: 'Archive'
+  })) return;
   try {
     const res = await API.archiveCategory(id);
     showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
@@ -138,7 +142,11 @@ async function archiveCategory(id) {
 }
 
 async function archiveLocation(id) {
-  if (!confirmAction('Archive this location? It will remain in the Archive for 30 days before being permanently deleted.')) return;
+  if (!await confirmAction('Archive this location? It will remain in the Archive for 30 days before being permanently deleted.', {
+    variant: 'danger',
+    title: 'Archive Location',
+    confirmText: 'Archive'
+  })) return;
   try {
     const res = await API.archiveLocation(id);
     showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
