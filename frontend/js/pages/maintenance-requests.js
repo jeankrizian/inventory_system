@@ -15,7 +15,7 @@ async function initMaintenanceRequestsPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Requests</h3>
-        ${canSubmitMaintenance(currentUser) ? `<button class="btn-primary-custom" onclick="openSubmitModal()"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
+        ${canSubmitMaintenance(currentUser) ? `<button type="button" class="btn-primary-custom" id="submitMaintenanceBtn"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search requests...">
@@ -29,18 +29,29 @@ async function initMaintenanceRequestsPage() {
     </div>
   `;
 
+  document.getElementById('submitMaintenanceBtn')?.addEventListener('click', openSubmitModal);
+
   document.getElementById('searchInput').addEventListener('input', debounce(loadRecords, 300));
   document.getElementById('filterStatus').addEventListener('change', loadRecords);
-  document.getElementById('actionForm').addEventListener('submit', submitAction);
-  document.getElementById('submitForm')?.addEventListener('submit', submitCreate);
+  bindGuardedFormSubmit(document.getElementById('actionForm'), submitAction, { loadingText: 'Processing...' });
+  bindGuardedFormSubmit(document.getElementById('submitForm'), submitCreate, { loadingText: 'Submitting...' });
   document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
+  initActionMenus();
 
   if (canSubmitMaintenance(currentUser)) await loadMaintainableItems();
-  await loadRecords();
 
   const params = new URLSearchParams(window.location.search);
+  const statusFilter = params.get('status');
+  if (statusFilter && document.getElementById('filterStatus')) {
+    document.getElementById('filterStatus').value = statusFilter;
+  }
+
+  await loadRecords();
+
   const recordId = params.get('id');
   if (recordId) viewRecord(parseInt(recordId, 10));
+
+  initSearchableSelects(document);
 }
 
 async function loadMaintainableItems() {
@@ -70,7 +81,7 @@ async function openSubmitModal() {
     select,
     maintainableItems,
     'id',
-    'item_name',
+    formatAssetOptionLabel,
     maintainableItems.length ? 'Select asset...' : 'No maintainable assets in your scope'
   );
   document.getElementById('submitPropertyTag').value = '';
@@ -82,6 +93,7 @@ async function openSubmitModal() {
   document.getElementById('submitDate').value = '';
   document.getElementById('submitRequestedDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('submitNotes').value = '';
+  refreshSearchableSelects(document.getElementById('submitModal'));
   openModal('submitModal');
 }
 
@@ -130,6 +142,47 @@ function canOperateMaintenanceActions() {
   return canOperateMaintenance(currentUser);
 }
 
+function renderMaintenanceActions(r) {
+  const canOperate = canOperateMaintenanceActions();
+  const items = [
+    { label: 'View Details', icon: 'bi-eye', handler: `viewRecord(${r.id})` }
+  ];
+
+  if (canOperate && ['Pending', 'Approved', 'Scheduled'].includes(r.status)) {
+    items.push({
+      label: 'Reschedule',
+      icon: 'bi-calendar-event',
+      handler: `openAction(${r.id}, 'reschedule')`
+    });
+  }
+
+  if (canOperate && ['Approved', 'Scheduled'].includes(r.status)) {
+    items.push({
+      label: 'Start',
+      icon: 'bi-play-circle',
+      handler: `openAction(${r.id}, 'start')`
+    });
+  }
+
+  if (canOperate && ['Ongoing', 'In Progress', 'Approved', 'Scheduled'].includes(r.status)) {
+    items.push({
+      label: 'Complete',
+      icon: 'bi-check-circle',
+      handler: `openAction(${r.id}, 'complete')`
+    });
+  }
+
+  if (r.status === 'Pending' && canOperateMaintenance(currentUser)) {
+    items.push({
+      label: 'Review in Pending Approvals',
+      icon: 'bi-clipboard-check',
+      href: '/pages/pending-approvals.html?tab=maintenance'
+    });
+  }
+
+  return renderActionMenuCell(`maintenance-actions-${r.id}`, items);
+}
+
 function renderRecords() {
   const el = document.getElementById('maintenanceContent');
   if (!records.length) {
@@ -155,49 +208,44 @@ function renderRecords() {
               <td>${formatDate(r.scheduled_date)}</td>
               <td>${r.requested_by_name || '-'}</td>
               <td>${getStatusBadge(r.status)}</td>
-              <td style="white-space:nowrap;">
-                <button class="btn-icon" onclick="viewRecord(${r.id})" title="View"><i class="bi bi-eye"></i></button>
-                ${canOperateMaintenanceActions() && r.status === 'Pending' ? `
-                  <button class="btn-success-custom btn-sm-custom" onclick="openAction(${r.id}, 'approve')">Approve</button>
-                  <button class="btn-danger-custom btn-sm-custom" onclick="openAction(${r.id}, 'reject')">Reject</button>
-                ` : ''}
-                ${canOperateMaintenanceActions() && ['Pending', 'Approved', 'Scheduled'].includes(r.status) ? `
-                  <button class="btn-outline-custom btn-sm-custom" onclick="openAction(${r.id}, 'reschedule')">Reschedule</button>
-                ` : ''}
-                ${canOperateMaintenanceActions() && ['Approved', 'Scheduled'].includes(r.status) ? `
-                  <button class="btn-primary-custom btn-sm-custom" onclick="openAction(${r.id}, 'start')">Start</button>
-                ` : ''}
-                ${canOperateMaintenanceActions() && ['Ongoing', 'In Progress', 'Approved', 'Scheduled'].includes(r.status) ? `
-                  <button class="btn-success-custom btn-sm-custom" onclick="openAction(${r.id}, 'complete')">Complete</button>
-                ` : ''}
-              </td>
+              <td>${renderMaintenanceActions(r)}</td>
             </tr>
           `).join('')}
         </tbody>
       </table>
   `;
+  finishTableRender(el);
 }
 
 async function viewRecord(id) {
   try {
     const res = await API.getMaintenanceRecord(id);
     const r = res.data;
-    alert([
-      `Code: ${r.transaction_code || r.id}`,
-      `Asset: ${r.item_name}`,
-      `Property Tag: ${r.property_tag || '-'}`,
-      `Department: ${r.department_name || '-'}`,
-      `Location: ${r.location_name || '-'}`,
-      `Problem: ${r.reported_problem || r.description || '-'}`,
-      `Type: ${r.maintenance_type}`,
-      `Priority: ${r.priority || '-'}`,
-      `Scheduled: ${formatDate(r.scheduled_date)}`,
-      `Requested By: ${r.requested_by_name || '-'}`,
-      `Technician: ${r.technician || r.service_provider || '-'}`,
-      `Status: ${r.status}`,
-      `Admin Remarks: ${r.admin_remarks || '-'}`,
-      `Completion Remarks: ${r.completion_remarks || '-'}`
-    ].join('\n'));
+    await showDetailModal({
+      title: 'Maintenance Details',
+      bodyHtml: [
+        renderDetailSection('General Information', [
+          { label: 'Code', value: r.transaction_code || r.id },
+          { label: 'Status', html: getStatusBadge(r.status) },
+          { label: 'Asset', value: r.item_name, fullWidth: true },
+          { label: 'Property Tag', value: r.property_tag },
+          { label: 'Department', value: r.department_name },
+          { label: 'Location', value: r.location_name }
+        ]),
+        renderDetailSection('Request Details', [
+          { label: 'Problem', value: r.reported_problem || r.description, fullWidth: true, wrap: true },
+          { label: 'Type', value: r.maintenance_type },
+          { label: 'Priority', value: r.priority },
+          { label: 'Scheduled', value: formatDate(r.scheduled_date) },
+          { label: 'Requested By', value: r.requested_by_name }
+        ]),
+        renderDetailSection('Assignment & Remarks', [
+          { label: 'Technician', value: r.technician || r.service_provider },
+          { label: 'Admin Remarks', value: r.admin_remarks, fullWidth: true, wrap: true },
+          { label: 'Completion Remarks', value: r.completion_remarks, fullWidth: true, wrap: true }
+        ])
+      ].join('')
+    });
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -206,8 +254,6 @@ async function viewRecord(id) {
 function openAction(id, action) {
   pendingAction = { id, action };
   const titles = {
-    approve: 'Approve Maintenance',
-    reject: 'Reject Maintenance',
     reschedule: 'Reschedule Maintenance',
     start: 'Start Maintenance',
     complete: 'Mark as Completed'
@@ -215,15 +261,7 @@ function openAction(id, action) {
   document.getElementById('actionModalTitle').textContent = titles[action];
 
   let body = '';
-  if (action === 'approve') {
-    body = `
-      <div class="form-group"><label>Scheduled Date</label><input type="date" class="form-control-custom" id="actionScheduledDate"></div>
-      <div class="form-group"><label>Assign Technician (optional)</label><input type="text" class="form-control-custom" id="actionTechnician"></div>
-      <div class="form-group"><label>Remarks</label><textarea class="form-control-custom" id="actionRemarks" rows="2"></textarea></div>
-    `;
-  } else if (action === 'reject') {
-    body = `<div class="form-group"><label>Rejection Reason *</label><textarea class="form-control-custom" id="actionReason" rows="3" required></textarea></div>`;
-  } else if (action === 'reschedule') {
+  if (action === 'reschedule') {
     body = `
       <div class="form-group"><label>New Scheduled Date *</label><input type="date" class="form-control-custom" id="actionScheduledDate" required></div>
       <div class="form-group"><label>Technician (optional)</label><input type="text" class="form-control-custom" id="actionTechnician"></div>
@@ -249,19 +287,7 @@ async function submitAction(e) {
 
   const { id, action } = pendingAction;
   try {
-    if (action === 'approve') {
-      await API.approveMaintenance(id, {
-        scheduled_date: document.getElementById('actionScheduledDate')?.value || undefined,
-        technician: document.getElementById('actionTechnician')?.value || undefined,
-        admin_remarks: document.getElementById('actionRemarks')?.value || undefined
-      });
-      showToast('Maintenance approved');
-    } else if (action === 'reject') {
-      const reason = document.getElementById('actionReason').value;
-      if (!reason) return showToast('Rejection reason is required', 'error');
-      await API.rejectMaintenance(id, { rejection_reason: reason });
-      showToast('Maintenance rejected');
-    } else if (action === 'reschedule') {
+    if (action === 'reschedule') {
       await API.rescheduleMaintenance(id, {
         scheduled_date: document.getElementById('actionScheduledDate').value,
         technician: document.getElementById('actionTechnician')?.value || undefined,

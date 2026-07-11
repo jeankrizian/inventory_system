@@ -2,10 +2,11 @@ const MaintenanceModel = require('../models/MaintenanceModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, actorExcludeOptions } = require('../utils/notificationService');
 const { maintenanceLink } = require('../utils/notificationLinks');
 const { canMaintain } = require('../utils/assetClassification');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
+const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
 
 async function getScopedRecord(req, res) {
   const record = await MaintenanceModel.findById(req.params.id);
@@ -72,6 +73,9 @@ const MaintenanceController = {
       if (!canMaintain(item.asset_classification)) {
         return sendError(res, 'Maintenance is only available for Non-Consumable (Fixed Asset) items', 400);
       }
+      if (item.status !== 'Available') {
+        return sendError(res, `Maintenance can only be requested for available assets (current status: ${item.status})`, 400);
+      }
       if (!req.body.scheduled_date) return sendError(res, 'Scheduled maintenance date is required', 400);
       if (!req.body.reported_problem && !req.body.description) {
         return sendError(res, 'Reported problem is required', 400);
@@ -82,22 +86,26 @@ const MaintenanceController = {
         requested_by: req.session.user.id
       });
 
-      await logActivity(req.session.user.id, 'CREATE', 'Maintenance', `Maintenance request ${result.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'CREATE', 'Maintenance', `Maintenance request ${result.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: result.id,
+        reference_code: result.transaction_code,
+        field_name: 'status',
+        old_value: null,
+        new_value: 'Pending'
+      });
       await notifyPropertyManagers({
         title: 'New Maintenance Request',
-        message: `New maintenance request ${result.transaction_code} submitted for ${item.item_name}.`,
+        message: buildAssetNotificationMessage({
+          action: 'Maintenance request submitted',
+          itemName: item.item_name,
+          propertyTag: item.property_tag,
+          detail: result.transaction_code
+        }),
         type: 'maintenance_request',
         reference_id: result.id,
         link_url: maintenanceLink(result.id)
-      });
-      await notifyCustodiansForItem(item, {
-        title: 'Maintenance Request',
-        message: `Maintenance request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
-        type: 'maintenance_request',
-        reference_id: result.id,
-        link_url: maintenanceLink(result.id),
-        skipDuplicate: true
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, result, 'Maintenance request submitted', 201);
     } catch (err) { sendError(res, err.message, 500); }
@@ -119,14 +127,26 @@ const MaintenanceController = {
         });
       }
 
-      await logActivity(req.session.user.id, 'APPROVE', 'Maintenance', `Approved ${record.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'APPROVE', 'Maintenance', `Approved ${record.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: record.id,
+        reference_code: record.transaction_code,
+        field_name: 'status',
+        old_value: 'Pending',
+        new_value: 'Approved'
+      });
       await notifyUser(record.requested_by, {
         title: 'Maintenance Approved',
-        message: `Your maintenance request ${record.transaction_code} has been approved.`,
+        message: buildAssetNotificationMessage({
+          action: 'Maintenance request approved',
+          itemName: record.item_name,
+          propertyTag: record.property_tag,
+          detail: record.transaction_code
+        }),
         type: 'maintenance_approved',
         reference_id: record.id,
         link_url: maintenanceLink(record.id)
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, null, 'Maintenance request approved');
     } catch (err) { sendError(res, err.message, 500); }
@@ -139,14 +159,21 @@ const MaintenanceController = {
       if (record.status !== 'Pending') return sendError(res, 'Only pending requests can be rejected', 400);
 
       await MaintenanceModel.reject(req.params.id, req.session.user.id, req.body.rejection_reason || req.body.reason);
-      await logActivity(req.session.user.id, 'REJECT', 'Maintenance', `Rejected ${record.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'REJECT', 'Maintenance', `Rejected ${record.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: record.id,
+        reference_code: record.transaction_code,
+        field_name: 'status',
+        old_value: 'Pending',
+        new_value: 'Rejected'
+      });
       await notifyUser(record.requested_by, {
         title: 'Maintenance Rejected',
         message: `Your maintenance request ${record.transaction_code} has been rejected.${req.body.rejection_reason ? ` Reason: ${req.body.rejection_reason}` : ''}`,
         type: 'maintenance_rejected',
         reference_id: record.id,
         link_url: maintenanceLink(record.id)
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, null, 'Maintenance request rejected');
     } catch (err) { sendError(res, err.message, 500); }
@@ -162,7 +189,14 @@ const MaintenanceController = {
       if (!req.body.scheduled_date) return sendError(res, 'Scheduled date is required', 400);
 
       await MaintenanceModel.reschedule(req.params.id, req.body);
-      await logActivity(req.session.user.id, 'UPDATE', 'Maintenance', `Rescheduled ${record.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'UPDATE', 'Maintenance', `Rescheduled ${record.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: record.id,
+        reference_code: record.transaction_code,
+        field_name: 'scheduled_date',
+        old_value: record.scheduled_date,
+        new_value: req.body.scheduled_date
+      });
       sendSuccess(res, null, 'Maintenance rescheduled');
     } catch (err) { sendError(res, err.message, 500); }
   },
@@ -176,15 +210,27 @@ const MaintenanceController = {
       }
 
       await MaintenanceModel.start(req.params.id, req.body);
-      await logActivity(req.session.user.id, 'UPDATE', 'Maintenance', `Started ${record.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'UPDATE', 'Maintenance', `Started ${record.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: record.id,
+        reference_code: record.transaction_code,
+        field_name: 'status',
+        old_value: record.status,
+        new_value: 'Ongoing'
+      });
       if (record.requested_by) {
         await notifyUser(record.requested_by, {
           title: 'Maintenance Started',
-          message: `Maintenance ${record.transaction_code} for ${record.item_name} has started.`,
+          message: buildAssetNotificationMessage({
+            action: 'Maintenance started',
+            itemName: record.item_name,
+            propertyTag: record.property_tag,
+            detail: record.transaction_code
+          }),
           type: 'maintenance_started',
           reference_id: record.id,
           link_url: maintenanceLink(record.id)
-        });
+        }, actorExcludeOptions(req));
       }
       sendSuccess(res, null, 'Maintenance marked as ongoing');
     } catch (err) { sendError(res, err.message, 500); }
@@ -214,15 +260,27 @@ const MaintenanceController = {
         });
       }
 
-      await logActivity(req.session.user.id, 'COMPLETE', 'Maintenance', `Completed ${record.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'COMPLETE', 'Maintenance', `Completed ${record.transaction_code}`, req.ip, {
+        entity_type: 'maintenance_record',
+        entity_id: record.id,
+        reference_code: record.transaction_code,
+        field_name: 'status',
+        old_value: record.status,
+        new_value: 'Completed'
+      });
       if (record.requested_by) {
         await notifyUser(record.requested_by, {
           title: 'Maintenance Completed',
-          message: `Maintenance ${record.transaction_code} for ${record.item_name} has been completed.`,
+          message: buildAssetNotificationMessage({
+            action: 'Maintenance completed',
+            itemName: record.item_name,
+            propertyTag: record.property_tag,
+            detail: record.transaction_code
+          }),
           type: 'maintenance_completed',
           reference_id: record.id,
           link_url: maintenanceLink(record.id)
-        });
+        }, actorExcludeOptions(req));
       }
 
       sendSuccess(res, null, 'Maintenance marked as completed');

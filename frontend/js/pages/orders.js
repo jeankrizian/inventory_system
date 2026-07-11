@@ -3,6 +3,7 @@ let inventoryItems = [];
 let borrows = [];
 let returns = [];
 let activeTab = 'borrow';
+let pendingBorrowPayload = null;
 
 async function initOrdersPage() {
   currentUser = await initLayout('orders');
@@ -13,14 +14,10 @@ async function initOrdersPage() {
 
   const showBorrowBtn = canSubmitBorrow(currentUser);
   const showReturnTab = canViewReturnHistory(currentUser);
-  const pageSubtitle = canViewAllBorrows(currentUser)
-    ? 'Manage borrow requests, approvals, and process returns'
-    : 'View and submit your borrow requests';
-
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
-      <h1>Orders & Borrowing</h1>
-      <p>${pageSubtitle}</p>
+      <h1>Borrow Requests</h1>
+      <p>Create, review, approve, and process borrow requests.</p>
     </div>
     <div class="content-card">
       <div class="content-card-header">
@@ -28,7 +25,7 @@ async function initOrdersPage() {
           <button class="nav-tab-custom ${activeTab === 'borrow' ? 'active' : ''}" data-tab="borrow">Borrow Transactions</button>
           ${showReturnTab ? `<button class="nav-tab-custom ${activeTab === 'returns' ? 'active' : ''}" data-tab="returns">Process Return History</button>` : ''}
         </div>
-        ${showBorrowBtn ? `<button class="btn-primary-custom" onclick="openBorrowModal()"><i class="bi bi-plus-lg"></i> Borrow Item</button>` : ''}
+        ${showBorrowBtn ? `<button type="button" class="btn-primary-custom" id="borrowItemBtn"><i class="bi bi-plus-lg"></i> Borrow Item</button>` : ''}
       </div>
       <div class="filters-bar" id="borrowFilters">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search transactions...">
@@ -42,6 +39,8 @@ async function initOrdersPage() {
     </div>
   `;
 
+  document.getElementById('borrowItemBtn')?.addEventListener('click', openBorrowModal);
+
   document.querySelectorAll('.nav-tab-custom').forEach(btn => {
     btn.addEventListener('click', () => {
       activeTab = btn.dataset.tab;
@@ -54,8 +53,12 @@ async function initOrdersPage() {
 
   document.getElementById('searchInput')?.addEventListener('input', debounce(loadBorrows, 300));
   document.getElementById('filterStatus')?.addEventListener('change', loadBorrows);
-  document.getElementById('borrowForm').addEventListener('submit', submitBorrow);
-  document.getElementById('returnForm').addEventListener('submit', submitReturn);
+  bindGuardedFormSubmit(document.getElementById('borrowForm'), submitBorrow, { loadingText: 'Submitting...' });
+  bindGuardedFormSubmit(document.getElementById('returnForm'), submitReturn, { loadingText: 'Processing...' });
+  document.getElementById('borrowConfirmSubmitBtn')?.addEventListener('click', (e) => {
+    guardClick(e, confirmBorrowSubmission, 'Submitting...');
+  });
+  initActionMenus();
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.borrow-item-combobox')) closeBorrowItemDropdowns();
   });
@@ -66,10 +69,18 @@ async function initOrdersPage() {
   }
 
   if (!showReturnTab && activeTab === 'returns') activeTab = 'borrow';
+
+  const statusFilter = params.get('status');
+  if (statusFilter && document.getElementById('filterStatus')) {
+    document.getElementById('filterStatus').value = statusFilter;
+  }
+
   await loadData();
 
   const deepLinkId = params.get('id');
   if (deepLinkId) viewBorrow(parseInt(deepLinkId, 10));
+
+  initSearchableSelects(document.getElementById('pageContent'));
 }
 
 async function loadData() {
@@ -106,10 +117,45 @@ function formatPurpose(value, maxLength = 60) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function renderBorrowActions(b) {
+  const canReturn = canProcessReturn(currentUser);
+  const canApprove = canApproveBorrow(currentUser);
+  const code = (b.transaction_code || '').replace(/'/g, "\\'");
+  const borrower = (b.borrower_name || '').replace(/'/g, "\\'");
+
+  const items = [
+    { label: 'View Details', icon: 'bi-eye', handler: `viewBorrow(${b.id})` }
+  ];
+
+  if (['Borrowed', 'Approved', 'Overdue'].includes(b.status) && canReturn) {
+    items.push({
+      label: 'Process Return',
+      icon: 'bi-arrow-return-left',
+      handler: `openReturnModal(${b.id}, '${code}', '${borrower}')`
+    });
+  }
+
+  if (['Borrowed', 'Approved', 'Overdue', 'Returned'].includes(b.status)) {
+    items.push({
+      label: 'View ABL',
+      icon: 'bi-journal-text',
+      handler: `openBorrowDocument(${b.id})`
+    });
+  }
+
+  if (b.status === 'Pending' && canApprove) {
+    items.push({
+      label: 'Review in Pending Approvals',
+      icon: 'bi-clipboard-check',
+      href: '/pages/pending-approvals.html?tab=borrow'
+    });
+  }
+
+  return renderActionMenuCell(`borrow-actions-${b.id}`, items);
+}
+
 function renderBorrows() {
   const el = document.getElementById('ordersContent');
-  const canApprove = canApproveBorrow(currentUser);
-  const canReturn = canProcessReturn(currentUser);
 
   if (!borrows.length) {
     el.innerHTML = '<div class="empty-state"><i class="bi bi-cart3"></i>No borrow requests found.</div>';
@@ -131,24 +177,13 @@ function renderBorrows() {
             <td>${formatDate(b.borrow_date)}</td>
             <td>${formatDate(b.expected_return_date)}</td>
             <td>${getStatusBadge(b.status)}</td>
-            <td style="white-space:nowrap;">
-              ${b.status === 'Pending' && canApprove ? `
-                <button class="btn-success-custom btn-sm-custom" onclick="approveBorrow(${b.id})">Approve</button>
-                <button class="btn-danger-custom btn-sm-custom" onclick="rejectBorrow(${b.id})">Reject</button>
-              ` : ''}
-              ${['Borrowed','Approved','Overdue'].includes(b.status) && canReturn ? `
-                <button class="btn-primary-custom btn-sm-custom" onclick="openReturnModal(${b.id}, '${b.transaction_code}', '${b.borrower_name}')">Process Return</button>
-              ` : ''}
-              <button class="btn-icon" onclick="viewBorrow(${b.id})" title="View"><i class="bi bi-eye"></i></button>
-              ${['Borrowed','Approved','Overdue','Returned'].includes(b.status) ? `
-                <button class="btn-icon" onclick="openBorrowDocument(${b.id})" title="View ABL" aria-label="View ABL"><i class="bi bi-journal-text"></i></button>
-              ` : ''}
-            </td>
+            <td>${renderBorrowActions(b)}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
+  finishTableRender(el);
 }
 
 function renderReturns() {
@@ -174,19 +209,34 @@ function renderReturns() {
       </tbody>
     </table>
   `;
+  finishTableRender(el);
 }
 
 function getBorrowItemLabel(item) {
-  if (item.is_borrowable === false) {
-    return `${item.item_name} (Unavailable)`;
+  return item.item_name;
+}
+
+function updateBorrowItemAvailable(row, item) {
+  const el = row?.querySelector('.borrow-item-available');
+  if (!el) return;
+  if (!item) {
+    el.textContent = 'Available: —';
+    return;
   }
-  return `${item.item_name} (${item.available_quantity} avail.)`;
+  if (item.is_borrowable === false) {
+    el.textContent = `Available: 0 (${item.unavailable_reason || 'Unavailable'})`;
+    return;
+  }
+  const count = item.available_count ?? item.available_quantity ?? 0;
+  el.textContent = `Available: ${count}`;
 }
 
 function filterBorrowItems(term) {
   const t = term.trim().toLowerCase();
   if (!t) return inventoryItems;
-  return inventoryItems.filter(i => i.item_name.toLowerCase().includes(t));
+  return inventoryItems.filter(i =>
+    i.item_name.toLowerCase().includes(t) || String(i.item_code || '').toLowerCase().includes(t)
+  );
 }
 
 function borrowItemRowHtml(withRemove = false) {
@@ -194,11 +244,12 @@ function borrowItemRowHtml(withRemove = false) {
     <div class="form-group" style="flex:2"><label>Item</label>
       <div class="borrow-item-combobox">
         <input type="text" class="form-control-custom borrow-item-select" placeholder="Select item..." autocomplete="off" required>
-        <input type="hidden" class="borrow-item-id">
+        <input type="hidden" class="borrow-item-code">
         <div class="borrow-item-dropdown"></div>
       </div>
+      <div class="borrow-item-available" style="font-size:12px;color:#666;margin-top:4px;">Available: —</div>
     </div>
-    <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
+    <div class="form-group"><label>Quantity</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
     ${withRemove ? `<div class="form-group" style="display:flex;align-items:flex-end;"><button type="button" class="btn-icon danger" onclick="this.closest('.borrow-item-row').remove()" title="Remove" aria-label="Remove"><i class="bi bi-trash"></i></button></div>` : ''}
   `;
 }
@@ -215,16 +266,16 @@ function renderBorrowItemDropdown(dropdown, items, onSelect) {
     return;
   }
   dropdown.innerHTML = items.map(item => `
-    <div class="borrow-item-option ${item.is_borrowable === false ? 'borrow-item-unavailable' : ''}" data-id="${item.id}" data-borrowable="${item.is_borrowable !== false}">
+    <div class="borrow-item-option ${item.is_borrowable === false ? 'borrow-item-unavailable' : ''}" data-code="${item.item_code}" data-borrowable="${item.is_borrowable !== false}">
       ${item.item_name}
-      <small>${item.is_borrowable === false ? (item.unavailable_reason || 'Unavailable') : `${item.available_quantity} available`}</small>
+      <small>${item.is_borrowable === false ? (item.unavailable_reason || 'Unavailable') : `${item.available_count ?? item.available_quantity ?? 0} available`}</small>
     </div>
   `).join('');
   dropdown.querySelectorAll('.borrow-item-option:not(.borrow-item-empty)').forEach(opt => {
     opt.addEventListener('mousedown', (e) => {
       e.preventDefault();
       if (opt.dataset.borrowable === 'false') return;
-      const item = items.find(i => i.id == opt.dataset.id);
+      const item = items.find(i => i.item_code === opt.dataset.code);
       if (item) onSelect(item);
     });
   });
@@ -234,8 +285,9 @@ function initBorrowItemCombobox(combobox) {
   if (combobox.dataset.initialized) return;
   combobox.dataset.initialized = '1';
 
+  const row = combobox.closest('.borrow-item-row');
   const input = combobox.querySelector('.borrow-item-select');
-  const hidden = combobox.querySelector('.borrow-item-id');
+  const hidden = combobox.querySelector('.borrow-item-code');
   const dropdown = combobox.querySelector('.borrow-item-dropdown');
 
   function showDropdown() {
@@ -243,8 +295,9 @@ function initBorrowItemCombobox(combobox) {
     const items = filterBorrowItems(input.value);
     renderBorrowItemDropdown(dropdown, items, (item) => {
       input.value = getBorrowItemLabel(item);
-      hidden.value = item.id;
+      hidden.value = item.item_code;
       dropdown.classList.remove('show');
+      updateBorrowItemAvailable(row, item);
     });
     dropdown.classList.add('show');
   }
@@ -253,6 +306,7 @@ function initBorrowItemCombobox(combobox) {
   input.addEventListener('click', showDropdown);
   input.addEventListener('input', () => {
     hidden.value = '';
+    updateBorrowItemAvailable(row, null);
     showDropdown();
   });
 }
@@ -269,6 +323,7 @@ function openBorrowModal() {
     <div class="form-row borrow-item-row">${borrowItemRowHtml()}</div>
   `;
   initBorrowItemComboboxes();
+  refreshSearchableSelects(document.getElementById('borrowModal'));
   openModal('borrowModal');
 }
 
@@ -280,63 +335,145 @@ function addBorrowItemRow() {
   initBorrowItemComboboxes();
 }
 
-async function submitBorrow(e) {
-  e.preventDefault();
+function collectBorrowItems() {
   const items = [];
   for (const row of document.querySelectorAll('.borrow-item-row')) {
-    const id = row.querySelector('.borrow-item-id').value;
-    const qty = parseInt(row.querySelector('.borrow-item-qty').value, 10);
-    if (!id) continue;
+    const itemCode = row.querySelector('.borrow-item-code')?.value;
+    const qty = parseInt(row.querySelector('.borrow-item-qty')?.value, 10);
+    if (!itemCode || !qty) continue;
 
-    const selected = inventoryItems.find((item) => String(item.id) === String(id));
+    const selected = inventoryItems.find((item) => String(item.item_code) === String(itemCode));
     if (selected && selected.is_borrowable === false) {
-      showToast(`${selected.item_name} is unavailable for borrowing`, 'error');
-      return;
+      throw new Error(`${selected.item_name} is unavailable for borrowing`);
     }
-    items.push({ inventory_item_id: parseInt(id, 10), quantity: qty });
-  }
-  if (!items.length) {
-    showToast('Please select at least one item from the list', 'error');
-    return;
-  }
 
+    if (selected && qty > (selected.available_count ?? 0)) {
+      throw new Error(`Only ${selected.available_count} ${selected.item_name} asset(s) are available.`);
+    }
+
+    items.push({ item_code: itemCode, quantity: qty });
+  }
+  return items;
+}
+
+function buildBorrowPayload() {
   const purpose = document.getElementById('borrowPurpose').value.trim();
-  if (!purpose) {
-    showToast('Purpose is required', 'error');
+  if (!purpose) throw new Error('Purpose is required');
+
+  const items = collectBorrowItems();
+  if (!items.length) throw new Error('Please select at least one item from the list');
+
+  return {
+    purpose,
+    borrow_date: document.getElementById('borrowDate').value,
+    expected_return_date: document.getElementById('expectedReturn').value || null,
+    items
+  };
+}
+
+function groupBorrowItemsForDisplay(items = []) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = item.item_code || item.item_name;
+    if (!groups.has(key)) {
+      groups.set(key, { item_name: item.item_name, quantity: 0, assets: [] });
+    }
+    const group = groups.get(key);
+    group.quantity += Number(item.quantity) || 1;
+    if (item.property_tag) group.assets.push(item.property_tag);
+  }
+  return [...groups.values()];
+}
+
+function renderBorrowConfirmItems(payload) {
+  const el = document.getElementById('borrowConfirmTags');
+  if (!el) return;
+
+  const grouped = groupBorrowItemsForDisplay(
+    (payload.items || []).map((line) => {
+      const selected = inventoryItems.find((item) => String(item.item_code) === String(line.item_code));
+      return {
+        item_code: line.item_code,
+        item_name: selected?.item_name || line.item_code,
+        quantity: line.quantity
+      };
+    })
+  );
+
+  if (!grouped.length) {
+    el.innerHTML = '<p style="margin:0;color:#666;">No items selected.</p>';
     return;
   }
 
+  el.innerHTML = grouped.map((item) => `
+    <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb;">
+      <strong>${item.item_name}</strong><br>
+      <span style="color:#666;">Quantity: ${item.quantity}</span>
+    </div>
+  `).join('');
+}
+
+function renderBorrowDetailBody(borrow) {
+  const grouped = groupBorrowItemsForDisplay(borrow.items || []);
+  const showAssets = borrow.show_assigned_assets || ['Borrowed', 'Approved', 'Returned', 'Overdue'].includes(borrow.status);
+
+  const itemsHtml = grouped.map((item) => {
+    const assetsBlock = showAssets && item.assets.length
+      ? `<div style="margin-top:8px;">
+          <div style="font-weight:500;margin-bottom:4px;">Assigned Assets</div>
+          <ul style="margin:0;padding-left:18px;list-style:none;">
+            ${item.assets.map((tag) => `<li style="margin-bottom:2px;">✓ ${tag}</li>`).join('')}
+          </ul>
+        </div>`
+      : '';
+
+    return `
+      <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #e5e7eb;">
+        <div style="font-weight:600;">${item.item_name}</div>
+        <div style="color:#666;margin-top:4px;">Quantity: ${item.quantity}</div>
+        ${assetsBlock}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <p><strong>Transaction:</strong> ${borrow.transaction_code}</p>
+    <p><strong>Borrower:</strong> ${borrow.borrower_name}</p>
+    <p><strong>Department:</strong> ${borrow.borrower_department || '—'}</p>
+    <p><strong>Purpose:</strong> ${borrow.purpose || '—'}</p>
+    <p><strong>Status:</strong> ${getStatusBadge(borrow.status)}</p>
+    <p><strong>Borrow Date:</strong> ${formatDate(borrow.borrow_date)}</p>
+    <p><strong>Expected Return:</strong> ${formatDate(borrow.expected_return_date)}</p>
+    <hr style="margin:16px 0;">
+    <h4 style="font-size:14px;margin-bottom:12px;">Items Borrowed</h4>
+    ${itemsHtml || '<p style="color:#666;">No items listed.</p>'}
+  `;
+}
+
+async function submitBorrow(e) {
+  e.preventDefault();
   try {
-    await API.createBorrow({
-      borrower_department: document.getElementById('borrowerDept').value,
-      purpose,
-      borrow_date: document.getElementById('borrowDate').value,
-      expected_return_date: document.getElementById('expectedReturn').value || null,
-      items
-    });
+    const payload = buildBorrowPayload();
+    pendingBorrowPayload = payload;
+    renderBorrowConfirmItems(payload);
+    openModal('borrowConfirmModal');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function confirmBorrowSubmission() {
+  if (!pendingBorrowPayload) return;
+  try {
+    await API.createBorrow(pendingBorrowPayload);
     showToast('Borrow request submitted');
+    pendingBorrowPayload = null;
+    closeModal('borrowConfirmModal');
     closeModal('borrowModal');
     loadBorrows();
-  } catch (err) { showToast(err.message, 'error'); }
-}
-
-async function approveBorrow(id) {
-  if (!confirmAction('Approve this borrow request?')) return;
-  try {
-    const res = await API.approveBorrow(id);
-    showToast('Borrow approved');
-    openGeneratedDocument(res?.data?.generated_document, 'ABL');
-    loadBorrows();
-  } catch (err) { showToast(err.message, 'error'); }
-}
-
-async function rejectBorrow(id) {
-  if (!confirmAction('Reject this borrow request?')) return;
-  try {
-    await API.rejectBorrow(id);
-    showToast('Borrow rejected');
-    loadBorrows();
-  } catch (err) { showToast(err.message, 'error'); }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 function openReturnModal(id, code, borrower) {
@@ -345,6 +482,7 @@ function openReturnModal(id, code, borrower) {
   document.getElementById('returnDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('returnForm').reset();
   document.getElementById('returnBorrowId').value = id;
+  refreshSearchableSelects(document.getElementById('returnModal'));
   openModal('returnModal');
 }
 
@@ -367,8 +505,8 @@ async function viewBorrow(id) {
   try {
     const res = await API.getBorrow(id);
     const b = res.data;
-    const items = (b.items || []).map(i => `• ${i.item_name} (x${i.quantity})`).join('\n');
-    alert(`Transaction: ${b.transaction_code}\nBorrower: ${b.borrower_name}\nDepartment: ${b.borrower_department || 'N/A'}\nPurpose: ${b.purpose || 'N/A'}\nStatus: ${b.status}\n\nItems:\n${items}`);
+    document.getElementById('borrowDetailBody').innerHTML = renderBorrowDetailBody(b);
+    openModal('borrowDetailModal');
   } catch (err) { showToast(err.message, 'error'); }
 }
 

@@ -15,7 +15,7 @@
   <div class="app-wrapper" id="app"></div>
 
   <div class="modal-overlay" id="itemModal">
-    <div class="modal-content-custom">
+    <div class="modal-content-custom" style="max-width:900px;">
       <div class="modal-header-custom">
         <h3 id="itemModalTitle">Add Item</h3>
         <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('itemModal')"><i class="bi bi-x-lg"></i></button>
@@ -23,91 +23,117 @@
       <form id="itemForm">
         <div class="modal-body-custom">
           <input type="hidden" id="itemId">
-          <div class="form-row">
-            <div class="form-group"><label>Item Code</label><input type="text" class="form-control-custom" id="itemCode" readonly placeholder="Auto-generated from category"></div>
-            <div class="form-group"><label>Item Name *</label><input type="text" class="form-control-custom" id="itemName" required></div>
-          </div>
-          <div class="form-group"><label>Description</label><textarea class="form-control-custom" id="itemDescription" rows="2" placeholder="Optional item description"></textarea></div>
-          <div class="form-row">
-            <div class="form-group"><label>Category *</label><select class="form-control-custom" id="itemCategory" required></select></div>
-            <div class="form-group"><label>Supplier</label><select class="form-control-custom" id="itemSupplier"></select></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Brand</label><input type="text" class="form-control-custom" id="itemBrand"></div>
-            <div class="form-group"><label>Model</label><input type="text" class="form-control-custom" id="itemModel"></div>
-          </div>
-          <div class="form-row cols-3">
-            <div class="form-group"><label>Quantity *</label><input type="number" class="form-control-custom" id="itemQuantity" min="0" required></div>
-            <div class="form-group"><label>Available Qty</label><input type="number" class="form-control-custom" id="itemAvailable" min="0"></div>
-            <div class="form-group"><label>Unit</label><input type="text" class="form-control-custom" id="itemUnit" value="pcs"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Location</label><select class="form-control-custom" id="itemLocation"></select></div>
-            <div class="form-group"><label>Purchase Date</label><input type="date" class="form-control-custom" id="itemPurchaseDate"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Purchase Request No. (PR)</label><input type="text" class="form-control-custom" id="itemPR" placeholder="PR number"></div>
-            <div class="form-group"><label>Purchase Order No. (PO)</label><input type="text" class="form-control-custom" id="itemPO" placeholder="PO number"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Invoice Number</label><input type="text" class="form-control-custom" id="itemInvoice" placeholder="Invoice number"></div>
-            <div class="form-group"><label>Acquisition Date</label><input type="date" class="form-control-custom" id="itemAcquisitionDate"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Unit Cost</label><input type="number" class="form-control-custom" id="itemUnitCost" min="0" step="0.01" placeholder="0.00"></div>
-            <div class="form-group"><label>Acquisition Cost</label><input type="number" class="form-control-custom" id="itemAcquisitionCost" min="0" step="0.01" placeholder="Auto-calculated from qty × unit cost"></div>
-          </div>
-          <div class="form-row cols-3">
-            <div class="form-group"><label>Condition</label>
-              <select class="form-control-custom" id="itemCondition">
-                <option>New</option><option selected>Good</option><option>Fair</option><option>Poor</option><option>Damaged</option>
-              </select>
+
+          <div class="form-section" style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 12px;">General Information</h4>
+            <div class="form-row">
+              <div class="form-group"><label>Item Code</label><input type="text" class="form-control-custom" id="itemCode" readonly placeholder="Auto-generated from category"></div>
+              <div class="form-group"><label>Item Name *</label><input type="text" class="form-control-custom" id="itemName" required></div>
             </div>
-            <div class="form-group"><label>Low Stock Threshold</label><input type="number" class="form-control-custom" id="itemThreshold" value="5" min="1"></div>
-            <div class="form-group"><label>Status</label>
-              <select class="form-control-custom" id="itemStatus">
-                <option>Available</option><option>Borrowed</option><option>Low Stock</option><option>Out of Stock</option><option>Under Maintenance</option><option>Disposed</option>
-              </select>
+            <div class="form-group"><label>Description</label><textarea class="form-control-custom" id="itemDescription" rows="2" placeholder="Optional item description"></textarea></div>
+            <div class="form-row">
+              <div class="form-group"><label>Category *</label><select class="form-control-custom" id="itemCategory" required></select></div>
+              <div class="form-group"><label>Classification *</label>
+                <select class="form-control-custom" id="itemClassification" required>
+                  <option value="">Select classification</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Material</label>
+                <select class="form-control-custom" id="itemMaterial">
+                  <option value="">Select material...</option>
+                  <option>Wood</option>
+                  <option>Metal</option>
+                  <option>Plastic</option>
+                  <option>Glass</option>
+                  <option>Fabric</option>
+                </select>
+              </div>
+              <div class="form-group" id="autoPropertyTagInfo" style="display:none;">
+                <label>Property Tag</label>
+                <input type="text" class="form-control-custom" value="Auto-generated (YYYYMMDD-000001)" readonly>
+              </div>
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group"><label>Classification *</label>
-              <select class="form-control-custom" id="itemClassification" required>
-                <option value="">Select classification</option>
-              </select>
+
+          <div class="form-section" style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 12px;">Inventory Information</h4>
+            <div class="form-row cols-2" id="assetCountRow">
+              <div class="form-group"><label id="itemQuantityLabel">Number of Assets *</label><input type="number" class="form-control-custom" id="itemQuantity" min="1" value="1" required></div>
+              <div class="form-group" id="itemCreatePreviewGroup"><label>Records to create</label><input type="text" class="form-control-custom" id="itemCreatePreview" readonly value="1 asset record" title="Each physical asset becomes its own inventory record"></div>
             </div>
-            <div class="form-group"><label>Material</label>
-              <select class="form-control-custom" id="itemMaterial">
-                <option value="">Select material...</option>
-                <option>Wood</option>
-                <option>Metal</option>
-                <option>Plastic</option>
-                <option>Glass</option>
-                <option>Fabric</option>
-              </select>
+            <div class="form-group" id="editPropertyTagRow" style="display:none;margin-bottom:12px;">
+              <label>Property Tag</label>
+              <input type="text" class="form-control-custom" id="itemEditPropertyTag" readonly>
+            </div>
+            <div class="form-group" id="editBatchIdRow" style="display:none;margin-bottom:12px;">
+              <label>Batch ID</label>
+              <input type="text" class="form-control-custom" id="itemEditBatchId" readonly>
+            </div>
+            <div class="form-group" id="editSerialNumberRow" style="display:none;margin-bottom:12px;">
+              <label>Serial Number</label>
+              <input type="text" class="form-control-custom" id="itemEditSerialNumber" placeholder="Optional manufacturer serial">
+            </div>
+            <div class="form-row cols-2">
+              <div class="form-group"><label>Condition</label>
+                <select class="form-control-custom" id="itemCondition">
+                  <option>New</option><option selected>Good</option><option>Fair</option><option>Poor</option><option>Damaged</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Status</label>
+                <input type="text" class="form-control-custom" id="itemStatus" readonly value="Auto-computed" title="Status is determined automatically by the system">
+              </div>
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group" id="propertyTagGroup"><label>Property Tag</label><input type="text" class="form-control-custom" id="itemPropertyTag" placeholder="e.g. 2025-0001 or 2025/0001"></div>
-          </div>
-          <div class="form-row" id="custodianRow">
-            <div class="form-group"><label>Assigned Custodian</label>
-              <select class="form-control-custom" id="itemCustodian">
-                <option value="">Select custodian...</option>
-              </select>
+
+          <div class="form-section" style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 12px;">Location &amp; Assignment</h4>
+            <div class="form-row">
+              <div class="form-group"><label>Location</label><select class="form-control-custom" id="itemLocation"></select></div>
+            </div>
+            <div class="form-row" id="custodianRow">
+              <div class="form-group"><label>Assigned Custodian</label>
+                <select class="form-control-custom" id="itemCustodian">
+                  <option value="">Select custodian...</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row" id="maintenanceRow">
+              <div class="form-group"><label>Maintenance Schedule</label>
+                <select class="form-control-custom" id="itemMaintenanceSchedule">
+                  <option value="">None</option>
+                  <option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Next Maintenance Date</label><input type="date" class="form-control-custom" id="itemNextMaintenance"></div>
+            </div>
+            <div class="form-row" id="serviceProviderRow">
+              <div class="form-group"><label>Service Provider</label><input type="text" class="form-control-custom" id="itemServiceProvider"></div>
             </div>
           </div>
-          <div class="form-row" id="maintenanceRow">
-            <div class="form-group"><label>Maintenance Schedule</label>
-              <select class="form-control-custom" id="itemMaintenanceSchedule">
-                <option value="">None</option>
-                <option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option>
-              </select>
+
+          <div class="form-section" style="margin-bottom:0;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 12px;">Purchase Information</h4>
+            <div class="form-row">
+              <div class="form-group"><label>Supplier</label><select class="form-control-custom" id="itemSupplier"></select></div>
+              <div class="form-group"><label>Brand</label><input type="text" class="form-control-custom" id="itemBrand"></div>
             </div>
-            <div class="form-group"><label>Next Maintenance Date</label><input type="date" class="form-control-custom" id="itemNextMaintenance"></div>
-          </div>
-          <div class="form-row" id="serviceProviderRow">
-            <div class="form-group"><label>Service Provider</label><input type="text" class="form-control-custom" id="itemServiceProvider"></div>
+            <div class="form-row">
+              <div class="form-group"><label>Model</label><input type="text" class="form-control-custom" id="itemModel"></div>
+              <div class="form-group"><label>Purchase Date</label><input type="date" class="form-control-custom" id="itemPurchaseDate"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Acquisition Date</label><input type="date" class="form-control-custom" id="itemAcquisitionDate"></div>
+              <div class="form-group"><label>Purchase Request No. (PR)</label><input type="text" class="form-control-custom" id="itemPR" placeholder="PR number"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Purchase Order No. (PO)</label><input type="text" class="form-control-custom" id="itemPO" placeholder="PO number"></div>
+              <div class="form-group"><label>Invoice Number</label><input type="text" class="form-control-custom" id="itemInvoice" placeholder="Invoice number"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Unit Cost</label><input type="number" class="form-control-custom" id="itemUnitCost" min="0" step="0.01" placeholder="0.00"></div>
+            </div>
           </div>
         </div>
         <div class="modal-footer-custom">
@@ -158,7 +184,8 @@
       <form id="disposalForm">
         <div class="modal-body-custom">
           <input type="hidden" id="disposalItemId">
-          <div class="form-group"><label>Quantity</label><input type="number" class="form-control-custom" id="disposalQuantity" min="1" value="1"></div>
+          <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="disposalPropertyTag" readonly></div>
+          <div class="form-group" id="disposalQuantityGroup"><label>Quantity</label><input type="number" class="form-control-custom" id="disposalQuantity" min="1" value="1" readonly></div>
           <div class="form-group"><label>Reason *</label><textarea class="form-control-custom" id="disposalReason" rows="3" required></textarea></div>
         </div>
         <div class="modal-footer-custom">
@@ -256,23 +283,36 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="assetDetailModal">
-    <div class="modal-content-custom" style="max-width:900px;">
+  <div class="modal-overlay" id="assetDetailModal" data-close-on-backdrop="true">
+    <div class="modal-content-custom" style="max-width:960px;">
       <div class="modal-header-custom">
         <h3 id="assetDetailTitle">Asset Details</h3>
         <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('assetDetailModal')"><i class="bi bi-x-lg"></i></button>
       </div>
       <div class="modal-body-custom">
-        <div id="assetDetailInfo"></div>
-        <hr>
-        <div class="nav-tabs-custom" style="margin-bottom:16px;">
-          <button type="button" class="nav-tab-custom active" data-detail-tab="maintenance" onclick="switchAssetDetailTab('maintenance')">Maintenance Schedule</button>
-          <button type="button" class="nav-tab-custom" data-detail-tab="transfers" onclick="switchAssetDetailTab('transfers')">Transfer History</button>
-          <button type="button" class="nav-tab-custom" data-detail-tab="components" onclick="switchAssetDetailTab('components')">Components</button>
+        <div id="assetDetailSummary"></div>
+        <div class="nav-tabs-custom" style="margin:16px 0;flex-wrap:wrap;">
+          <button type="button" class="nav-tab-custom active" data-detail-tab="general" onclick="switchAssetDetailTab('general')">General</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="inventory" onclick="switchAssetDetailTab('inventory')">Inventory</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="purchase" onclick="switchAssetDetailTab('purchase')">Purchase</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="assignment" onclick="switchAssetDetailTab('assignment')">Assignment</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="documents" onclick="switchAssetDetailTab('documents')">Documents</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="history" onclick="switchAssetDetailTab('history')">History</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="maintenance" onclick="switchAssetDetailTab('maintenance')">Maintenance</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="transfers" onclick="switchAssetDetailTab('transfers')">Transfers</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="borrows" onclick="switchAssetDetailTab('borrows')">Borrow History</button>
+          <button type="button" class="nav-tab-custom" data-detail-tab="disposals" onclick="switchAssetDetailTab('disposals')">Disposal</button>
         </div>
-        <div id="assetDetailMaintenance"></div>
+        <div id="assetDetailGeneral"></div>
+        <div id="assetDetailInventory" style="display:none;"></div>
+        <div id="assetDetailPurchase" style="display:none;"></div>
+        <div id="assetDetailAssignment" style="display:none;"></div>
+        <div id="assetDetailDocuments" style="display:none;"></div>
+        <div id="assetDetailHistory" style="display:none;"></div>
+        <div id="assetDetailMaintenance" style="display:none;"></div>
         <div id="assetDetailTransfers" style="display:none;"></div>
-        <div id="assetDetailComponents" style="display:none;"></div>
+        <div id="assetDetailBorrowHistory" style="display:none;"></div>
+        <div id="assetDetailDisposal" style="display:none;"></div>
       </div>
       <div class="modal-footer-custom">
         <button type="button" class="btn-outline-custom" onclick="closeModal('assetDetailModal')">Close</button>
@@ -282,6 +322,10 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/auth.js"></script>
+  <script src="/js/submitGuard.js"></script>
+  <script src="/js/actionMenu.js"></script>
+  <script src="/js/tableScroll.js"></script>
+  <script src="/js/tableSelection.js"></script>
   <script src="/js/components/layout.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/assetClassification.js"></script>

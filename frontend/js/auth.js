@@ -127,13 +127,8 @@ async function openTransferDocument(transferId) {
   try {
     const res = await API.lookupDocument('TRF', 'transfer', transferId);
     API.openDocumentPreview(res.data.id);
-  } catch {
-    try {
-      const res = await API.lookupDocument('PAR', 'transfer', transferId);
-      API.openDocumentPreview(res.data.id);
-    } catch (err) {
-      showToast(err.message || 'Document not found', 'error');
-    }
+  } catch (err) {
+    showToast(err.message || 'TRF document not found', 'error');
   }
 }
 
@@ -246,7 +241,6 @@ const CUSTODIAN_REPORT_TYPES = new Set([
   'inventory',
   'borrow',
   'return',
-  'low-stock',
   'transfers',
   'maintenance',
   'disposals',
@@ -331,6 +325,24 @@ function canViewPendingApprovalsDashboard(user) {
   return isPropertyManager(user);
 }
 
+function getDashboardQuickLink(user, workflowType) {
+  const moduleLinks = {
+    borrow: '/pages/orders.html?status=Pending',
+    maintenance: '/pages/maintenance-requests.html?status=Pending',
+    transfer: '/pages/transfer-requests.html?status=Pending',
+    disposal: '/pages/disposal-requests.html?status=Pending'
+  };
+
+  if (isPropertyManager(user)) {
+    const tab = workflowType;
+    if (tab && moduleLinks[tab]) {
+      return `/pages/pending-approvals.html?tab=${tab}`;
+    }
+  }
+
+  return moduleLinks[workflowType] || null;
+}
+
 function canViewOperationalDashboard(user) {
   return canViewTransferDashboard(user) || canViewMaintenanceDashboard(user);
 }
@@ -339,16 +351,36 @@ function canViewPersonalDashboardOnly(user) {
   return false;
 }
 
+function canViewPendingWorkflowDashboard(user) {
+  return isCustodian(user);
+}
+
 function canViewDashboardCharts(user) {
   return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewLowStockDashboard(user) {
-  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
+function canViewBorrowTrendsChart(user) {
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewAssetsNeedingAttention(user) {
-  return isCustodian(user);
+function canViewDepartmentChart(user) {
+  return isAdministrator(user);
+}
+
+function canViewAssetStatusChart(user) {
+  return isAdministrator(user);
+}
+
+function canViewMaintenanceTrendChart(user) {
+  return isPropertyManager(user);
+}
+
+function canViewLowStockDashboard(_user) {
+  return false;
+}
+
+function canViewAssetsNeedingAttention(_user) {
+  return false;
 }
 
 function canViewRecentBorrowsDashboard(user) {
@@ -369,6 +401,7 @@ function getDashboardStatTitle(user, module) {
   if (module === 'inventoryStats' && isPropertyManager(user)) return 'Inventory Summary';
   if (module === 'personalBorrowStats') return 'My Borrow Summary';
   if (module === 'pendingApprovals') return 'Pending Approvals';
+  if (module === 'pendingWorkflow') return 'Pending Submissions';
   if (module === 'usersStats') return 'Users Summary';
   if (module === 'transferStats') return 'Transfer Summary';
   if (module === 'maintenanceStats') return 'Maintenance Summary';
@@ -390,10 +423,15 @@ function canViewDashboardModule(user, module) {
     inventoryStats: canViewInventoryDashboard(user),
     usersStats: canViewUsersDashboard(user),
     pendingApprovals: canViewPendingApprovalsDashboard(user),
+    pendingWorkflow: canViewPendingWorkflowDashboard(user),
     transferStats: canViewTransferDashboard(user),
     maintenanceStats: canViewMaintenanceDashboard(user),
     disposalStats: canViewDisposalDashboard(user),
     charts: canViewDashboardCharts(user),
+    borrowTrendsChart: canViewBorrowTrendsChart(user),
+    departmentChart: canViewDepartmentChart(user),
+    assetStatusChart: canViewAssetStatusChart(user),
+    maintenanceTrendChart: canViewMaintenanceTrendChart(user),
     recentInventory: canViewInventoryDashboard(user),
     lowStock: canViewLowStockDashboard(user),
     assetsNeedingAttention: canViewAssetsNeedingAttention(user),
@@ -488,8 +526,8 @@ function debounce(fn, delay = 300) {
 }
 
 /** Confirm dialog */
-function confirmAction(message) {
-  return window.confirm(message);
+function confirmAction(message, _options = {}) {
+  return Promise.resolve(window.confirm(message));
 }
 
 /** Open modal */
@@ -557,6 +595,14 @@ function initActionIconTooltips() {
   actionIconTooltipObserver.observe(app, { childList: true, subtree: true });
 }
 
+function formatAssetOptionLabel(item) {
+  if (!item) return '';
+  const tag = item.property_tag ? String(item.property_tag).trim() : '';
+  const name = item.item_name ? String(item.item_name).trim() : '';
+  if (tag && name) return `${tag} — ${name}`;
+  return tag || name || String(item.item_code || item.id || '');
+}
+
 /** Populate select dropdown */
 function populateSelect(selectEl, items, valueKey = 'id', labelKey = 'name', placeholder = 'Select...') {
   if (!selectEl) return;
@@ -564,13 +610,23 @@ function populateSelect(selectEl, items, valueKey = 'id', labelKey = 'name', pla
   items.forEach(item => {
     const opt = document.createElement('option');
     opt.value = item[valueKey];
-    opt.textContent = item[labelKey];
+    opt.textContent = typeof labelKey === 'function' ? labelKey(item) : item[labelKey];
     selectEl.appendChild(opt);
   });
+  if (typeof window.refreshSearchableSelects === 'function') {
+    window.refreshSearchableSelects(selectEl);
+  }
 }
 
 /** Handle logout */
 async function handleLogout() {
+  const confirmed = await confirmAction('Are you sure you want to log out?', {
+    title: 'Log Out',
+    confirmText: 'Log Out',
+    variant: 'primary'
+  });
+  if (!confirmed) return;
+
   try {
     await API.logout();
   } catch { /* proceed anyway */ }

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pending Approvals - Cavite Institute Property Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+</head>
+<body>
+  <div class="app-wrapper" id="app"></div>
+
+  <div class="modal-overlay" id="actionModal">
+    <div class="modal-content-custom" style="max-width:560px;">
+      <div class="modal-header-custom">
+        <h3 id="actionModalTitle">Action</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('actionModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <form id="actionForm">
+        <div class="modal-body-custom" id="actionModalBody"></div>
+        <div class="modal-footer-custom">
+          <button type="button" class="btn-outline-custom" onclick="closeModal('actionModal')">Cancel</button>
+          <button type="submit" class="btn-primary-custom" id="actionModalSubmit">Submit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/submitGuard.js"></script>
+  <script src="/js/actionMenu.js"></script>
+  <script src="/js/tableScroll.js"></script>
+  <script src="/js/components/layout.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/pages/pending-approvals.js"></script>
+  <script src="/js/searchableSelect.js"></script>
+</body>
+</html>

@@ -90,6 +90,7 @@ const API = {
     return API.get(`/inventory${query ? '?' + query : ''}`);
   },
   getInventoryItem: (id) => API.get(`/inventory/${id}`),
+  getInventoryTimeline: (id) => API.get(`/inventory/${id}/timeline`),
   getNextItemCode: (departmentId) => API.get(`/inventory/next-code?department_id=${departmentId}`),
   createInventoryItem: (data) => API.post('/inventory', data),
   updateInventoryItem: (id, data) => API.put(`/inventory/${id}`, data),
@@ -118,6 +119,10 @@ const API = {
     const query = new URLSearchParams(params).toString();
     return API.get(`/borrow/borrowable-items${query ? '?' + query : ''}`);
   },
+  getBorrowableModelAssets: (itemCode, limit = 10) =>
+    API.get(`/borrow/borrowable-models/${encodeURIComponent(itemCode)}/assets?limit=${limit}`),
+  previewBorrowAllocation: (data) => API.post('/borrow/preview-allocation', data),
+  getBorrowHistory: (inventoryItemId) => API.get(`/borrow/asset/${inventoryItemId}/history`),
   getBorrows: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return API.get(`/borrow${query ? '?' + query : ''}`);
@@ -176,6 +181,7 @@ const API = {
     const query = new URLSearchParams(params).toString();
     return API.get(`/disposals${query ? '?' + query : ''}`);
   },
+  getDisposalsByAsset: (inventoryItemId) => API.get(`/disposals/asset/${inventoryItemId}`),
   getDisposal: (id) => API.get(`/disposals/${id}`),
   createDisposal: (data) => API.post('/disposals', data),
   inspectDisposal: (id, data) => API.put(`/disposals/${id}/inspect`, data),

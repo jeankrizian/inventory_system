@@ -19,6 +19,7 @@ const {
   canSubmitMaintenance,
   canViewReturnHistory,
   canViewTransfers,
+  canViewAssetTransferHistory,
   canViewMaintenance,
   canViewDisposal,
   canSubmitDisposal,
@@ -174,6 +175,11 @@ const requireSubmitMaintenance = requireRole(
   'You do not have permission to submit maintenance requests'
 );
 
+const requireViewAssetTransferHistory = requireRole(
+  canViewAssetTransferHistory,
+  'You do not have permission to view transfer history for this item'
+);
+
 const requireViewTransfers = requireRole(
   canViewTransfers,
   'Transfer access requires Property Manager or Custodian role'
@@ -227,6 +233,7 @@ module.exports = {
   requireSubmitTransfer,
   requireSubmitMaintenance,
   requireViewTransfers,
+  requireViewAssetTransferHistory,
   requireViewMaintenance,
   requireViewDisposal,
   requireSubmitDisposal,

@@ -4,6 +4,7 @@ const { restoreRecord, getModuleConfig } = require('../utils/archiveService');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyAdministrators } = require('../utils/notificationService');
+const { buildGovernanceNotificationMessage } = require('../utils/assetNotificationHelper');
 const { usersLink } = require('../utils/notificationLinks');
 
 const ArchiveController = {
@@ -37,11 +38,14 @@ const ArchiveController = {
         if (user) {
           await notifyAdministrators({
             title: 'User Restored',
-            message: `User account ${user.full_name} (${user.username}) was restored.`,
+            message: buildGovernanceNotificationMessage({
+              action: 'User restored',
+              subject: `${user.full_name} (${user.username})`
+            }),
             type: 'user_restored',
             reference_id: user.id,
             link_url: usersLink(user.id)
-          });
+          }, { excludeUserIds: [req.session.user.id] });
         }
       }
 

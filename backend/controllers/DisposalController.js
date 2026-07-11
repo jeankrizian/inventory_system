@@ -2,10 +2,11 @@ const DisposalModel = require('../models/DisposalModel');
 const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, actorExcludeOptions } = require('../utils/notificationService');
 const { disposalLink } = require('../utils/notificationLinks');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
+const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
 
 async function getScopedDisposal(req, res) {
   const disposal = await DisposalModel.findById(req.params.id);
@@ -43,6 +44,21 @@ const DisposalController = {
     } catch (err) { sendError(res, err.message, 500); }
   },
 
+  async getByAsset(req, res) {
+    try {
+      const item = await InventoryModel.findById(req.params.inventoryItemId);
+      if (!item) return sendError(res, 'Item not found', 404);
+
+      const scope = getAccessScope(req.session.user);
+      if (!itemMatchesScope(item, scope)) {
+        return sendError(res, 'Access denied', 403);
+      }
+
+      const data = await DisposalModel.getByAsset(req.params.inventoryItemId);
+      sendSuccess(res, data);
+    } catch (err) { sendError(res, err.message, 500); }
+  },
+
   async create(req, res) {
     try {
       const item = await InventoryModel.findById(req.body.inventory_item_id);
@@ -53,27 +69,41 @@ const DisposalController = {
         return sendError(res, 'Item is outside your assigned scope', 403);
       }
 
+      if (item.status === 'Disposed') {
+        return sendError(res, 'Asset is already disposed', 400);
+      }
+      if (item.status !== 'Available') {
+        return sendError(res, `Disposal can only be requested for available assets (current status: ${item.status})`, 400);
+      }
+
+      const quantity = 1;
+
       const result = await DisposalModel.create({
         ...req.body,
+        quantity,
         requested_by: req.session.user.id
       });
 
-      await logActivity(req.session.user.id, 'CREATE', 'Disposal', `Disposal request ${result.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'CREATE', 'Disposal', `Disposal request ${result.transaction_code}`, req.ip, {
+        entity_type: 'disposal_request',
+        entity_id: result.id,
+        reference_code: result.transaction_code,
+        field_name: 'status',
+        old_value: null,
+        new_value: 'Pending'
+      });
       await notifyPropertyManagers({
         title: 'Disposal Request',
-        message: `New disposal request ${result.transaction_code} for ${item.item_name}.`,
+        message: buildAssetNotificationMessage({
+          action: 'Disposal request submitted',
+          itemName: item.item_name,
+          propertyTag: item.property_tag,
+          detail: result.transaction_code
+        }),
         type: 'disposal_request',
         reference_id: result.id,
         link_url: disposalLink(result.id)
-      });
-      await notifyCustodiansForItem(item, {
-        title: 'Disposal Request',
-        message: `Disposal request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
-        type: 'disposal_request',
-        reference_id: result.id,
-        link_url: disposalLink(result.id),
-        skipDuplicate: true
-      });
+      }, actorExcludeOptions(req));
 
       let generatedDocument = null;
       try {
@@ -94,7 +124,14 @@ const DisposalController = {
       if (disposal.status !== 'Pending') return sendError(res, 'Only pending requests can be inspected', 400);
 
       await DisposalModel.inspect(req.params.id, req.session.user.id, req.body.inspection_notes);
-      await logActivity(req.session.user.id, 'INSPECT', 'Disposal', `Inspected ${disposal.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'INSPECT', 'Disposal', `Inspected ${disposal.transaction_code}`, req.ip, {
+        entity_type: 'disposal_request',
+        entity_id: disposal.id,
+        reference_code: disposal.transaction_code,
+        field_name: 'status',
+        old_value: 'Pending',
+        new_value: 'Inspected'
+      });
       sendSuccess(res, null, 'Inspection recorded');
     } catch (err) { sendError(res, err.message, 500); }
   },
@@ -107,13 +144,20 @@ const DisposalController = {
         return sendError(res, 'Only inspected requests can be approved', 400);
       }
 
-      await InventoryModel.markDisposed(disposal.inventory_item_id, disposal.quantity);
+      await InventoryModel.markDisposed(disposal.inventory_item_id);
       await DisposalModel.updateStatus(disposal.id, 'Completed', req.session.user.id, {
         disposal_method: req.body.disposal_method,
         disposal_date: req.body.disposal_date || new Date().toISOString().split('T')[0],
         notes: req.body.notes
       });
-      await logActivity(req.session.user.id, 'APPROVE', 'Disposal', `Approved ${disposal.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'APPROVE', 'Disposal', `Approved ${disposal.transaction_code}`, req.ip, {
+        entity_type: 'disposal_request',
+        entity_id: disposal.id,
+        reference_code: disposal.transaction_code,
+        field_name: 'status',
+        old_value: disposal.status,
+        new_value: 'Completed'
+      });
 
       let generatedDocument = null;
       try {
@@ -125,18 +169,28 @@ const DisposalController = {
 
       await notifyUser(disposal.requested_by, {
         title: 'Disposal Approved',
-        message: `Your disposal request ${disposal.transaction_code} has been approved.`,
+        message: buildAssetNotificationMessage({
+          action: 'Disposal request approved',
+          itemName: disposal.item_name,
+          propertyTag: disposal.property_tag,
+          detail: disposal.transaction_code
+        }),
         type: 'disposal_approved',
         reference_id: disposal.id,
         link_url: disposalLink(disposal.id)
-      });
+      }, actorExcludeOptions(req));
       await notifyUser(disposal.requested_by, {
         title: 'Disposal Finalized',
-        message: `Your disposal request ${disposal.transaction_code} has been finalized.`,
+        message: buildAssetNotificationMessage({
+          action: 'Disposal finalized',
+          itemName: disposal.item_name,
+          propertyTag: disposal.property_tag,
+          detail: disposal.transaction_code
+        }),
         type: 'disposal_finalized',
         reference_id: disposal.id,
         link_url: disposalLink(disposal.id)
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, { generated_document: generatedDocument }, 'Disposal approved and inventory updated');
     } catch (err) { sendError(res, err.message, 500); }
@@ -153,7 +207,14 @@ const DisposalController = {
       await DisposalModel.updateStatus(disposal.id, 'Rejected', req.session.user.id, {
         notes: req.body.rejection_reason || req.body.reason || null
       });
-      await logActivity(req.session.user.id, 'REJECT', 'Disposal', `Rejected ${disposal.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'REJECT', 'Disposal', `Rejected ${disposal.transaction_code}`, req.ip, {
+        entity_type: 'disposal_request',
+        entity_id: disposal.id,
+        reference_code: disposal.transaction_code,
+        field_name: 'status',
+        old_value: disposal.status,
+        new_value: 'Rejected'
+      });
 
       await notifyUser(disposal.requested_by, {
         title: 'Disposal Rejected',
@@ -161,7 +222,7 @@ const DisposalController = {
         type: 'disposal_rejected',
         reference_id: disposal.id,
         link_url: disposalLink(disposal.id)
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, null, 'Disposal rejected');
     } catch (err) { sendError(res, err.message, 500); }

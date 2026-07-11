@@ -2,8 +2,10 @@ const bcrypt = require('bcryptjs');
 const UserModel = require('../models/UserModel');
 const CategoryModel = require('../models/CategoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
-const { logActivity } = require('../utils/activityLogger');
+const { ArchiveBlockedError } = require('../utils/archiveIntegrityService');
+const { logActivity, logActivityWithChanges, collectChanges } = require('../utils/activityLogger');
 const { notifyAdministrators } = require('../utils/notificationService');
+const { buildGovernanceNotificationMessage } = require('../utils/assetNotificationHelper');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
 const {
   isCustodian,
@@ -181,15 +183,22 @@ const UserController = {
         await UserModel.update(id, { is_active: 0 });
       }
 
-      await logActivity(req.session.user.id, 'CREATE', 'User', `Added user ${normalizedUsername}`, req.ip);
+      await logActivity(req.session.user.id, 'CREATE', 'User', `Added user ${normalizedUsername}`, req.ip, {
+        entity_type: 'user',
+        entity_id: id,
+        reference_code: normalizedUsername
+      });
       const user = await UserModel.findById(id);
       await notifyAdministrators({
         title: 'User Created',
-        message: `User account ${user.full_name} (${user.username}) was created.`,
+        message: buildGovernanceNotificationMessage({
+          action: 'User created',
+          subject: `${user.full_name} (${user.username})`
+        }),
         type: 'user_created',
         reference_id: id,
         link_url: '/pages/manage-users.html'
-      });
+      }, { excludeUserIds: [req.session.user.id] });
       sendSuccess(res, user, 'User created successfully', 201);
     } catch (err) {
       sendError(res, err.message, 500);
@@ -254,8 +263,21 @@ const UserController = {
         return sendError(res, 'No changes to save', 400);
       }
 
-      await logActivity(req.session.user.id, 'UPDATE', 'User', `Updated user ${user.username}`, req.ip);
       const record = await UserModel.findById(req.params.id);
+      await logActivityWithChanges(
+        req.session.user.id,
+        'UPDATE',
+        'User',
+        `Updated user ${user.username}`,
+        req.ip,
+        'user',
+        record.id,
+        record.username,
+        collectChanges(user, record, [
+          'full_name', 'username', 'email', 'role_id', 'is_active',
+          'assigned_department_id', 'assigned_location_id'
+        ])
+      );
       sendSuccess(res, record, 'User updated successfully');
     } catch (err) {
       sendError(res, err.message, 500);
@@ -273,16 +295,27 @@ const UserController = {
       const archived = await UserModel.archive(req.params.id, req.session.user.id);
       if (!archived) return sendError(res, 'User could not be archived', 400);
 
-      await logActivity(req.session.user.id, 'ARCHIVE', 'User', `Archived user ${user.username}`, req.ip);
+      await logActivity(req.session.user.id, 'ARCHIVE', 'User', `Archived user ${user.username}`, req.ip, {
+        entity_type: 'user',
+        entity_id: user.id,
+        reference_code: user.username,
+        field_name: 'archived',
+        old_value: 'false',
+        new_value: 'true'
+      });
       await notifyAdministrators({
         title: 'User Archived',
-        message: `User account ${user.full_name} (${user.username}) was archived.`,
+        message: buildGovernanceNotificationMessage({
+          action: 'User archived',
+          subject: `${user.full_name} (${user.username})`
+        }),
         type: 'user_archived',
         reference_id: user.id,
         link_url: '/pages/archive.html'
-      });
+      }, { excludeUserIds: [req.session.user.id] });
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
     } catch (err) {
+      if (err instanceof ArchiveBlockedError) return sendError(res, err.message, 400);
       sendError(res, err.message, 500);
     }
   }

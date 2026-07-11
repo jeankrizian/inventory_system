@@ -1,13 +1,15 @@
 const TransferModel = require('../models/TransferModel');
 const InventoryModel = require('../models/InventoryModel');
 const DepartmentModel = require('../models/DepartmentModel');
+const pool = require('../config/database');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { notifyPropertyManagers, notifyUser, notifyCustodiansForItem } = require('../utils/notificationService');
+const { notifyPropertyManagers, notifyUser, actorExcludeOptions } = require('../utils/notificationService');
 const { transferLink } = require('../utils/notificationLinks');
 const { canTransfer, isSemiDurable } = require('../utils/assetClassification');
 const { getAccessScope, itemMatchesScope, transferMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
+const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
 
 const TransferController = {
   async getAll(req, res) {
@@ -67,37 +69,92 @@ const TransferController = {
       if (!canTransfer(item.asset_classification)) {
         return sendError(res, 'Consumable items cannot be transferred', 400);
       }
+      if (item.is_archived) {
+        return sendError(res, 'Archived assets cannot be transferred', 400);
+      }
+      const blockedStatuses = ['Borrowed', 'Under Maintenance', 'Disposed'];
+      if (item.status !== 'Available' || blockedStatuses.includes(item.status)) {
+        return sendError(
+          res,
+          `Only available assets can be transferred (current status: ${item.status || 'Unknown'})`,
+          400
+        );
+      }
       if (!req.body.reason) return sendError(res, 'Reason for transfer is required', 400);
+      const toDepartmentId = parseInt(req.body.to_department_id, 10);
+      const toLocationId = parseInt(req.body.to_location_id, 10);
+      if (!toDepartmentId || !toLocationId) {
+        return sendError(res, 'Destination department and location are required', 400);
+      }
+
+      if (req.body.quantity !== undefined && req.body.quantity !== null && req.body.quantity !== '') {
+        const quantity = parseInt(req.body.quantity, 10);
+        if (!Number.isInteger(quantity) || quantity !== 1) {
+          return sendError(res, 'Transfer quantity must be 1 for individual property assets', 400);
+        }
+      }
+
+      const fromDepartmentId = parseInt(req.body.from_department_id, 10) || item.department_id;
+      const fromLocationId = parseInt(req.body.from_location_id, 10) || item.location_id;
+      if (
+        fromDepartmentId
+        && fromLocationId
+        && toDepartmentId === fromDepartmentId
+        && toLocationId === fromLocationId
+      ) {
+        return sendError(
+          res,
+          'Destination department and location must differ from the current department and location',
+          400
+        );
+      }
+
+      const existingPending = await TransferModel.findPendingByInventoryItem(item.id);
+      if (existingPending) {
+        return sendError(
+          res,
+          `A pending transfer already exists for this asset (${existingPending.transaction_code})`,
+          400
+        );
+      }
 
       const result = await TransferModel.create({
         ...req.body,
-        from_location_id: req.body.from_location_id || item.location_id,
-        from_department_id: req.body.from_department_id || item.department_id,
+        quantity: 1,
+        to_department_id: toDepartmentId,
+        to_location_id: toLocationId,
+        from_location_id: fromLocationId,
+        from_department_id: fromDepartmentId,
         requested_by: req.session.user.id
       });
 
-      await logActivity(req.session.user.id, 'CREATE', 'Transfer', `Transfer request ${result.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'CREATE', 'Transfer', `Transfer request ${result.transaction_code}`, req.ip, {
+        entity_type: 'transfer_request',
+        entity_id: result.id,
+        reference_code: result.transaction_code,
+        field_name: 'status',
+        old_value: null,
+        new_value: 'Pending'
+      });
       await notifyPropertyManagers({
         title: 'New Transfer Request',
-        message: `New transfer request ${result.transaction_code} for ${item.item_name}.`,
+        message: buildAssetNotificationMessage({
+          action: 'Transfer request submitted',
+          itemName: item.item_name,
+          propertyTag: item.property_tag,
+          detail: result.transaction_code
+        }),
         type: 'transfer_request',
         reference_id: result.id,
         link_url: transferLink(result.id)
-      });
-      await notifyCustodiansForItem(item, {
-        title: 'Transfer Request',
-        message: `Transfer request ${result.transaction_code} was filed for assigned asset ${item.item_name}.`,
-        type: 'transfer_request',
-        reference_id: result.id,
-        link_url: transferLink(result.id),
-        skipDuplicate: true
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, result, 'Transfer request created', 201);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
   async approve(req, res) {
+    const connection = await pool.getConnection();
     try {
       const transfer = await TransferModel.findById(req.params.id);
       if (!transfer) return sendError(res, 'Transfer not found', 404);
@@ -107,11 +164,27 @@ const TransferController = {
         ? await DepartmentModel.findById(transfer.to_department_id)
         : null;
 
-      await InventoryModel.updateLocationAndDepartment(transfer.inventory_item_id, {
-        location_id: transfer.to_location_id,
-        department_id: transfer.to_department_id || transfer.from_department_id,
-        custodian_id: toDept?.custodian_id || undefined
-      });
+      await connection.beginTransaction();
+
+      try {
+        await InventoryModel.updateLocationAndDepartment(transfer.inventory_item_id, {
+          location_id: transfer.to_location_id,
+          department_id: transfer.to_department_id || transfer.from_department_id,
+          custodian_id: toDept?.custodian_id || undefined
+        }, connection);
+
+        await TransferModel.recordHistory(transfer, req.session.user.id, connection);
+        await TransferModel.updateStatus(transfer.id, 'Approved', req.session.user.id, {
+          notes: req.body.remarks || req.body.notes
+        }, connection);
+
+        await connection.commit();
+      } catch (txErr) {
+        await connection.rollback();
+        throw txErr;
+      }
+
+      const item = await InventoryModel.findById(transfer.inventory_item_id);
 
       try {
         await DocumentService.refreshPARForCustodianAssignment(transfer.inventory_item_id, req.session.user.id);
@@ -119,7 +192,6 @@ const TransferController = {
         console.error('Inventory PAR refresh failed:', docErr.message);
       }
 
-      const item = await InventoryModel.findById(transfer.inventory_item_id);
       if (item && isSemiDurable(item.asset_classification)) {
         try {
           await DocumentService.refreshSALForSemiDurableIssuance(transfer.inventory_item_id, req.session.user.id);
@@ -128,26 +200,26 @@ const TransferController = {
         }
       }
 
-      await TransferModel.recordHistory(transfer, req.session.user.id);
-      await TransferModel.updateStatus(transfer.id, 'Approved', req.session.user.id, {
-        notes: req.body.remarks || req.body.notes
+      await logActivity(req.session.user.id, 'APPROVE', 'Transfer', `Approved ${transfer.transaction_code}`, req.ip, {
+        entity_type: 'transfer_request',
+        entity_id: transfer.id,
+        reference_code: transfer.transaction_code,
+        field_name: 'status',
+        old_value: 'Pending',
+        new_value: 'Approved'
       });
-
-      await logActivity(req.session.user.id, 'APPROVE', 'Transfer', `Approved ${transfer.transaction_code}`, req.ip);
       await notifyUser(transfer.requested_by, {
         title: 'Transfer Approved',
-        message: `Your transfer request ${transfer.transaction_code} has been approved.`,
+        message: buildAssetNotificationMessage({
+          action: 'Transfer request approved',
+          itemName: item?.item_name,
+          propertyTag: item?.property_tag,
+          detail: transfer.transaction_code
+        }),
         type: 'transfer_approved',
         reference_id: transfer.id,
         link_url: transferLink(transfer.id)
-      });
-      await notifyUser(transfer.requested_by, {
-        title: 'Transfer Completed',
-        message: `Your transfer request ${transfer.transaction_code} has been completed.`,
-        type: 'transfer_completed',
-        reference_id: transfer.id,
-        link_url: transferLink(transfer.id)
-      });
+      }, actorExcludeOptions(req));
 
       let generatedDocument = null;
       try {
@@ -160,7 +232,11 @@ const TransferController = {
       }
 
       sendSuccess(res, { generated_document: generatedDocument }, 'Transfer approved and inventory updated');
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) {
+      sendError(res, err.message, 500);
+    } finally {
+      connection.release();
+    }
   },
 
   async reject(req, res) {
@@ -171,7 +247,14 @@ const TransferController = {
 
       const reason = req.body.rejection_reason || req.body.reason || '';
       await TransferModel.updateStatus(transfer.id, 'Rejected', req.session.user.id, { rejection_reason: reason });
-      await logActivity(req.session.user.id, 'REJECT', 'Transfer', `Rejected ${transfer.transaction_code}`, req.ip);
+      await logActivity(req.session.user.id, 'REJECT', 'Transfer', `Rejected ${transfer.transaction_code}`, req.ip, {
+        entity_type: 'transfer_request',
+        entity_id: transfer.id,
+        reference_code: transfer.transaction_code,
+        field_name: 'status',
+        old_value: 'Pending',
+        new_value: 'Rejected'
+      });
 
       await notifyUser(transfer.requested_by, {
         title: 'Transfer Rejected',
@@ -179,7 +262,7 @@ const TransferController = {
         type: 'transfer_rejected',
         reference_id: transfer.id,
         link_url: transferLink(transfer.id)
-      });
+      }, actorExcludeOptions(req));
 
       sendSuccess(res, null, 'Transfer rejected');
     } catch (err) { sendError(res, err.message, 500); }

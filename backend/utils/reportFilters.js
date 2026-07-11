@@ -29,8 +29,9 @@ function parseReportFilters(query = {}) {
     filters.date_to = String(query.date_to);
   }
 
-  if (query.low_stock === 'true' || query.low_stock === true) {
-    filters.low_stock = true;
+  if (query.custodian_id) {
+    const parsed = parseInt(query.custodian_id, 10);
+    if (!Number.isNaN(parsed)) filters.custodian_id = parsed;
   }
 
   const textFields = [
@@ -43,6 +44,7 @@ function parseReportFilters(query = {}) {
     'item_code',
     'item_name',
     'property_tag',
+    'batch_id',
     'from_department_name',
     'to_department_name',
     'requested_by_name',
@@ -77,29 +79,25 @@ function parseReportFilters(query = {}) {
     filters.purchase_date = String(query.purchase_date);
   }
 
-  if (query.quantity != null && String(query.quantity).trim() !== '') {
-    filters.quantity = String(query.quantity).trim();
-  }
-
   if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {
     filters.unit_cost = String(query.unit_cost).trim();
   }
+
+  assignTrimmed(filters, query, 'search');
 
   return filters;
 }
 
 function parseInventoryReportFilters(query = {}) {
   const filters = parseReportFilters(query);
-  delete filters.date_from;
-  delete filters.date_to;
 
   const textFields = [
     'item_code',
     'item_name',
     'property_tag',
+    'batch_id',
     'brand',
     'model',
-    'unit',
     'custodian_name',
     'supplier_name',
     'department_name',
@@ -119,10 +117,6 @@ function parseInventoryReportFilters(query = {}) {
 
   if (query.purchase_date) {
     filters.purchase_date = String(query.purchase_date);
-  }
-
-  if (query.quantity != null && String(query.quantity).trim() !== '') {
-    filters.quantity = String(query.quantity).trim();
   }
 
   if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {

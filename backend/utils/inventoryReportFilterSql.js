@@ -1,3 +1,12 @@
+/** Workflow list endpoints use `status` for request state — not inventory item status. */
+function inventoryFieldFilters(filters = {}) {
+  if (!filters || !Object.prototype.hasOwnProperty.call(filters, 'status')) {
+    return filters;
+  }
+  const { status, ...rest } = filters;
+  return rest;
+}
+
 function appendInventoryItemFieldFilters(filters, itemAlias, params, options = {}) {
   const { supplierAlias = null, departmentAlias = null } = options;
   let clause = '';
@@ -22,18 +31,27 @@ function appendInventoryItemFieldFilters(filters, itemAlias, params, options = {
     clause += ` AND ${itemAlias}.material = ?`;
     params.push(filters.material);
   }
-  if (filters.quantity != null && filters.quantity !== '') {
-    const qty = parseInt(filters.quantity, 10);
-    if (!Number.isNaN(qty)) {
-      clause += ` AND ${itemAlias}.quantity = ?`;
-      params.push(qty);
-    }
+  if (filters.custodian_id) {
+    clause += ` AND ${itemAlias}.custodian_id = ?`;
+    params.push(filters.custodian_id);
+  }
+  if (filters.property_tag) {
+    clause += ` AND ${itemAlias}.property_tag LIKE ?`;
+    params.push(`%${filters.property_tag}%`);
+  }
+  if (filters.batch_id) {
+    clause += ` AND ${itemAlias}.batch_id LIKE ?`;
+    params.push(`%${filters.batch_id}%`);
+  }
+  if (filters.status) {
+    clause += ` AND ${itemAlias}.status LIKE ?`;
+    params.push(`%${filters.status}%`);
   }
   if (filters.unit_cost != null && filters.unit_cost !== '') {
     const cost = parseFloat(filters.unit_cost);
     if (!Number.isNaN(cost)) {
-      clause += ` AND (${itemAlias}.unit_cost = ? OR ${itemAlias}.acquisition_cost = ?)`;
-      params.push(cost, cost);
+      clause += ` AND ${itemAlias}.unit_cost = ?`;
+      params.push(cost);
     }
   }
   if (filters.supplier_name && supplierAlias) {
@@ -72,18 +90,27 @@ function appendBorrowInventoryExistsFilters(filters, borrowAlias, params) {
     inv.push('ii_f.material = ?');
     invParams.push(filters.material);
   }
-  if (filters.quantity != null && filters.quantity !== '') {
-    const qty = parseInt(filters.quantity, 10);
-    if (!Number.isNaN(qty)) {
-      inv.push('ii_f.quantity = ?');
-      invParams.push(qty);
-    }
+  if (filters.custodian_id) {
+    inv.push('ii_f.custodian_id = ?');
+    invParams.push(filters.custodian_id);
+  }
+  if (filters.property_tag) {
+    inv.push('ii_f.property_tag LIKE ?');
+    invParams.push(`%${filters.property_tag}%`);
+  }
+  if (filters.batch_id) {
+    inv.push('ii_f.batch_id LIKE ?');
+    invParams.push(`%${filters.batch_id}%`);
+  }
+  if (filters.status) {
+    inv.push('ii_f.status LIKE ?');
+    invParams.push(`%${filters.status}%`);
   }
   if (filters.unit_cost != null && filters.unit_cost !== '') {
     const cost = parseFloat(filters.unit_cost);
     if (!Number.isNaN(cost)) {
-      inv.push('(ii_f.unit_cost = ? OR ii_f.acquisition_cost = ?)');
-      invParams.push(cost, cost);
+      inv.push('ii_f.unit_cost = ?');
+      invParams.push(cost);
     }
   }
   if (filters.supplier_name) {
@@ -111,6 +138,7 @@ function appendBorrowInventoryExistsFilters(filters, borrowAlias, params) {
 }
 
 module.exports = {
+  inventoryFieldFilters,
   appendInventoryItemFieldFilters,
   appendBorrowInventoryExistsFilters
 };

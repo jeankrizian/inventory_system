@@ -1,6 +1,7 @@
 let categories = [], suppliers = [], locations = [], items = [], users = [];
 let currentUser = null;
 let inventoryActionsListenersBound = false;
+let inventoryTableSelection = null;
 
 function closeAllInventoryActionsMenus() {
   document.querySelectorAll('.inventory-actions-menu.show').forEach(menu => {
@@ -120,25 +121,6 @@ function positionInventoryDocumentsSubmenu(wrap) {
   submenu.style.top = `${top}px`;
 }
 
-function showInventoryDocumentsSubmenu(itemId) {
-  const wrap = document.getElementById(`inventory-actions-${itemId}`);
-  const submenu = wrap?.querySelector('.inventory-actions-submenu');
-  if (!submenu) return;
-  submenu.classList.add('show');
-  positionInventoryDocumentsSubmenu(wrap);
-}
-
-function hideInventoryDocumentsSubmenu(itemId, event) {
-  const wrap = document.getElementById(`inventory-actions-${itemId}`);
-  const submenu = wrap?.querySelector('.inventory-actions-submenu');
-  if (!submenu) return;
-  const related = event?.relatedTarget;
-  if (related && (submenu.contains(related) || wrap?.contains(related))) return;
-  submenu.classList.remove('show', 'flip-left');
-  submenu.style.top = '';
-  submenu.style.left = '';
-}
-
 function toggleInventoryDocumentsSubmenu(itemId, event) {
   event.preventDefault();
   event.stopPropagation();
@@ -148,15 +130,17 @@ function toggleInventoryDocumentsSubmenu(itemId, event) {
   if (!submenu) return;
 
   const wasOpen = submenu.classList.contains('show');
-  wrap.querySelectorAll('.inventory-actions-submenu').forEach(el => {
-    el.classList.remove('show', 'flip-left');
-    el.style.top = '';
-    el.style.left = '';
-  });
-  if (wasOpen) return;
+  if (wasOpen) {
+    submenu.classList.remove('show', 'flip-left', 'is-fixed');
+    submenu.style.top = '';
+    submenu.style.left = '';
+    return;
+  }
 
-  submenu.classList.add('show');
-  positionInventoryDocumentsSubmenu(wrap);
+  requestAnimationFrame(() => {
+    submenu.classList.add('show');
+    positionInventoryDocumentsSubmenu(wrap);
+  });
 }
 
 function toggleInventoryActionsMenu(itemId, event) {
@@ -175,9 +159,11 @@ function toggleInventoryActionsMenu(itemId, event) {
     return;
   }
 
-  menu.classList.add('show');
-  trigger.setAttribute('aria-expanded', 'true');
-  positionInventoryActionsMenu(wrap);
+  requestAnimationFrame(() => {
+    menu.classList.add('show');
+    trigger.setAttribute('aria-expanded', 'true');
+    positionInventoryActionsMenu(wrap);
+  });
 }
 
 function runInventoryAction(event, callback) {
@@ -194,7 +180,10 @@ function bindInventoryActionsListeners() {
   if (inventoryActionsListenersBound) return;
   inventoryActionsListenersBound = true;
 
-  document.addEventListener('click', closeAllInventoryActionsMenus);
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.inventory-actions-wrap')) return;
+    closeAllInventoryActionsMenus();
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllInventoryActionsMenus();
   });
@@ -209,7 +198,7 @@ function renderInventoryActionsCell(item, classification, permissions) {
   const itemBorrowable = isItemAvailableForBorrow(item);
   const showBorrow = permissions.canSubmitBorrow && canBorrowType && itemBorrowable;
   const showBorrowUnavailable = permissions.canSubmitBorrow && canBorrowType && !itemBorrowable && !isDisposed;
-  const showTransfer = permissions.canSubmitTransfer && !isDisposed && canTransferAsset(classification);
+  const showTransfer = permissions.canSubmitTransfer && item.status === 'Available' && canTransferAsset(classification);
   const showMaintain = permissions.canSubmitMaintenance && !isDisposed && canMaintainAsset(classification);
   const showReplace = permissions.canManageInventory && !isDisposed && canReplaceComponent(classification);
   const showDispose = permissions.canSubmitDisposal && !isDisposed;
@@ -224,17 +213,13 @@ function renderInventoryActionsCell(item, classification, permissions) {
     showMaintain ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openMaintenanceModal(${id}))"><i class="bi bi-tools"></i> Maintenance</button>` : '',
     showReplace ? `<button type="button" role="menuitem" onclick="runInventoryAction(event, () => openComponentModal(${id}))"><i class="bi bi-cpu"></i> Components</button>` : '',
     documentOptions.length ? `
-      <div class="inventory-actions-submenu-wrap"
-        onmouseenter="showInventoryDocumentsSubmenu(${id})"
-        onmouseleave="hideInventoryDocumentsSubmenu(${id}, event)">
+      <div class="inventory-actions-submenu-wrap">
         <button type="button" class="inventory-actions-submenu-trigger" role="menuitem"
           onclick="toggleInventoryDocumentsSubmenu(${id}, event)">
           <span class="inventory-actions-submenu-label"><i class="bi bi-folder2-open"></i> Documents</span>
           <i class="bi bi-chevron-right inventory-actions-submenu-caret"></i>
         </button>
-        <div class="inventory-actions-submenu" role="menu" onclick="event.stopPropagation()"
-          onmouseenter="showInventoryDocumentsSubmenu(${id})"
-          onmouseleave="hideInventoryDocumentsSubmenu(${id}, event)">
+        <div class="inventory-actions-submenu" role="menu" onclick="event.stopPropagation()">
           ${documentOptions.map(doc => `
             <button type="button" role="menuitem"
               onclick="runInventoryAction(event, () => openInventoryDocument(${id}, '${doc.type}', '${doc.module}', ${doc.inventoryItemId || id}))">
@@ -289,6 +274,80 @@ function getInventoryPermissions(user) {
   };
 }
 
+function initInventoryTableSelection(permissions) {
+  const bulkActions = [
+    {
+      id: 'export',
+      label: 'Export Selected',
+      icon: 'bi-download',
+      onClick: bulkExportInventory
+    }
+  ];
+
+  if (permissions.canArchiveInventory) {
+    bulkActions.unshift({
+      id: 'archive',
+      label: 'Archive Selected',
+      icon: 'bi-archive',
+      danger: true,
+      onClick: bulkArchiveInventory
+    });
+  }
+
+  inventoryTableSelection = createTableSelection({
+    container: 'inventoryTable',
+    getRowId: (item) => item.id,
+    getVisibleRows: () => items,
+    bulkActions
+  });
+}
+
+async function bulkArchiveInventory(ids) {
+  if (!await confirmAction(
+    `Archive ${ids.length} selected item(s)? They will remain in the Archive for 30 days before being permanently deleted.`,
+    { variant: 'danger', title: 'Archive Items', confirmText: 'Archive' }
+  )) return;
+
+  await guardAsyncAction(async () => {
+    let success = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await API.archiveInventoryItem(id);
+        success += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    if (success) {
+      showToast(success === 1 ? '1 item archived.' : `${success} items archived.`);
+    }
+    if (failed) {
+      showToast(failed === 1 ? '1 item could not be archived.' : `${failed} items could not be archived.`, 'error');
+    }
+    inventoryTableSelection?.clearSelection();
+    loadItems();
+  }, { loadingText: 'Archiving...', lockKey: 'bulk-archive-inventory' });
+}
+
+function bulkExportInventory(_ids, rows) {
+  exportRowsToCsv(
+    `inventory-selected-${new Date().toISOString().slice(0, 10)}.csv`,
+    rows,
+    [
+      { key: 'item_code', label: 'Item Code' },
+      { key: 'property_tag', label: 'Property Tag' },
+      { key: 'item_name', label: 'Item Name' },
+      { label: 'Department', getValue: (row) => row.department_name || row.category_name || '' },
+      { key: 'location_name', label: 'Location' },
+      { key: 'condition', label: 'Condition' },
+      { key: 'status', label: 'Status' },
+      { label: 'Acquisition Date', getValue: (row) => formatDetailDate(row.acquisition_date || row.purchase_date) }
+    ]
+  );
+  showToast(`Exported ${rows.length} item(s)`);
+}
+
 async function initInventoryPage() {
   currentUser = await initLayout('inventory');
   if (!currentUser) return;
@@ -303,7 +362,7 @@ async function initInventoryPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Items</h3>
-        ${permissions.canManageInventory ? `<button class="btn-primary-custom" onclick="openAddModal()"><i class="bi bi-plus-lg"></i> Add Item</button>` : ''}
+        ${permissions.canManageInventory ? `<button type="button" class="btn-primary-custom" id="addItemBtn"><i class="bi bi-plus-lg"></i> Add Item</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search items...">
@@ -313,12 +372,9 @@ async function initInventoryPage() {
         </select>
         <select class="form-control-custom" id="filterStatus">
           <option value="">All Status</option>
-          <option>Available</option><option>Borrowed</option><option>Low Stock</option><option>Out of Stock</option>
+          <option>Available</option><option>Borrowed</option>
           <option>Under Maintenance</option><option>Disposed</option>
         </select>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-          <input type="checkbox" id="filterLowStock"> Low Stock Only
-        </label>
       </div>
       <div class="table-responsive" id="inventoryTable">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
@@ -326,9 +382,13 @@ async function initInventoryPage() {
     </div>
   `;
 
+  document.getElementById('addItemBtn')?.addEventListener('click', openAddModal);
+
   await loadDropdowns();
   populateClassificationFilter();
   initItemFormSearchableSelects();
+  initSearchableSelects(document.getElementById('pageContent'));
+  initInventoryTableSelection(permissions);
   await loadItems();
   bindInventoryActionsListeners();
 
@@ -336,22 +396,15 @@ async function initInventoryPage() {
   document.getElementById('filterCategory').addEventListener('change', loadItems);
   document.getElementById('filterClassification').addEventListener('change', loadItems);
   document.getElementById('filterStatus').addEventListener('change', loadItems);
-  document.getElementById('filterLowStock').addEventListener('change', loadItems);
   document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
-  document.getElementById('itemQuantity').addEventListener('input', updateAcquisitionCost);
-  document.getElementById('itemUnitCost').addEventListener('input', updateAcquisitionCost);
+  document.getElementById('itemQuantity').addEventListener('input', syncCreatePreviewDisplay);
   document.getElementById('itemCategory').addEventListener('change', updateItemCodePreview);
-  document.getElementById('itemForm').addEventListener('submit', saveItem);
-  document.getElementById('transferForm')?.addEventListener('submit', submitTransfer);
-  document.getElementById('disposalForm')?.addEventListener('submit', submitDisposal);
-  document.getElementById('maintenanceForm')?.addEventListener('submit', submitMaintenance);
-  document.getElementById('componentForm')?.addEventListener('submit', submitComponent);
+  bindGuardedFormSubmit(document.getElementById('itemForm'), saveItem, { loadingText: 'Saving...' });
+  bindGuardedFormSubmit(document.getElementById('transferForm'), submitTransfer, { loadingText: 'Submitting...' });
+  bindGuardedFormSubmit(document.getElementById('disposalForm'), submitDisposal, { loadingText: 'Submitting...' });
+  bindGuardedFormSubmit(document.getElementById('maintenanceForm'), submitMaintenance, { loadingText: 'Submitting...' });
+  bindGuardedFormSubmit(document.getElementById('componentForm'), submitComponent, { loadingText: 'Saving...' });
 
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('low_stock') === 'true') {
-    document.getElementById('filterLowStock').checked = true;
-    loadItems();
-  }
 }
 
 function populateClassificationFilter() {
@@ -360,6 +413,9 @@ function populateClassificationFilter() {
   const options = getFilterClassifications();
   select.innerHTML = '<option value="">All Classifications</option>'
     + options.map((option) => `<option>${option}</option>`).join('');
+  if (typeof refreshSearchableSelects === 'function') {
+    refreshSearchableSelects(select);
+  }
 }
 
 async function loadDropdowns() {
@@ -392,13 +448,11 @@ async function loadItems() {
   const category = document.getElementById('filterCategory')?.value;
   const classification = document.getElementById('filterClassification')?.value;
   const status = document.getElementById('filterStatus')?.value;
-  const lowStock = document.getElementById('filterLowStock')?.checked;
 
   if (search) params.search = search;
   if (category) params.category_id = category;
   if (classification) params.asset_classification = classification;
   if (status) params.status = status;
-  if (lowStock) params.low_stock = 'true';
 
   try {
     const res = await API.getInventory(params);
@@ -414,8 +468,11 @@ function renderTable() {
   const el = document.getElementById('inventoryTable');
   const permissions = getInventoryPermissions(currentUser);
 
+  inventoryTableSelection?.pruneHiddenSelections();
+
   if (!items.length) {
     el.innerHTML = '<div class="empty-state"><i class="bi bi-box"></i>No inventory items found.</div>';
+    inventoryTableSelection?.bindAfterRender(el);
     return;
   }
 
@@ -423,38 +480,38 @@ function renderTable() {
     <table class="data-table">
       <thead>
         <tr>
-          <th>Item Code</th><th>Item Name</th><th>Department</th><th>Classification</th>
-          <th>Qty</th><th>Available</th><th>Location</th><th>Status</th><th>Actions</th>
+          ${inventoryTableSelection?.renderCheckboxHeader() || ''}
+          <th>Item Code</th>
+          <th>Property Tag</th>
+          <th>Item Name</th>
+          <th>Department</th>
+          <th>Location</th>
+          <th>Condition</th>
+          <th>Status</th>
+          <th>Acquisition Date</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        ${items.map(item => {
-          const classification = formatClassificationDisplay(item.asset_classification);
-          return `
-          <tr>
-            <td>${item.item_code}</td>
-            <td>${item.item_name}</td>
-            <td>${item.department_name || item.category_name || '-'}</td>
-            <td>${classification}</td>
-            <td>${item.quantity}</td>
-            <td>${item.available_quantity}</td>
-            <td>${item.location_name || '-'}</td>
+        ${items.map(item => `
+          <tr${inventoryTableSelection?.renderRowAttrs(item) || ''}>
+            ${inventoryTableSelection?.renderCheckboxCell(item) || ''}
+            <td>${displayCell(item.item_code)}</td>
+            <td>${displayCell(item.property_tag)}</td>
+            <td>${displayCell(item.item_name)}</td>
+            <td>${displayCell(item.department_name || item.category_name)}</td>
+            <td>${displayCell(item.location_name)}</td>
+            <td>${displayCell(item.condition)}</td>
             <td>${getStatusBadge(item.status)}</td>
-            <td class="inventory-actions-td">${renderInventoryActionsCell(item, classification, permissions)}</td>
+            <td>${displayCell(formatDetailDate(item.acquisition_date || item.purchase_date))}</td>
+            <td class="inventory-actions-td">${renderInventoryActionsCell(item, formatClassificationDisplay(item.asset_classification), permissions)}</td>
           </tr>
-        `;
-        }).join('')}
+        `).join('')}
       </tbody>
     </table>
   `;
-}
-
-function updateAcquisitionCost() {
-  const qty = parseInt(document.getElementById('itemQuantity')?.value, 10);
-  const unitCost = parseFloat(document.getElementById('itemUnitCost')?.value);
-  const acquisitionEl = document.getElementById('itemAcquisitionCost');
-  if (!acquisitionEl || Number.isNaN(qty) || Number.isNaN(unitCost)) return;
-  acquisitionEl.value = (qty * unitCost).toFixed(2);
+  finishTableRender(el);
+  inventoryTableSelection?.bindAfterRender(el);
 }
 
 function syncClassificationOptions(currentValue = '') {
@@ -473,18 +530,18 @@ function applyClassificationFormState() {
   const isFixed = isFixedAssetClassification(classification);
   const isConsumable = classification === 'Consumable';
 
-  const propertyTagGroup = document.getElementById('propertyTagGroup');
+  const propertyTagInfo = document.getElementById('autoPropertyTagInfo');
   const custodianRow = document.getElementById('custodianRow');
   const maintenanceRow = document.getElementById('maintenanceRow');
   const serviceProviderRow = document.getElementById('serviceProviderRow');
+  const isEdit = Boolean(document.getElementById('itemId')?.value);
 
-  if (propertyTagGroup) propertyTagGroup.style.display = isConsumable ? 'none' : '';
+  if (propertyTagInfo) propertyTagInfo.style.display = (isEdit || isConsumable) ? 'none' : '';
   if (custodianRow) custodianRow.style.display = isFixed ? '' : 'none';
   if (maintenanceRow) maintenanceRow.style.display = isFixed ? '' : 'none';
   if (serviceProviderRow) serviceProviderRow.style.display = isFixed ? '' : 'none';
 
   if (isConsumable) {
-    document.getElementById('itemPropertyTag').value = '';
     document.getElementById('itemCustodian').value = '';
     document.getElementById('itemMaintenanceSchedule').value = '';
     document.getElementById('itemNextMaintenance').value = '';
@@ -533,12 +590,50 @@ async function updateItemCodePreview() {
   }
 }
 
+function setAssetFormMode(isEdit) {
+  const assetCountRow = document.getElementById('assetCountRow');
+  const editPropertyTagRow = document.getElementById('editPropertyTagRow');
+  const editBatchIdRow = document.getElementById('editBatchIdRow');
+  const editSerialNumberRow = document.getElementById('editSerialNumberRow');
+  const autoPropertyTagInfo = document.getElementById('autoPropertyTagInfo');
+  const quantityInput = document.getElementById('itemQuantity');
+
+  if (assetCountRow) assetCountRow.style.display = isEdit ? 'none' : '';
+  if (editPropertyTagRow) editPropertyTagRow.style.display = isEdit ? '' : 'none';
+  if (editBatchIdRow) editBatchIdRow.style.display = isEdit ? '' : 'none';
+  if (editSerialNumberRow) editSerialNumberRow.style.display = isEdit ? '' : 'none';
+  if (autoPropertyTagInfo) autoPropertyTagInfo.style.display = isEdit ? 'none' : '';
+  if (quantityInput) quantityInput.required = !isEdit;
+}
+
+function syncCreatePreviewDisplay() {
+  const previewEl = document.getElementById('itemCreatePreview');
+  const qtyEl = document.getElementById('itemQuantity');
+  if (!previewEl || !qtyEl) return;
+
+  const qty = parseInt(qtyEl.value, 10);
+  const itemId = document.getElementById('itemId')?.value;
+  if (itemId) return;
+
+  if (Number.isNaN(qty) || qty < 1) {
+    previewEl.value = 'Each asset = one inventory record; one batch ID per save';
+    return;
+  }
+
+  previewEl.value = qty === 1
+    ? '1 asset record (new batch ID on save)'
+    : `${qty} asset records (shared batch ID on save)`;
+}
+
 function openAddModal() {
   document.getElementById('itemModalTitle').textContent = 'Add Item';
   document.getElementById('itemForm').reset();
   document.getElementById('itemId').value = '';
-  document.getElementById('itemUnit').value = 'pcs';
-  document.getElementById('itemThreshold').value = '5';
+  document.getElementById('itemQuantity').value = '1';
+  document.getElementById('itemStatus').value = 'Auto-computed';
+  const previewEl = document.getElementById('itemCreatePreview');
+  if (previewEl) previewEl.value = '1 asset record';
+  setAssetFormMode(false);
   syncClassificationOptions('');
   setItemCodeFieldState(false);
   applyClassificationFormState();
@@ -564,23 +659,22 @@ async function editItem(id) {
     document.getElementById('itemSupplier').value = item.supplier_id || '';
     document.getElementById('itemBrand').value = item.brand || '';
     document.getElementById('itemModel').value = item.model || '';
-    document.getElementById('itemQuantity').value = item.quantity;
-    document.getElementById('itemAvailable').value = item.available_quantity;
-    document.getElementById('itemUnit').value = item.unit;
+    document.getElementById('itemEditPropertyTag').value = item.property_tag || '';
+    document.getElementById('itemEditBatchId').value = item.batch_id || '';
+    document.getElementById('itemEditSerialNumber').value = item.serial_number || '';
+    setAssetFormMode(true);
     document.getElementById('itemLocation').value = item.location_id || '';
     document.getElementById('itemPurchaseDate').value = item.purchase_date ? item.purchase_date.split('T')[0] : '';
     document.getElementById('itemPR').value = item.purchase_request_number || '';
     document.getElementById('itemPO').value = item.purchase_order_number || '';
     document.getElementById('itemInvoice').value = item.invoice_number || '';
-    document.getElementById('itemAcquisitionDate').value = item.acquisition_date ? item.acquisition_date.split('T')[0] : '';
+    const acquisitionDate = item.acquisition_date || item.purchase_date;
+    document.getElementById('itemAcquisitionDate').value = acquisitionDate ? String(acquisitionDate).split('T')[0] : '';
     document.getElementById('itemUnitCost').value = item.unit_cost != null ? item.unit_cost : '';
-    document.getElementById('itemAcquisitionCost').value = item.acquisition_cost != null ? item.acquisition_cost : '';
     document.getElementById('itemCondition').value = item.condition;
-    document.getElementById('itemThreshold').value = item.low_stock_threshold;
-    document.getElementById('itemStatus').value = item.status;
+    document.getElementById('itemStatus').value = item.status || 'Auto-computed';
     syncClassificationOptions(item.asset_classification);
     document.getElementById('itemMaterial').value = item.material || '';
-    document.getElementById('itemPropertyTag').value = item.property_tag || '';
     document.getElementById('itemCustodian').value = item.custodian_id || '';
     document.getElementById('itemMaintenanceSchedule').value = item.maintenance_schedule || '';
     document.getElementById('itemNextMaintenance').value = item.next_maintenance_date ? item.next_maintenance_date.split('T')[0] : '';
@@ -594,6 +688,7 @@ async function editItem(id) {
 }
 
 function getItemFormData() {
+  const isEdit = Boolean(document.getElementById('itemId').value);
   const data = {
     item_name: document.getElementById('itemName').value,
     description: document.getElementById('itemDescription').value.trim() || null,
@@ -602,9 +697,6 @@ function getItemFormData() {
     supplier_id: document.getElementById('itemSupplier').value ? parseInt(document.getElementById('itemSupplier').value) : null,
     brand: document.getElementById('itemBrand').value,
     model: document.getElementById('itemModel').value,
-    quantity: parseInt(document.getElementById('itemQuantity').value),
-    available_quantity: parseInt(document.getElementById('itemAvailable').value) || parseInt(document.getElementById('itemQuantity').value),
-    unit: document.getElementById('itemUnit').value,
     location_id: document.getElementById('itemLocation').value ? parseInt(document.getElementById('itemLocation').value) : null,
     purchase_date: document.getElementById('itemPurchaseDate').value || null,
     acquisition_date: document.getElementById('itemAcquisitionDate').value || null,
@@ -612,18 +704,23 @@ function getItemFormData() {
     purchase_order_number: document.getElementById('itemPO').value.trim() || null,
     invoice_number: document.getElementById('itemInvoice').value.trim() || null,
     unit_cost: document.getElementById('itemUnitCost').value !== '' ? document.getElementById('itemUnitCost').value : null,
-    acquisition_cost: document.getElementById('itemAcquisitionCost').value !== '' ? document.getElementById('itemAcquisitionCost').value : null,
     condition: document.getElementById('itemCondition').value,
-    low_stock_threshold: parseInt(document.getElementById('itemThreshold').value),
-    status: document.getElementById('itemStatus').value,
     asset_classification: document.getElementById('itemClassification').value,
     material: document.getElementById('itemMaterial').value || null,
-    property_tag: normalizePropertyTag(document.getElementById('itemPropertyTag').value),
     custodian_id: document.getElementById('itemCustodian').value ? parseInt(document.getElementById('itemCustodian').value) : null,
     maintenance_schedule: document.getElementById('itemMaintenanceSchedule').value || null,
     next_maintenance_date: document.getElementById('itemNextMaintenance').value || null,
     service_provider: document.getElementById('itemServiceProvider').value || null
   };
+
+  if (isEdit) {
+    data.serial_number = document.getElementById('itemEditSerialNumber').value.trim() || null;
+  }
+
+  if (!isEdit) {
+    data.asset_count = Math.max(1, parseInt(document.getElementById('itemQuantity').value, 10) || 1);
+  }
+
   return data;
 }
 
@@ -646,16 +743,6 @@ async function saveItem(e) {
     return;
   }
 
-  if (isFixedAssetClassification(classification) && !data.property_tag) {
-    showToast('Property tag is required for Non-Consumable (Fixed Asset) items', 'error');
-    return;
-  }
-
-  if (data.property_tag && !isValidPropertyTagFormat(data.property_tag)) {
-    showToast('Property tag format is invalid. Use values like 2025-0001 or 2025/0001.', 'error');
-    return;
-  }
-
   if (isFixedAssetClassification(classification) && !data.custodian_id) {
     showToast('Assigned custodian is required for Non-Consumable (Fixed Asset) items', 'error');
     return;
@@ -673,7 +760,8 @@ async function saveItem(e) {
       }
     } else {
       const res = await API.createInventoryItem(data);
-      showToast('Item created successfully');
+      const createdCount = res?.data?.created_count || 1;
+      showToast(res?.message || (createdCount > 1 ? `${createdCount} assets created successfully` : 'Item created successfully'));
       openGeneratedDocument(res?.data?.generated_document, 'GRN');
       if (res?.data?.custodian_par) {
         openGeneratedDocument(res.data.custodian_par, 'PAR');
@@ -690,14 +778,16 @@ async function saveItem(e) {
 }
 
 async function archiveItem(id) {
-  if (!confirmAction('Archive this item? It will remain in the Archive for 30 days before being permanently deleted.')) return;
-  try {
-    const res = await API.archiveInventoryItem(id);
-    showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
-    loadItems();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  if (!await confirmAction('Archive this item? It will remain in the Archive for 30 days before being permanently deleted.', { variant: 'danger', title: 'Archive Item', confirmText: 'Archive' })) return;
+  await guardAsyncAction(async () => {
+    try {
+      const res = await API.archiveInventoryItem(id);
+      showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
+      loadItems();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }, { loadingText: 'Archiving...', lockKey: `archive-item-${id}` });
 }
 
 function openTransferModal(id) {
@@ -705,6 +795,10 @@ function openTransferModal(id) {
   if (!item) return;
   if (!canTransferAsset(item.asset_classification)) {
     showToast('This item cannot be transferred', 'error');
+    return;
+  }
+  if (item.status !== 'Available') {
+    showToast(`Only available assets can be transferred (current status: ${item.status})`, 'error');
     return;
   }
   document.getElementById('transferItemId').value = id;
@@ -715,6 +809,7 @@ function openTransferModal(id) {
   document.getElementById('transferReason').value = '';
   document.getElementById('transferDepartment').value = '';
   document.getElementById('transferLocation').value = '';
+  syncItemFormSearchableSelects();
   openModal('transferModal');
 }
 
@@ -735,8 +830,9 @@ async function submitTransfer(e) {
 function openDisposalModal(id) {
   const item = items.find(i => i.id === id);
   document.getElementById('disposalItemId').value = id;
-  document.getElementById('disposalQuantity').value = '1';
-  document.getElementById('disposalQuantity').max = item?.available_quantity || 1;
+  document.getElementById('disposalPropertyTag').value = item?.property_tag || '-';
+  const qtyGroup = document.getElementById('disposalQuantityGroup');
+  if (qtyGroup) qtyGroup.style.display = 'none';
   document.getElementById('disposalReason').value = '';
   openModal('disposalModal');
 }
@@ -744,9 +840,10 @@ function openDisposalModal(id) {
 async function submitDisposal(e) {
   e.preventDefault();
   try {
+    const itemId = parseInt(document.getElementById('disposalItemId').value, 10);
     const res = await API.createDisposal({
-      inventory_item_id: parseInt(document.getElementById('disposalItemId').value),
-      quantity: parseInt(document.getElementById('disposalQuantity').value),
+      inventory_item_id: itemId,
+      quantity: 1,
       reason: document.getElementById('disposalReason').value
     });
     showToast('Disposal request submitted');
@@ -773,6 +870,7 @@ function openMaintenanceModal(id) {
   document.getElementById('maintenanceDate').value = '';
   document.getElementById('maintenanceRequestedDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('maintenanceNotes').value = '';
+  refreshSearchableSelects(document.getElementById('maintenanceModal'));
   openModal('maintenanceModal');
 }
 
@@ -815,6 +913,9 @@ function populateReplacementPartSelect(parentId) {
     opt.textContent = `${part.item_name} (${part.item_code})`;
     select.appendChild(opt);
   });
+  if (typeof refreshSearchableSelects === 'function') {
+    refreshSearchableSelects(select);
+  }
 }
 
 function openComponentModal(id) {
@@ -873,6 +974,268 @@ async function submitComponent(e) {
   }
 }
 
+function displayCell(value) {
+  if (value == null || String(value).trim() === '') return '—';
+  return value;
+}
+
+function displayDetailValue(value) {
+  if (value == null || String(value).trim() === '') return '—';
+  return String(value);
+}
+
+function formatDetailDate(dateStr) {
+  if (!dateStr) return '—';
+  return formatDate(dateStr) || '—';
+}
+
+function formatDetailCurrency(value) {
+  if (value == null || value === '') return '—';
+  const num = parseFloat(value);
+  if (Number.isNaN(num)) return '—';
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderDetailRow(fields) {
+  return `
+    <div class="form-row">
+      ${fields.map((field) => `
+        <div class="form-group">
+          <label>${field.label}</label>
+          <div${field.wrap ? ' style="word-break:break-word;overflow-wrap:break-word;line-height:1.45;"' : ''}>${field.html ?? displayDetailValue(field.value)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderDetailSection(title, fields) {
+  const blocks = [];
+  let pair = [];
+
+  fields.forEach((field) => {
+    if (field.fullWidth) {
+      if (pair.length) {
+        blocks.push(renderDetailRow(pair));
+        pair = [];
+      }
+      blocks.push(`
+        <div class="form-group">
+          <label>${field.label}</label>
+          <div${field.wrap ? ' style="word-break:break-word;overflow-wrap:break-word;line-height:1.45;"' : ''}>${field.html ?? displayDetailValue(field.value)}</div>
+        </div>
+      `);
+      return;
+    }
+
+    pair.push(field);
+    if (pair.length === 2) {
+      blocks.push(renderDetailRow(pair));
+      pair = [];
+    }
+  });
+
+  if (pair.length) {
+    blocks.push(renderDetailRow(pair));
+  }
+
+  return `
+    <div class="asset-detail-section" style="margin-bottom:20px;">
+      <h4 style="font-size:14px;font-weight:600;margin:0 0 12px;">${title}</h4>
+      ${blocks.join('')}
+    </div>
+  `;
+}
+
+function renderAssetDetailSummary(item) {
+  const category = item.department_name || item.category_name;
+  return `
+    <div class="asset-detail-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:14px 16px;background:var(--gray-light,#f5f5f5);border-radius:8px;border:1px solid var(--border-color,#e5e5e5);">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Property Tag</div>
+        <div style="font-weight:600;font-size:15px;">${displayDetailValue(item.property_tag)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Batch ID</div>
+        <div style="font-weight:500;">${displayDetailValue(item.batch_id)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Serial Number</div>
+        <div style="font-weight:500;">${displayDetailValue(item.serial_number)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Status</div>
+        <div>${getStatusBadge(item.status)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Department</div>
+        <div style="font-weight:500;">${displayDetailValue(category)}</div>
+      </div>
+    </div>
+  `;
+}
+
+const ASSET_DETAIL_TABS = [
+  { key: 'general', panelId: 'assetDetailGeneral' },
+  { key: 'inventory', panelId: 'assetDetailInventory' },
+  { key: 'purchase', panelId: 'assetDetailPurchase' },
+  { key: 'assignment', panelId: 'assetDetailAssignment' },
+  { key: 'documents', panelId: 'assetDetailDocuments' },
+  { key: 'history', panelId: 'assetDetailHistory' },
+  { key: 'maintenance', panelId: 'assetDetailMaintenance' },
+  { key: 'transfers', panelId: 'assetDetailTransfers' },
+  { key: 'borrows', panelId: 'assetDetailBorrowHistory' },
+  { key: 'disposals', panelId: 'assetDetailDisposal' }
+];
+
+const ASSET_INVENTORY_DOCUMENT_TYPES = ['PAR', 'GRN', 'SAL'];
+
+function renderAssetDetailGeneral(item) {
+  return `
+    ${renderDetailSection('General Information', [
+      { label: 'Item Code (Model)', value: item.item_code },
+      { label: 'Item Name', value: item.item_name },
+      { label: 'Classification', value: formatClassificationDisplay(item.asset_classification) },
+      { label: 'Department', value: item.department_name || item.category_name }
+    ])}
+    ${renderDetailSection('Description', [
+      { label: 'Description', value: item.description, fullWidth: true, wrap: true }
+    ])}
+  `;
+}
+
+function renderAssetDetailInventory(item, replacements = [], linkedParts = []) {
+  const componentsHtml = canReplaceComponent(item.asset_classification)
+    ? renderComponentHistory(replacements, linkedParts)
+    : renderEmptyHistory('Component tracking is available for Non-Consumable (Fixed Asset) items only.');
+
+  return `
+    ${renderDetailSection('Inventory Details', [
+      { label: 'Property Tag', value: item.property_tag },
+      { label: 'Batch ID', value: item.batch_id },
+      { label: 'Serial Number', value: item.serial_number },
+      { label: 'Material', value: item.material },
+      { label: 'Condition', value: item.condition },
+      { label: 'Status', html: getStatusBadge(item.status) }
+    ])}
+    ${componentsHtml}
+  `;
+}
+
+function renderAssetDetailPurchase(item) {
+  return renderDetailSection('Purchase Information', [
+    { label: 'Supplier', value: item.supplier_name },
+    { label: 'Brand', value: item.brand },
+    { label: 'Model', value: item.model },
+    { label: 'Purchase Date', value: formatDetailDate(item.purchase_date) },
+    { label: 'Acquisition Date', value: formatDetailDate(item.acquisition_date || item.purchase_date) },
+    { label: 'Purchase Request (PR)', value: item.purchase_request_number },
+    { label: 'Purchase Order (PO)', value: item.purchase_order_number },
+    { label: 'Invoice Number', value: item.invoice_number },
+    { label: 'Unit Cost', value: formatDetailCurrency(item.unit_cost) }
+  ]);
+}
+
+function renderAssetDetailAssignment(item) {
+  return renderDetailSection('Assignment & Maintenance', [
+    { label: 'Department', value: item.department_name || item.category_name },
+    { label: 'Location', value: item.location_name },
+    { label: 'Assigned Custodian', value: item.custodian_name },
+    { label: 'Maintenance Schedule', value: item.maintenance_schedule },
+    { label: 'Next Maintenance Date', value: formatDetailDate(item.next_maintenance_date) },
+    { label: 'Service Provider', value: item.service_provider }
+  ]);
+}
+
+const ASSET_WORKFLOW_DOCUMENT_TYPES = [
+  { type: 'ABL', module: 'borrow', recordsKey: 'borrows' },
+  { type: 'TRF', module: 'transfer', recordsKey: 'transfers' },
+  { type: 'RDF', module: 'disposal', recordsKey: 'disposals' }
+];
+
+async function lookupDocumentSafe(type, module, transactionId) {
+  if (!transactionId) return null;
+  try {
+    const res = await API.lookupDocument(type, module, transactionId);
+    return res?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function getWorkflowDocumentTransactionId(record, module) {
+  if (!record) return null;
+  if (module === 'transfer') return record.transfer_request_id || record.id;
+  return record.id;
+}
+
+function uniqueDocuments(documents = []) {
+  const seen = new Set();
+  return documents
+    .filter((doc) => {
+      if (!doc?.id || seen.has(doc.id)) return false;
+      seen.add(doc.id);
+      return true;
+    })
+    .sort((a, b) => new Date(b.generated_at || 0) - new Date(a.generated_at || 0));
+}
+
+async function fetchAssetDocuments(itemId, borrows = [], transfers = [], disposals = []) {
+  const lookups = ASSET_INVENTORY_DOCUMENT_TYPES.map((type) =>
+    lookupDocumentSafe(type, 'inventory', itemId)
+  );
+
+  for (const spec of ASSET_WORKFLOW_DOCUMENT_TYPES) {
+    const records = spec.recordsKey === 'borrows'
+      ? borrows
+      : spec.recordsKey === 'transfers'
+        ? transfers
+        : disposals;
+    const transactionIds = [...new Set(
+      records
+        .map((record) => getWorkflowDocumentTransactionId(record, spec.module))
+        .filter(Boolean)
+    )];
+    for (const transactionId of transactionIds) {
+      lookups.push(lookupDocumentSafe(spec.type, spec.module, transactionId));
+    }
+  }
+
+  const results = await Promise.all(lookups);
+  return uniqueDocuments(results.filter(Boolean));
+}
+
+function renderAssetDocumentActions(docId) {
+  return `
+    <button class="btn-icon" onclick="API.openDocumentPreview(${docId})" title="Preview" aria-label="Preview"><i class="bi bi-eye"></i></button>
+    <button class="btn-icon" onclick="API.downloadDocumentPdf(${docId})" title="Download PDF" aria-label="Download PDF"><i class="bi bi-file-pdf"></i></button>
+  `;
+}
+
+function renderAssetDocuments(documents = []) {
+  if (!documents.length) {
+    return renderEmptyHistory('No official documents generated for this asset yet.');
+  }
+
+  return `<div class="table-responsive"><table class="data-table"><thead><tr>
+    <th>Document No.</th><th>Type</th><th>Related Module</th><th>Status</th><th>Generated By</th><th>Generated Date</th><th>Actions</th>
+  </tr></thead><tbody>
+    ${documents.map((doc) => `<tr>
+      <td>${doc.document_number || '—'}</td>
+      <td>${doc.document_type || '—'}</td>
+      <td>${doc.related_module || '—'}${doc.related_transaction_id ? ` #${doc.related_transaction_id}` : ''}</td>
+      <td>${doc.status || '—'}</td>
+      <td>${doc.generated_by_name || '—'}</td>
+      <td>${formatDate(doc.generated_at)}</td>
+      <td style="white-space:nowrap;">${renderAssetDocumentActions(doc.id)}</td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function renderEmptyHistory(message) {
+  return `<p style="font-size:13px;color:#666;margin:0;">${message}</p>`;
+}
+
 function renderComponentHistory(replacements, linkedParts) {
   const historyHtml = replacements.length
     ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Date</th><th>Old Component</th><th>New Component</th><th>Replaced By</th><th>Notes</th></tr></thead><tbody>
@@ -901,39 +1264,62 @@ function renderComponentHistory(replacements, linkedParts) {
   return `<h4 style="font-size:14px;margin-bottom:8px;">Replacement History</h4>${historyHtml}${linkedHtml}`;
 }
 
+function renderAssetTimeline(events = []) {
+  if (!events.length) {
+    return renderEmptyHistory('No asset history recorded yet.');
+  }
+
+  return `<div class="table-responsive"><table class="data-table"><thead><tr>
+    <th>Date</th><th>Action</th><th>Performed By</th><th>Reference</th><th>Property Tag</th><th>Department</th><th>Location</th>
+  </tr></thead><tbody>
+    ${events.map((event) => `<tr>
+      <td>${formatDate(event.date)}</td>
+      <td>${event.action || '—'}</td>
+      <td>${event.performed_by || '—'}</td>
+      <td>${event.reference_code || '—'}</td>
+      <td>${event.property_tag || '—'}</td>
+      <td>${event.department || '—'}</td>
+      <td>${event.location || '—'}</td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
 async function viewAssetDetails(id) {
   try {
-    const [itemRes, maintRes, transferRes, compRes, partsRes] = await Promise.all([
-      API.getInventoryItem(id),
+    const itemRes = await API.getInventoryItem(id);
+    const item = itemRes?.data;
+    if (!item) {
+      showToast('Item not found', 'error');
+      return;
+    }
+
+    const [maintRes, transferRes, borrowRes, disposalRes, compRes, partsRes, timelineRes] = await Promise.allSettled([
       API.getMaintenanceByAsset(id),
       API.getTransferHistory(id),
+      API.getBorrowHistory(id),
+      API.getDisposalsByAsset(id),
       API.getComponents(id),
-      API.getInventory({ parent_asset_id: id })
+      API.getInventory({ parent_asset_id: id }),
+      API.getInventoryTimeline(id)
     ]);
-    const item = itemRes.data;
-    const maintenance = maintRes?.data || [];
-    const transfers = transferRes?.data || [];
-    const replacements = compRes?.data || [];
-    const linkedParts = partsRes?.data || [];
 
-    document.getElementById('assetDetailTitle').textContent = `${item.item_name} (${item.item_code})`;
-    document.getElementById('assetDetailInfo').innerHTML = `
-      <div class="form-group"><label>Description</label><div>${item.description || '-'}</div></div>
-      <div class="form-row">
-        <div class="form-group"><label>Material</label><div>${item.material || '-'}</div></div>
-        <div class="form-group"><label>Property Tag</label><div>${item.property_tag || '-'}</div></div>
-        <div class="form-group"><label>Department</label><div>${item.department_name || '-'}</div></div>
-        <div class="form-group"><label>Location</label><div>${item.location_name || '-'}</div></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Status</label><div>${getStatusBadge(item.status)}</div></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Next Maintenance</label><div>${formatDate(item.next_maintenance_date)}</div></div>
-        <div class="form-group"><label>Maintenance Status</label><div>${item.maintenance_status || '-'}</div></div>
-        <div class="form-group"><label>Technician / Provider</label><div>${item.service_provider || '-'}</div></div>
-      </div>
-    `;
+    const maintenance = maintRes.status === 'fulfilled' ? (maintRes.value?.data || []) : [];
+    const transfers = transferRes.status === 'fulfilled' ? (transferRes.value?.data || []) : [];
+    const borrows = borrowRes.status === 'fulfilled' ? (borrowRes.value?.data || []) : [];
+    const disposals = disposalRes.status === 'fulfilled' ? (disposalRes.value?.data || []) : [];
+    const replacements = compRes.status === 'fulfilled' ? (compRes.value?.data || []) : [];
+    const linkedParts = partsRes.status === 'fulfilled' ? (partsRes.value?.data || []) : [];
+    const timeline = timelineRes.status === 'fulfilled' ? (timelineRes.value?.data || []) : [];
+    const documents = await fetchAssetDocuments(id, borrows, transfers, disposals);
+
+    document.getElementById('assetDetailTitle').textContent = item.item_name;
+    document.getElementById('assetDetailSummary').innerHTML = renderAssetDetailSummary(item);
+    document.getElementById('assetDetailGeneral').innerHTML = renderAssetDetailGeneral(item);
+    document.getElementById('assetDetailInventory').innerHTML = renderAssetDetailInventory(item, replacements, linkedParts);
+    document.getElementById('assetDetailPurchase').innerHTML = renderAssetDetailPurchase(item);
+    document.getElementById('assetDetailAssignment').innerHTML = renderAssetDetailAssignment(item);
+    document.getElementById('assetDetailDocuments').innerHTML = renderAssetDocuments(documents);
+    document.getElementById('assetDetailHistory').innerHTML = renderAssetTimeline(timeline);
 
     const upcoming = maintenance.filter(m => ['Pending', 'Approved', 'Scheduled', 'Ongoing', 'In Progress'].includes(m.status));
     const completed = maintenance.filter(m => m.status === 'Completed');
@@ -942,24 +1328,33 @@ async function viewAssetDetails(id) {
       <h4 style="font-size:14px;margin-bottom:8px;">Upcoming / Current</h4>
       ${upcoming.length ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>Type</th><th>Priority</th><th>Scheduled</th><th>Status</th><th>Technician</th></tr></thead><tbody>
         ${upcoming.map(m => `<tr><td>${m.transaction_code || '-'}</td><td>${m.maintenance_type}</td><td>${m.priority || '-'}</td><td>${formatDate(m.scheduled_date)}</td><td>${getStatusBadge(m.status)}</td><td>${m.technician || m.service_provider || '-'}</td></tr>`).join('')}
-      </tbody></table></div>` : '<p style="font-size:13px;color:#666;">No upcoming maintenance.</p>'}
+      </tbody></table></div>` : renderEmptyHistory('No upcoming maintenance.')}
       <h4 style="font-size:14px;margin:16px 0 8px;">Previous Maintenance</h4>
       ${completed.length ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>Type</th><th>Completed</th><th>Technician</th><th>Remarks</th></tr></thead><tbody>
         ${completed.map(m => `<tr><td>${m.transaction_code || '-'}</td><td>${m.maintenance_type}</td><td>${formatDate(m.completed_date)}</td><td>${m.technician || m.service_provider || '-'}</td><td>${m.completion_remarks || m.description || '-'}</td></tr>`).join('')}
-      </tbody></table></div>` : '<p style="font-size:13px;color:#666;">No maintenance history yet.</p>'}
+      </tbody></table></div>` : renderEmptyHistory('No maintenance history yet.')}
     `;
 
     document.getElementById('assetDetailTransfers').innerHTML = transfers.length
       ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>From Dept</th><th>To Dept</th><th>From Location</th><th>To Location</th><th>Date</th><th>Approved By</th></tr></thead><tbody>
         ${transfers.map(t => `<tr><td>${t.transaction_code}</td><td>${t.from_department_name || '-'}</td><td>${t.to_department_name || '-'}</td><td>${t.from_location_name || '-'}</td><td>${t.to_location_name || '-'}</td><td>${formatDate(t.transfer_date)}</td><td>${t.approved_by_name || '-'}</td></tr>`).join('')}
       </tbody></table></div>`
-      : '<p style="font-size:13px;color:#666;">No transfer history yet.</p>';
+      : renderEmptyHistory('No transfer history yet.');
 
-    document.getElementById('assetDetailComponents').innerHTML = canReplaceComponent(item.asset_classification)
-      ? renderComponentHistory(replacements, linkedParts)
-      : '<p style="font-size:13px;color:#666;">Component tracking is available for Non-Consumable (Fixed Asset) items only.</p>';
+    document.getElementById('assetDetailBorrowHistory').innerHTML = borrows.length
+      ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>Property Tag</th><th>Borrower</th><th>Department</th><th>Borrow Date</th><th>Expected Return</th><th>Status</th><th>Return Date</th><th>Condition</th></tr></thead><tbody>
+        ${borrows.map(b => `<tr><td>${b.transaction_code}</td><td>${b.property_tag || item.property_tag || '-'}</td><td>${b.borrower_name || '-'}</td><td>${b.borrower_department || '-'}</td><td>${formatDate(b.borrow_date)}</td><td>${formatDate(b.expected_return_date)}</td><td>${getStatusBadge(b.status)}</td><td>${formatDate(b.return_date)}</td><td>${b.return_condition || '-'}</td></tr>`).join('')}
+      </tbody></table></div>`
+      : renderEmptyHistory('No borrow history yet.');
 
-    switchAssetDetailTab('maintenance');
+    document.getElementById('assetDetailDisposal').innerHTML = disposals.length
+      ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>Property Tag</th><th>Reason</th><th>Method</th><th>Status</th><th>Requested By</th><th>Disposal Date</th></tr></thead><tbody>
+        ${disposals.map(d => `<tr><td>${d.transaction_code}</td><td>${d.property_tag || item.property_tag || '-'}</td><td>${d.reason || '-'}</td><td>${d.disposal_method || '-'}</td><td>${getStatusBadge(d.status)}</td><td>${d.requested_by_name || '-'}</td><td>${formatDate(d.disposal_date)}</td></tr>`).join('')}
+      </tbody></table></div>`
+      : renderEmptyHistory('No disposal history yet.');
+
+    switchAssetDetailTab('general');
+    finishTableRender(document.getElementById('assetDetailModal'));
     openModal('assetDetailModal');
   } catch (err) {
     showToast(err.message, 'error');
@@ -967,12 +1362,16 @@ async function viewAssetDetails(id) {
 }
 
 function switchAssetDetailTab(tab) {
-  document.querySelectorAll('#assetDetailModal .nav-tab-custom').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.detailTab === tab);
+  const activeTab = ASSET_DETAIL_TABS.some((entry) => entry.key === tab) ? tab : 'general';
+
+  document.querySelectorAll('#assetDetailModal .nav-tab-custom').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.detailTab === activeTab);
   });
-  document.getElementById('assetDetailMaintenance').style.display = tab === 'maintenance' ? 'block' : 'none';
-  document.getElementById('assetDetailTransfers').style.display = tab === 'transfers' ? 'block' : 'none';
-  document.getElementById('assetDetailComponents').style.display = tab === 'components' ? 'block' : 'none';
+
+  ASSET_DETAIL_TABS.forEach((entry) => {
+    const panel = document.getElementById(entry.panelId);
+    if (panel) panel.style.display = entry.key === activeTab ? 'block' : 'none';
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initInventoryPage);

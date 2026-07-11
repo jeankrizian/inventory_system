@@ -69,7 +69,7 @@ async function loadBackupHistory() {
         <td>${formatBackupDate(backup.created_at)}</td>
         <td>${formatBackupSize(backup.file_size)}</td>
         <td>${backup.created_by_name || '-'}</td>
-        <td style="display:flex;gap:8px;flex-wrap:wrap;">
+        <td class="col-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn-outline-custom btn-sm-custom" type="button" onclick="downloadBackupFile(${backup.id})">
             <i class="bi bi-download"></i> Download
           </button>
@@ -83,6 +83,7 @@ async function loadBackupHistory() {
         </td>
       </tr>
     `).join('');
+    finishTableRender(body.closest('.table-responsive'));
   } catch (err) {
     body.innerHTML = `<tr><td colspan="5">${err.message || 'Unable to load backup history.'}</td></tr>`;
   }
@@ -92,26 +93,18 @@ let currentSettingsUser = null;
 
 async function createBackup() {
   const btn = document.getElementById('createBackupBtn');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Creating...';
-  }
-
-  try {
-    const res = await API.createBackup();
-    showToast(res?.message || 'Backup created successfully.');
-    await loadBackupHistory();
-    if (res?.data?.id) {
-      API.downloadBackup(res.data.id);
+  await withSubmitGuard(btn, async () => {
+    try {
+      const res = await API.createBackup();
+      showToast(res?.message || 'Backup created successfully.');
+      await loadBackupHistory();
+      if (res?.data?.id) {
+        API.downloadBackup(res.data.id);
+      }
+    } catch (err) {
+      showToast(err.message || 'Unable to create backup.', 'error');
     }
-  } catch (err) {
-    showToast(err.message || 'Unable to create backup.', 'error');
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-database-down"></i> Create Backup';
-    }
-  }
+  }, { loadingText: 'Processing...' });
 }
 
 function downloadBackupFile(id) {
@@ -119,27 +112,31 @@ function downloadBackupFile(id) {
 }
 
 async function deleteBackupFile(id, fileName) {
-  if (!confirmAction(`Delete backup "${fileName}"?`)) return;
+  if (!await confirmAction(`Delete backup "${fileName}"?`, { variant: 'danger', title: 'Delete Backup', confirmText: 'Delete' })) return;
 
-  try {
-    const res = await API.deleteBackup(id);
-    showToast(res?.message || 'Backup deleted successfully.');
-    await loadBackupHistory();
-  } catch (err) {
-    showToast(err.message || 'Unable to delete backup.', 'error');
-  }
+  await guardAsyncAction(async () => {
+    try {
+      const res = await API.deleteBackup(id);
+      showToast(res?.message || 'Backup deleted successfully.');
+      await loadBackupHistory();
+    } catch (err) {
+      showToast(err.message || 'Unable to delete backup.', 'error');
+    }
+  }, { loadingText: 'Deleting...', lockKey: `delete-backup-${id}` });
 }
 
 async function restoreBackupFile(id, fileName) {
-  if (!confirmAction(`Restore database from "${fileName}"? This will overwrite current data.`)) return;
+  if (!await confirmAction(`Restore database from "${fileName}"? This will overwrite current data.`, { variant: 'danger', title: 'Restore Database', confirmText: 'Restore' })) return;
 
-  try {
-    const res = await API.restoreBackup(id);
-    showToast(res?.message || 'Database restored successfully.');
-    await loadBackupHistory();
-  } catch (err) {
-    showToast(err.message || 'Unable to restore backup.', 'error');
-  }
+  await guardAsyncAction(async () => {
+    try {
+      const res = await API.restoreBackup(id);
+      showToast(res?.message || 'Database restored successfully.');
+      await loadBackupHistory();
+    } catch (err) {
+      showToast(err.message || 'Unable to restore backup.', 'error');
+    }
+  }, { loadingText: 'Processing...', lockKey: `restore-backup-${id}` });
 }
 
 async function restoreBackupFromUpload(file) {
@@ -149,22 +146,24 @@ async function restoreBackupFromUpload(file) {
     return;
   }
 
-  if (!confirmAction(`Restore database from "${file.name}"? This will overwrite current data.`)) {
+  if (!await confirmAction(`Restore database from "${file.name}"? This will overwrite current data.`, { variant: 'danger', title: 'Restore Database', confirmText: 'Restore' })) {
     document.getElementById('restoreBackupFile').value = '';
     return;
   }
 
-  try {
-    const content = await file.text();
-    const res = await API.restoreBackupUpload(content);
-    showToast(res?.message || 'Database restored successfully.');
-    await loadBackupHistory();
-  } catch (err) {
-    showToast(err.message || 'Unable to restore backup.', 'error');
-  } finally {
-    const input = document.getElementById('restoreBackupFile');
-    if (input) input.value = '';
-  }
+  await guardAsyncAction(async () => {
+    try {
+      const content = await file.text();
+      const res = await API.restoreBackupUpload(content);
+      showToast(res?.message || 'Database restored successfully.');
+      await loadBackupHistory();
+    } catch (err) {
+      showToast(err.message || 'Unable to restore backup.', 'error');
+    } finally {
+      const input = document.getElementById('restoreBackupFile');
+      if (input) input.value = '';
+    }
+  }, { loadingText: 'Processing...', lockKey: 'restore-backup-upload' });
 }
 
 function bindBackupEvents(user) {

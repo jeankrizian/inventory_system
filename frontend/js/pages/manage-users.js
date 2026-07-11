@@ -2,6 +2,7 @@ let users = [];
 let roles = [];
 let departments = [];
 let currentUser = null;
+let usersTableSelection = null;
 
 async function initManageUsers() {
   currentUser = await initLayout('manage-users');
@@ -37,11 +38,14 @@ async function initManageUsers() {
   document.getElementById('searchInput').addEventListener('input', debounce(loadUsers, 300));
   document.getElementById('filterRole').addEventListener('change', loadUsers);
   document.getElementById('filterStatus').addEventListener('change', loadUsers);
-  document.getElementById('userForm').addEventListener('submit', saveUser);
+  bindGuardedFormSubmit(document.getElementById('userForm'), saveUser, { loadingText: 'Saving...' });
   document.getElementById('userRole').addEventListener('change', updateAssignmentFields);
+  initActionMenus();
+  initUsersTableSelection();
 
   await Promise.all([loadRoles(), loadDepartments()]);
   await loadUsers();
+  initSearchableSelects(document);
 }
 
 async function loadDepartments() {
@@ -82,6 +86,9 @@ async function loadRoles() {
       filterEl.innerHTML += `<option value="${r.name}">${label}</option>`;
       roleEl.innerHTML += `<option value="${r.name}">${label}</option>`;
     });
+    if (typeof refreshSearchableSelects === 'function') {
+      refreshSearchableSelects([filterEl, roleEl]);
+    }
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -105,14 +112,79 @@ async function loadUsers() {
   }
 }
 
+function initUsersTableSelection() {
+  usersTableSelection = createTableSelection({
+    container: 'usersTable',
+    getRowId: (user) => user.id,
+    getVisibleRows: () => users,
+    isRowSelectable: (user) => user.id !== currentUser.id,
+    bulkActions: [
+      {
+        id: 'archive',
+        label: 'Archive Selected',
+        icon: 'bi-archive',
+        danger: true,
+        onClick: bulkArchiveUsers
+      }
+    ]
+  });
+}
+
+async function bulkArchiveUsers(ids) {
+  const archivableIds = ids.filter((id) => id !== currentUser.id);
+  if (!archivableIds.length) {
+    showToast('No archivable users selected.', 'error');
+    return;
+  }
+
+  if (!await confirmAction(
+    `Archive ${archivableIds.length} selected user(s)? They will remain in the Archive for 30 days before being permanently deleted.`,
+    { variant: 'danger', title: 'Archive Users', confirmText: 'Archive' }
+  )) return;
+
+  await guardAsyncAction(async () => {
+    let success = 0;
+    let failed = 0;
+    for (const id of archivableIds) {
+      try {
+        await API.archiveManagedUser(id);
+        success += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    if (success) {
+      showToast(success === 1 ? '1 user archived.' : `${success} users archived.`);
+    }
+    if (failed) {
+      showToast(failed === 1 ? '1 user could not be archived.' : `${failed} users could not be archived.`, 'error');
+    }
+    usersTableSelection?.clearSelection();
+    loadUsers();
+  }, { loadingText: 'Archiving...', lockKey: 'bulk-archive-users' });
+}
+
 function formatAssignment(value) {
   return value && String(value).trim() ? value : '—';
 }
 
+function renderUserActions(u) {
+  const items = [
+    { label: 'Edit', icon: 'bi-pencil', handler: `editUser(${u.id})` }
+  ];
+  if (u.id !== currentUser.id) {
+    items.push({ label: 'Archive', icon: 'bi-archive', danger: true, handler: `archiveUser(${u.id})` });
+  }
+  return renderActionMenuCell(`user-actions-${u.id}`, items);
+}
+
 function renderUsers() {
   const el = document.getElementById('usersTable');
+  usersTableSelection?.pruneHiddenSelections();
+
   if (!users.length) {
     el.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i>No users found</div>';
+    usersTableSelection?.bindAfterRender(el);
     return;
   }
 
@@ -120,6 +192,7 @@ function renderUsers() {
     <table class="data-table">
       <thead>
         <tr>
+          ${usersTableSelection?.renderCheckboxHeader() || ''}
           <th>Full Name</th><th>Username</th><th>Email</th><th>Role</th>
           <th>Assigned Department</th>
           <th>Status</th><th>Date Created</th><th>Actions</th>
@@ -127,7 +200,8 @@ function renderUsers() {
       </thead>
       <tbody>
         ${users.map(u => `
-          <tr>
+          <tr${usersTableSelection?.renderRowAttrs(u) || ''}>
+            ${usersTableSelection?.renderCheckboxCell(u) || ''}
             <td>${u.full_name}</td>
             <td>${u.username}</td>
             <td>${u.email}</td>
@@ -135,15 +209,14 @@ function renderUsers() {
             <td>${formatAssignment(u.assigned_department_name)}</td>
             <td>${u.is_active ? 'Active' : 'Inactive'}</td>
             <td>${formatDate(u.created_at)}</td>
-            <td>
-              <button class="btn-icon" onclick="editUser(${u.id})" title="Edit"><i class="bi bi-pencil"></i></button>
-              ${u.id !== currentUser.id ? `<button class="btn-icon danger" onclick="archiveUser(${u.id})" title="Archive"><i class="bi bi-archive"></i></button>` : ''}
-            </td>
+            <td>${renderUserActions(u)}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
+  finishTableRender(el);
+  usersTableSelection?.bindAfterRender(el);
 }
 
 function openAddUser() {
@@ -154,6 +227,7 @@ function openAddUser() {
   document.getElementById('passwordLabel').textContent = 'Password *';
   document.getElementById('passwordHint').style.display = 'none';
   updateAssignmentFields();
+  refreshSearchableSelects(document.getElementById('userModal'));
   openModal('userModal');
 }
 
@@ -173,6 +247,7 @@ function editUser(id) {
   document.getElementById('passwordLabel').textContent = 'Password';
   document.getElementById('passwordHint').style.display = 'block';
   updateAssignmentFields();
+  refreshSearchableSelects(document.getElementById('userModal'));
   openModal('userModal');
 }
 
@@ -231,14 +306,16 @@ async function saveUser(e) {
 }
 
 async function archiveUser(id) {
-  if (!confirmAction('Archive this user? It will remain in the Archive for 30 days before being permanently deleted.')) return;
-  try {
-    const res = await API.archiveManagedUser(id);
-    showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
-    loadUsers();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  if (!await confirmAction('Archive this user? It will remain in the Archive for 30 days before being permanently deleted.', { variant: 'danger', title: 'Archive User', confirmText: 'Archive' })) return;
+  await guardAsyncAction(async () => {
+    try {
+      const res = await API.archiveManagedUser(id);
+      showToast(res?.message || 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
+      loadUsers();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }, { loadingText: 'Archiving...', lockKey: `archive-user-${id}` });
 }
 
 document.addEventListener('DOMContentLoaded', initManageUsers);

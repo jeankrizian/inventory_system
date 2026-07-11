@@ -1,8 +1,9 @@
 const pool = require('../config/database');
+const InventoryModel = require('./InventoryModel');
 const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
-const { appendInventoryItemFieldFilters } = require('../utils/inventoryReportFilterSql');
+const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const MaintenanceModel = {
   _baseSelect() {
@@ -26,16 +27,16 @@ const MaintenanceModel = {
     const params = [];
     if (filters.inventory_item_id) { sql += ' AND m.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
     if (filters.status) { sql += ' AND m.status LIKE ?'; params.push(`%${filters.status}%`); }
-    sql += appendInventoryItemFieldFilters(filters, 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
+    sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
     if (filters.transaction_code) { sql += ' AND m.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
     if (filters.maintenance_type) { sql += ' AND m.maintenance_type LIKE ?'; params.push(`%${filters.maintenance_type}%`); }
     if (filters.service_provider) { sql += ' AND m.service_provider LIKE ?'; params.push(`%${filters.service_provider}%`); }
     if (filters.scheduled_date) { sql += ' AND DATE(m.scheduled_date) = ?'; params.push(filters.scheduled_date); }
     if (filters.priority) { sql += ' AND m.priority LIKE ?'; params.push(`%${filters.priority}%`); }
     if (filters.search) {
-      sql += ' AND (m.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ?)';
+      sql += ' AND (m.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR i.property_tag LIKE ?)';
       const term = `%${filters.search}%`;
-      params.push(term, term, term);
+      params.push(term, term, term, term);
     }
     sql += appendDateRangeSql(filters, 'm.scheduled_date', params);
     const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
@@ -90,6 +91,13 @@ const MaintenanceModel = {
         admin_remarks = COALESCE(?, admin_remarks) WHERE id = ? AND status = 'Pending'`,
       [userId, remarks, id]
     );
+    const record = await this.findById(id);
+    if (record) {
+      const updated = await InventoryModel.setUnderMaintenance(record.inventory_item_id, 'Scheduled');
+      if (!updated) {
+        throw new Error('Asset is not available for maintenance');
+      }
+    }
   },
 
   async reject(id, userId, reason) {
@@ -117,10 +125,10 @@ const MaintenanceModel = {
     );
     const record = await this.findById(id);
     if (record) {
-      await pool.query(
-        `UPDATE inventory_items SET status = 'Under Maintenance', maintenance_status = 'In Progress' WHERE id = ?`,
-        [record.inventory_item_id]
-      );
+      const updated = await InventoryModel.setUnderMaintenance(record.inventory_item_id, 'In Progress');
+      if (!updated) {
+        throw new Error('Asset is not available for maintenance');
+      }
     }
   },
 
@@ -142,13 +150,13 @@ const MaintenanceModel = {
     );
     const record = await this.findById(id);
     if (record) {
-      await pool.query(
-        `UPDATE inventory_items SET maintenance_status = 'Completed',
-         next_maintenance_date = COALESCE(?, next_maintenance_date),
-         status = CASE WHEN available_quantity > 0 THEN 'Available' ELSE status END
-         WHERE id = ?`,
-        [data.next_maintenance_date, record.inventory_item_id]
-      );
+      if (data.next_maintenance_date) {
+        await pool.query(
+          `UPDATE inventory_items SET next_maintenance_date = ? WHERE id = ?`,
+          [data.next_maintenance_date, record.inventory_item_id]
+        );
+      }
+      await InventoryModel.recalculateStatusAfterMaintenance(record.inventory_item_id);
     }
   },
 

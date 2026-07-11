@@ -1,12 +1,26 @@
 const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
-const { appendBorrowInventoryExistsFilters } = require('../utils/inventoryReportFilterSql');
+const { appendBorrowInventoryExistsFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const BorrowModel = {
   async getAll(filters = {}) {
     let sql = `
-      SELECT bt.*, u.full_name AS approver_name
+      SELECT bt.*, u.full_name AS approver_name,
+        (
+          SELECT GROUP_CONCAT(DISTINCT i.item_name ORDER BY i.item_name SEPARATOR ', ')
+          FROM borrow_items bi
+          JOIN inventory_items i ON i.id = bi.inventory_item_id
+          WHERE bi.borrow_transaction_id = bt.id
+        ) AS item_names,
+        (
+          SELECT GROUP_CONCAT(DISTINCT i.property_tag ORDER BY i.property_tag SEPARATOR ', ')
+          FROM borrow_items bi
+          JOIN inventory_items i ON i.id = bi.inventory_item_id
+          WHERE bi.borrow_transaction_id = bt.id
+            AND i.property_tag IS NOT NULL
+            AND i.property_tag != ''
+        ) AS property_tags
       FROM borrow_transactions bt
       LEFT JOIN users u ON bt.approved_by = u.id
       WHERE 1=1`;
@@ -41,7 +55,7 @@ const BorrowModel = {
       sql += ' AND DATE(bt.borrow_date) = ?';
       params.push(filters.borrow_date);
     }
-    sql += appendBorrowInventoryExistsFilters(filters, 'bt', params);
+    sql += appendBorrowInventoryExistsFilters(inventoryFieldFilters(filters), 'bt', params);
     if (filters.search) {
       sql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ? OR bt.purpose LIKE ?)';
       const term = `%${filters.search}%`;
@@ -75,7 +89,7 @@ const BorrowModel = {
     if (!transaction) return null;
 
     const [items] = await pool.query(
-      `SELECT bi.*, i.item_code, i.item_name, i.available_quantity,
+      `SELECT bi.*, i.item_code, i.item_name, i.property_tag,
               i.department_id, i.location_id
        FROM borrow_items bi
        JOIN inventory_items i ON bi.inventory_item_id = i.id
@@ -93,12 +107,14 @@ const BorrowModel = {
 
       const [result] = await connection.query(
         `INSERT INTO borrow_transactions
-         (transaction_code, borrower_id, borrower_name, borrower_department, purpose,
-          borrow_date, expected_return_date, status, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (transaction_code, borrower_id, requested_by, borrower_name, borrower_department, borrower_department_id,
+          purpose, borrow_date, expected_return_date, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          data.transaction_code, data.borrower_id, data.borrower_name,
-          data.borrower_department || null, data.purpose || null,
+          data.transaction_code, data.borrower_id, data.requested_by || data.borrower_id,
+          data.borrower_name,
+          data.borrower_department || null, data.borrower_department_id || null,
+          data.purpose || null,
           data.borrow_date, data.expected_return_date || null,
           data.status || 'Pending', data.notes || null
         ]
@@ -295,6 +311,23 @@ const BorrowModel = {
     }
     const [rows] = await pool.query(sql, params);
     return Number(rows[0]?.count ?? 0);
+  },
+
+  async getByAsset(inventoryItemId) {
+    const [rows] = await pool.query(
+      `SELECT bt.id, bt.transaction_code, bt.borrower_name, bt.borrower_department,
+              bt.borrow_date, bt.expected_return_date, bt.status, bt.purpose,
+              rt.transaction_code AS return_code, rt.return_date, rt.condition AS return_condition,
+              ru.full_name AS returned_by_name
+       FROM borrow_items bi
+       JOIN borrow_transactions bt ON bi.borrow_transaction_id = bt.id
+       LEFT JOIN return_transactions rt ON rt.borrow_transaction_id = bt.id
+       LEFT JOIN users ru ON rt.returned_by = ru.id
+       WHERE bi.inventory_item_id = ?
+       ORDER BY bt.borrow_date DESC, bt.created_at DESC`,
+      [inventoryItemId]
+    );
+    return rows;
   }
 };
 

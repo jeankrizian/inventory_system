@@ -15,7 +15,10 @@ router.use(requireAuth);
 
 router.get('/', BorrowController.getAll);
 router.get('/borrowable-items', requireSubmitBorrow, BorrowController.getBorrowableItems);
+router.get('/borrowable-models/:itemCode/assets', requireSubmitBorrow, BorrowController.getModelAssets);
+router.post('/preview-allocation', requireSubmitBorrow, BorrowController.previewAllocation);
 router.get('/returns', requireViewReturnHistory, BorrowController.getReturns);
+router.get('/asset/:inventoryItemId/history', BorrowController.getHistoryByAsset);
 router.get('/:id', BorrowController.getById);
 router.post('/', [
   requireSubmitBorrow,

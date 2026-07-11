@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orders - Cavite Institute Property Management System</title>
+  <title>Borrow Requests - Cavite Institute Property Management System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -23,8 +23,7 @@
       <form id="borrowForm">
         <div class="modal-body-custom">
           <div class="form-row">
-            <div class="form-group"><label>Borrower Name *</label><input type="text" class="form-control-custom" id="borrowerName" required readonly></div>
-            <div class="form-group"><label>Department</label><input type="text" class="form-control-custom" id="borrowerDept"></div>
+            <div class="form-group" style="flex:1"><label>Borrower Name *</label><input type="text" class="form-control-custom" id="borrowerName" required readonly></div>
           </div>
           <div class="form-row">
             <div class="form-group"><label>Borrow Date *</label><input type="date" class="form-control-custom" id="borrowDate" required></div>
@@ -38,11 +37,12 @@
               <div class="form-group" style="flex:2"><label>Item</label>
                 <div class="borrow-item-combobox">
                   <input type="text" class="form-control-custom borrow-item-select" placeholder="Select item..." autocomplete="off" required>
-                  <input type="hidden" class="borrow-item-id">
+                  <input type="hidden" class="borrow-item-code">
                   <div class="borrow-item-dropdown"></div>
                 </div>
+                <div class="borrow-item-available" style="font-size:12px;color:#666;margin-top:4px;">Available: —</div>
               </div>
-              <div class="form-group"><label>Qty</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
+              <div class="form-group"><label>Quantity</label><input type="number" class="form-control-custom borrow-item-qty" value="1" min="1" required></div>
             </div>
           </div>
           <button type="button" class="btn-outline-custom btn-sm-custom mt-2" onclick="addBorrowItemRow()"><i class="bi bi-plus"></i> Add Item</button>
@@ -52,6 +52,24 @@
           <button type="submit" class="btn-primary-custom">Submit Request</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Must render after borrowModal so Confirm stacks above the request form when both are open -->
+  <div class="modal-overlay" id="borrowConfirmModal">
+    <div class="modal-content-custom" style="max-width:520px;">
+      <div class="modal-header-custom">
+        <h3>Confirm Borrow</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('borrowConfirmModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="modal-body-custom">
+        <p style="font-size:13px;margin-bottom:12px;">Review the items and quantities for your borrow request:</p>
+        <div id="borrowConfirmTags" style="font-size:13px;max-height:220px;overflow:auto;"></div>
+      </div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn-outline-custom" onclick="closeModal('borrowConfirmModal')">Back</button>
+        <button type="button" class="btn-primary-custom" id="borrowConfirmSubmitBtn">Confirm</button>
+      </div>
     </div>
   </div>
 
@@ -83,12 +101,29 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="borrowDetailModal" data-close-on-backdrop="true">
+    <div class="modal-content-custom" style="max-width:560px;">
+      <div class="modal-header-custom">
+        <h3>Borrow Details</h3>
+        <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('borrowDetailModal')"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="modal-body-custom" id="borrowDetailBody" style="font-size:13px;"></div>
+      <div class="modal-footer-custom">
+        <button type="button" class="btn-outline-custom" onclick="closeModal('borrowDetailModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/api.js"></script>
   <script src="/js/auth.js"></script>
+  <script src="/js/submitGuard.js"></script>
+  <script src="/js/actionMenu.js"></script>
+  <script src="/js/tableScroll.js"></script>
   <script src="/js/components/layout.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/assetClassification.js"></script>
   <script src="/js/itemAvailability.js"></script>
+  <script src="/js/searchableSelect.js"></script>
   <script src="/js/pages/orders.js"></script>
 </body>
 </html>

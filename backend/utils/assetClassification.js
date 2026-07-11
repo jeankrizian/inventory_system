@@ -14,6 +14,10 @@ const LEGACY_FIXED_ASSET = 'Fixed Asset';
 const PROPERTY_TAG_MAX_LENGTH = 50;
 const PROPERTY_TAG_PATTERN = /^[\w][\w\-/.]*$/;
 
+function getAssetCreateCount(body) {
+  return Math.max(1, parseInt(body?.asset_count ?? body?.quantity, 10) || 1);
+}
+
 function normalizePropertyTag(value) {
   if (value == null) return null;
   const trimmed = String(value).trim();
@@ -23,6 +27,7 @@ function normalizePropertyTag(value) {
 function isValidPropertyTagFormat(value) {
   if (!value) return true;
   if (value.length > PROPERTY_TAG_MAX_LENGTH) return false;
+  if (/^\d{8}-\d{6}$/.test(value)) return true;
   return PROPERTY_TAG_PATTERN.test(value);
 }
 
@@ -155,15 +160,16 @@ function validateInventoryClassification(body, options = {}) {
   }
 
   const propertyTag = normalizePropertyTag(body.property_tag);
+  const skipPropertyTag = Boolean(options.skipPropertyTag);
 
-  if (requiresPropertyTag(classification) && !propertyTag) {
+  if (!skipPropertyTag && requiresPropertyTag(classification) && !propertyTag) {
     return { valid: false, message: 'Property tag is required for Non-Consumable (Fixed Asset) items' };
   }
 
   if (propertyTag && !isValidPropertyTagFormat(propertyTag)) {
     return {
       valid: false,
-      message: 'Property tag format is invalid. Use values like 2025-0001 or 2025/0001.'
+      message: 'Property tag format is invalid. Use YYYYMMDD-000001.'
     };
   }
 
@@ -172,6 +178,25 @@ function validateInventoryClassification(body, options = {}) {
   }
 
   return { valid: true, classification };
+}
+
+function validateBulkAssetCreate(body, options = {}) {
+  const count = getAssetCreateCount(body);
+  if (count < 1) {
+    return { valid: false, message: 'At least one asset is required' };
+  }
+  if (count > 500) {
+    return { valid: false, message: 'Cannot create more than 500 assets at once' };
+  }
+
+  const validationBody = {
+    ...body,
+    property_tag: body.property_tag || null
+  };
+  const base = validateInventoryClassification(validationBody, { ...options, skipPropertyTag: true });
+  if (!base.valid) return base;
+
+  return { valid: true, classification: base.classification, asset_count: count };
 }
 
 module.exports = {
@@ -202,5 +227,7 @@ module.exports = {
   normalizePropertyTag,
   isValidPropertyTagFormat,
   sanitizeInventoryByClassification,
-  validateInventoryClassification
+  validateInventoryClassification,
+  validateBulkAssetCreate,
+  getAssetCreateCount
 };

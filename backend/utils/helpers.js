@@ -10,14 +10,16 @@ function generateCode(prefix) {
   return `${prefix}-${y}${m}${d}-${rand}`;
 }
 
+const { computeInventoryStatus } = require('./inventoryStatusService');
+
 /**
- * Update inventory item status based on quantities
+ * @deprecated Use computeInventoryStatus from inventoryStatusService
  */
 function computeItemStatus(availableQty, totalQty, threshold) {
-  if (availableQty <= 0) return 'Out of Stock';
-  if (availableQty <= threshold) return 'Low Stock';
-  if (availableQty < totalQty) return 'Borrowed';
-  return 'Available';
+  return computeInventoryStatus({
+    available_quantity: availableQty,
+    low_stock_threshold: threshold
+  });
 }
 
-module.exports = { generateCode, computeItemStatus };
+module.exports = { generateCode, computeItemStatus, computeInventoryStatus };

@@ -1,7 +1,14 @@
 const pool = require('../config/database');
-const { computeItemStatus } = require('../utils/helpers');
+const { computeInventoryStatus, recalculateInventoryStatus, preserveStatusOnEdit } = require('../utils/inventoryStatusService');
 const { appendInventoryScopeSql, isInventoryScopeDenied } = require('../utils/roleHelpers');
 const { generateNextItemCode } = require('../utils/itemCodeGenerator');
+const {
+  generateAutoPropertyTags,
+  validatePropertyTagsUnique
+} = require('../utils/propertyTagGenerator');
+const { validateSerialNumberUnique } = require('../utils/serialNumberValidator');
+const { generateNextBatchId } = require('../utils/batchIdGenerator');
+const { requiresPropertyTag, normalizeClassification } = require('../utils/assetClassification');
 const { isItemAvailableForBorrow, getItemUnavailableReason } = require('../utils/itemAvailability');
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const {
@@ -13,7 +20,6 @@ const EMPTY_INVENTORY_STATS = {
   total_items: 0,
   available_items: 0,
   borrowed_items: 0,
-  low_stock: 0,
   under_maintenance: 0,
   disposed: 0
 };
@@ -23,25 +29,34 @@ function normalizeInventoryStats(row = {}) {
     total_items: Number(row.total_items ?? 0),
     available_items: Number(row.available_items ?? 0),
     borrowed_items: Number(row.borrowed_items ?? 0),
-    low_stock: Number(row.low_stock ?? 0),
     under_maintenance: Number(row.under_maintenance ?? 0),
     disposed: Number(row.disposed ?? 0)
   };
 }
 
+const REMOVED_INVENTORY_FIELDS = [
+  'quantity',
+  'available_quantity',
+  'unit',
+  'low_stock_threshold',
+  'acquisition_cost'
+];
+
 function mapItem(row) {
 
   if (!row) return null;
 
-  return {
-
+  const mapped = {
     ...row,
-
     category_id: row.department_id,
-
     category_name: row.department_name
-
   };
+
+  for (const field of REMOVED_INVENTORY_FIELDS) {
+    delete mapped[field];
+  }
+
+  return mapped;
 
 }
 
@@ -79,11 +94,13 @@ const InventoryModel = {
 
     if (filters.search) {
 
-      sql += ` AND (i.item_code LIKE ? OR i.item_name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.property_tag LIKE ?)`;
+      sql += ` AND (i.item_code LIKE ? OR i.item_name LIKE ? OR i.brand LIKE ? OR i.model LIKE ?
+        OR i.property_tag LIKE ? OR i.batch_id LIKE ? OR i.serial_number LIKE ?
+        OR d.name LIKE ? OR l.name LIKE ?)`;
 
       const term = `%${filters.search}%`;
 
-      params.push(term, term, term, term, term);
+      params.push(term, term, term, term, term, term, term, term, term);
 
     }
 
@@ -102,6 +119,11 @@ const InventoryModel = {
       params.push(`%${filters.property_tag}%`);
     }
 
+    if (filters.batch_id) {
+      sql += ' AND i.batch_id LIKE ?';
+      params.push(`%${filters.batch_id}%`);
+    }
+
     if (filters.brand) {
       sql += ' AND i.brand LIKE ?';
       params.push(`%${filters.brand}%`);
@@ -110,11 +132,6 @@ const InventoryModel = {
     if (filters.model) {
       sql += ' AND i.model LIKE ?';
       params.push(`%${filters.model}%`);
-    }
-
-    if (filters.unit) {
-      sql += ' AND i.unit LIKE ?';
-      params.push(`%${filters.unit}%`);
     }
 
     if (filters.condition) {
@@ -147,19 +164,11 @@ const InventoryModel = {
       params.push(`%${filters.supplier_name}%`);
     }
 
-    if (filters.quantity != null && filters.quantity !== '') {
-      const qty = parseInt(filters.quantity, 10);
-      if (!Number.isNaN(qty)) {
-        sql += ' AND i.quantity = ?';
-        params.push(qty);
-      }
-    }
-
     if (filters.unit_cost != null && filters.unit_cost !== '') {
       const cost = parseFloat(filters.unit_cost);
       if (!Number.isNaN(cost)) {
-        sql += ' AND (i.unit_cost = ? OR i.acquisition_cost = ?)';
-        params.push(cost, cost);
+        sql += ' AND i.unit_cost = ?';
+        params.push(cost);
       }
     }
 
@@ -222,15 +231,9 @@ const InventoryModel = {
 
     }
 
-    if (filters.low_stock) {
-
-      sql += ' AND i.available_quantity <= i.low_stock_threshold AND i.status != \'Disposed\'';
-
-    }
-
     sql += appendDateRangeSql(
       filters,
-      filters.date_column || 'COALESCE(i.acquisition_date, DATE(i.created_at))',
+      filters.date_column || 'COALESCE(i.acquisition_date, i.purchase_date, DATE(i.created_at))',
       params
     );
 
@@ -241,7 +244,9 @@ const InventoryModel = {
     sql += scopeFilter.clause;
     params.push(...scopeFilter.params);
 
-    sql += ' ORDER BY i.item_name ASC';
+    sql += filters.search
+      ? ' ORDER BY i.updated_at DESC, i.item_name ASC'
+      : ' ORDER BY i.item_name ASC';
 
     if (filters.limit) {
 
@@ -303,90 +308,116 @@ const InventoryModel = {
     return generateNextItemCode(departmentId);
   },
 
+  async insertSingleAsset(data, conn = pool) {
+    const status = 'Available';
 
-
-  async create(data) {
-
-    const status = data.status || computeItemStatus(data.available_quantity, data.quantity, data.low_stock_threshold || 5);
-
-    const [result] = await pool.query(
-
-      `INSERT INTO inventory_items 
-
-       (item_code, item_name, description, department_id, asset_classification, material, property_tag, custodian_id,
-
-        parent_asset_id, brand, model, quantity, available_quantity, unit,
-
+    const [result] = await conn.query(
+      `INSERT INTO inventory_items
+       (item_code, item_name, description, department_id, asset_classification, material, property_tag, batch_id, serial_number, custodian_id,
+        parent_asset_id, brand, model,
         supplier_id, purchase_date, acquisition_date, purchase_request_number, purchase_order_number,
-
-        invoice_number, unit_cost, acquisition_cost, \`condition\`, status, location_id, low_stock_threshold,
-
+        invoice_number, unit_cost, \`condition\`, status, location_id,
         maintenance_schedule, next_maintenance_date, maintenance_status, service_provider)
-
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-
         data.item_code, data.item_name,
-
         data.description || null,
-
         data.department_id,
-
         data.asset_classification || (CONSUMABLE_TEMPORARILY_DISABLED
           ? DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED
           : 'Consumable'),
-
         data.material || null,
-
         data.property_tag || null,
-
+        data.batch_id || null,
+        data.serial_number || null,
         data.custodian_id || null,
-
         data.parent_asset_id || null,
-
         data.brand || null, data.model || null,
-
-        data.quantity, data.available_quantity ?? data.quantity, data.unit || 'pcs',
-
         data.supplier_id || null,
-
         data.purchase_date || null,
-
         data.acquisition_date || data.purchase_date || null,
-
         data.purchase_request_number || null,
-
         data.purchase_order_number || null,
-
         data.invoice_number || null,
-
         data.unit_cost ?? null,
-
-        data.acquisition_cost ?? null,
-
         data.condition || 'Good',
-
         status,
-
         data.location_id || null,
-
-        data.low_stock_threshold || 5,
-
         data.maintenance_schedule || null,
-
         data.next_maintenance_date || null,
-
         data.maintenance_status || null,
-
         data.service_provider || null
-
       ]
-
     );
 
     return result.insertId;
+  },
 
+  async createBulkAssets(data) {
+    const count = Math.max(1, parseInt(data.asset_count ?? data.quantity, 10) || 1);
+    if (count > 500) {
+      throw new Error('Cannot create more than 500 assets at once');
+    }
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const itemCode = data.item_code || await generateNextItemCode(data.department_id, connection);
+      const classification = normalizeClassification(data.asset_classification);
+      let propertyTags = Array.isArray(data.property_tags) ? data.property_tags : null;
+
+      if (!propertyTags || propertyTags.length === 0) {
+        if (classification === 'Consumable') {
+          propertyTags = Array(count).fill(null);
+        } else {
+          propertyTags = await generateAutoPropertyTags(count, connection);
+        }
+      }
+
+      if (propertyTags.length !== count) {
+        throw new Error('Number of property tags must match number of assets');
+      }
+
+      if (propertyTags.some(Boolean)) {
+        await validatePropertyTagsUnique(propertyTags, connection);
+      }
+
+      if (requiresPropertyTag(classification) && propertyTags.some((tag) => !tag)) {
+        throw new Error('Property tag is required for each fixed asset');
+      }
+
+      const batchId = data.batch_id || await generateNextBatchId(connection);
+
+      const ids = [];
+      const serialNumber = count === 1 && data.serial_number ? data.serial_number : null;
+      if (serialNumber) {
+        await validateSerialNumberUnique(serialNumber, connection);
+      }
+      for (let i = 0; i < count; i += 1) {
+        const id = await this.insertSingleAsset({
+          ...data,
+          item_code: itemCode,
+          property_tag: propertyTags[i],
+          batch_id: batchId,
+          serial_number: serialNumber,
+          status: 'Available'
+        }, connection);
+        ids.push(id);
+      }
+
+      await connection.commit();
+      return { item_code: itemCode, batch_id: batchId, ids, created_count: count, first_id: ids[0] };
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  },
+
+  async create(data) {
+    return this.createBulkAssets(data);
   },
 
 
@@ -399,15 +430,22 @@ const InventoryModel = {
 
 
 
-    const qty = data.quantity ?? existing.quantity;
+    const status = preserveStatusOnEdit(existing.status);
 
-    const avail = data.available_quantity ?? existing.available_quantity;
+    const nextSerial = data.serial_number !== undefined
+      ? (data.serial_number || null)
+      : existing.serial_number;
+    if (nextSerial && nextSerial !== existing.serial_number) {
+      await validateSerialNumberUnique(nextSerial, pool, [id]);
+    }
 
-    const threshold = data.low_stock_threshold ?? existing.low_stock_threshold;
-
-    const status = data.status ?? computeItemStatus(avail, qty, threshold);
-
-
+    const nextPurchaseDate = data.purchase_date !== undefined
+      ? (data.purchase_date || null)
+      : existing.purchase_date;
+    const nextAcquisitionRaw = data.acquisition_date !== undefined
+      ? data.acquisition_date
+      : existing.acquisition_date;
+    const nextAcquisitionDate = nextAcquisitionRaw || nextPurchaseDate || null;
 
     await pool.query(
 
@@ -415,15 +453,15 @@ const InventoryModel = {
 
         item_code = ?, item_name = ?, description = ?, department_id = ?, asset_classification = ?, material = ?,
 
-        property_tag = ?, custodian_id = ?, parent_asset_id = ?,
+        property_tag = ?, serial_number = ?, custodian_id = ?, parent_asset_id = ?,
 
-        brand = ?, model = ?, quantity = ?, available_quantity = ?, unit = ?, supplier_id = ?,
+        brand = ?, model = ?, supplier_id = ?,
 
         purchase_date = ?, acquisition_date = ?, purchase_request_number = ?, purchase_order_number = ?,
 
-        invoice_number = ?, unit_cost = ?, acquisition_cost = ?, \`condition\` = ?, status = ?, location_id = ?,
+        invoice_number = ?, unit_cost = ?, \`condition\` = ?, status = ?, location_id = ?,
 
-        low_stock_threshold = ?, maintenance_schedule = ?, next_maintenance_date = ?,
+        maintenance_schedule = ?, next_maintenance_date = ?,
 
         maintenance_status = ?, service_provider = ?
 
@@ -443,7 +481,9 @@ const InventoryModel = {
 
         data.material !== undefined ? (data.material || null) : existing.material,
 
-        data.property_tag !== undefined ? data.property_tag : existing.property_tag,
+        existing.property_tag,
+
+        data.serial_number !== undefined ? (data.serial_number || null) : existing.serial_number,
 
         data.custodian_id !== undefined ? data.custodian_id : existing.custodian_id,
 
@@ -453,15 +493,11 @@ const InventoryModel = {
 
         data.model ?? existing.model,
 
-        qty, avail,
-
-        data.unit ?? existing.unit,
-
         data.supplier_id !== undefined ? data.supplier_id : existing.supplier_id,
 
-        data.purchase_date ?? existing.purchase_date,
+        nextPurchaseDate,
 
-        data.acquisition_date ?? existing.acquisition_date,
+        nextAcquisitionDate,
 
         data.purchase_request_number !== undefined ? data.purchase_request_number : existing.purchase_request_number,
 
@@ -471,15 +507,11 @@ const InventoryModel = {
 
         data.unit_cost !== undefined ? data.unit_cost : existing.unit_cost,
 
-        data.acquisition_cost !== undefined ? data.acquisition_cost : existing.acquisition_cost,
-
         data.condition ?? existing.condition,
 
         status,
 
         data.location_id !== undefined ? data.location_id : existing.location_id,
-
-        threshold,
 
         data.maintenance_schedule ?? existing.maintenance_schedule,
 
@@ -523,9 +555,8 @@ const InventoryModel = {
     const [rows] = await pool.query(`
       SELECT
         COUNT(*) AS total_items,
-        COALESCE(SUM(CASE WHEN i.status != 'Disposed' THEN i.available_quantity ELSE 0 END), 0) AS available_items,
-        COALESCE(SUM(CASE WHEN i.status != 'Disposed' THEN i.quantity - i.available_quantity ELSE 0 END), 0) AS borrowed_items,
-        COALESCE(SUM(CASE WHEN i.status != 'Disposed' AND i.available_quantity <= i.low_stock_threshold THEN 1 ELSE 0 END), 0) AS low_stock,
+        COALESCE(SUM(CASE WHEN i.status = 'Available' THEN 1 ELSE 0 END), 0) AS available_items,
+        COALESCE(SUM(CASE WHEN i.status = 'Borrowed' THEN 1 ELSE 0 END), 0) AS borrowed_items,
         COALESCE(SUM(CASE WHEN i.status = 'Under Maintenance' THEN 1 ELSE 0 END), 0) AS under_maintenance,
         COALESCE(SUM(CASE WHEN i.status = 'Disposed' THEN 1 ELSE 0 END), 0) AS disposed
       FROM inventory_items i
@@ -543,7 +574,7 @@ const InventoryModel = {
       return [];
     }
     const [rows] = await pool.query(
-      `SELECT i.item_code, i.item_name, d.name AS department, d.name AS category, i.quantity, i.status
+      `SELECT i.id, i.item_code, i.item_name, i.property_tag, d.name AS department, d.name AS category, i.status
        FROM inventory_items i
        LEFT JOIN departments d ON i.department_id = d.id
        WHERE i.is_archived = 0${scopeFilter.clause}
@@ -553,24 +584,8 @@ const InventoryModel = {
     return rows || [];
   },
 
-  async getLowStock(limit = 5, scope) {
-    if (isInventoryScopeDenied(scope)) {
-      return [];
-    }
-    const scopeFilter = appendInventoryScopeSql(scope, 'i');
-    if (scopeFilter.denied) {
-      return [];
-    }
-    const [rows] = await pool.query(
-      `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.low_stock_threshold,
-              d.name AS department, d.name AS category
-       FROM inventory_items i
-       LEFT JOIN departments d ON i.department_id = d.id
-       WHERE i.available_quantity <= i.low_stock_threshold AND i.status != 'Disposed' AND i.is_archived = 0${scopeFilter.clause}
-       ORDER BY i.available_quantity ASC LIMIT ?`,
-      [...scopeFilter.params, limit]
-    );
-    return rows || [];
+  async getLowStock(_limit = 5, _scope) {
+    return [];
   },
 
   async getDepartmentDistribution(scope) {
@@ -595,32 +610,18 @@ const InventoryModel = {
 
 
   async adjustQuantity(id, delta) {
-
-    const item = await this.findById(id);
-
-    if (!item || item.status === 'Disposed') return false;
-
-    const newAvail = item.available_quantity + delta;
-
-    if (newAvail < 0 || newAvail > item.quantity) return false;
-
-    const status = computeItemStatus(newAvail, item.quantity, item.low_stock_threshold);
-
-    await pool.query(
-
-      'UPDATE inventory_items SET available_quantity = ?, status = ? WHERE id = ?',
-
-      [newAvail, status, id]
-
-    );
-
-    return true;
-
+    if (Number(delta) < 0) {
+      return this.markAssetBorrowed(id);
+    }
+    if (Number(delta) > 0) {
+      return this.markAssetReturned(id);
+    }
+    return false;
   },
 
 
 
-  async updateLocationAndDepartment(id, { location_id, department_id, custodian_id }) {
+  async updateLocationAndDepartment(id, { location_id, department_id, custodian_id }, conn = pool) {
     const fields = ['location_id = ?', 'department_id = ?'];
     const params = [location_id, department_id];
     if (custodian_id !== undefined) {
@@ -628,7 +629,7 @@ const InventoryModel = {
       params.push(custodian_id);
     }
     params.push(id);
-    await pool.query(
+    await conn.query(
       `UPDATE inventory_items SET ${fields.join(', ')} WHERE id = ?`,
       params
     );
@@ -636,28 +637,36 @@ const InventoryModel = {
 
 
 
-  async markDisposed(id, quantity) {
-
+  async markDisposed(id) {
     const item = await this.findById(id);
-
-    if (!item) return false;
-
-    const newQty = Math.max(0, item.quantity - quantity);
-
-    const newAvail = Math.max(0, item.available_quantity - quantity);
-
-    const status = newQty === 0 ? 'Disposed' : computeItemStatus(newAvail, newQty, item.low_stock_threshold);
+    if (!item || item.status === 'Disposed') return false;
 
     await pool.query(
-
-      'UPDATE inventory_items SET quantity = ?, available_quantity = ?, status = ? WHERE id = ?',
-
-      [newQty, newAvail, status, id]
-
+      `UPDATE inventory_items SET status = 'Disposed' WHERE id = ?`,
+      [id]
     );
-
     return true;
+  },
 
+  async setUnderMaintenance(id, maintenanceStatus = 'In Progress') {
+    const [result] = await pool.query(
+      `UPDATE inventory_items SET status = 'Under Maintenance', maintenance_status = ?
+       WHERE id = ? AND status = 'Available' AND is_archived = 0`,
+      [maintenanceStatus, id]
+    );
+    return result.affectedRows > 0;
+  },
+
+  async recalculateStatusAfterMaintenance(id) {
+    const item = await this.findById(id);
+    if (!item) return null;
+
+    const status = recalculateInventoryStatus(item);
+    await pool.query(
+      `UPDATE inventory_items SET status = ?, maintenance_status = 'Completed' WHERE id = ?`,
+      [status, id]
+    );
+    return status;
   },
 
 
@@ -681,32 +690,77 @@ const InventoryModel = {
     };
   },
 
-  async getBorrowableItems(search = '') {
-    let sql = `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.status, i.asset_classification,
-              d.name AS department_name, l.name AS location_name
-       ${this.borrowCatalogBaseSql()}`;
+  async markAssetBorrowed(id, conn = pool) {
+    const [result] = await conn.query(
+      `UPDATE inventory_items
+       SET status = 'Borrowed'
+       WHERE id = ? AND status = 'Available' AND is_archived = 0`,
+      [id]
+    );
+    return result.affectedRows > 0;
+  },
 
+  async markAssetReturned(id, conn = pool) {
+    const [result] = await conn.query(
+      `UPDATE inventory_items
+       SET status = 'Available'
+       WHERE id = ? AND status = 'Borrowed' AND is_archived = 0`,
+      [id]
+    );
+    return result.affectedRows > 0;
+  },
+
+  async getBorrowableModels(search = '') {
+    let sql = `
+      SELECT i.item_code,
+             MAX(i.item_name) AS item_name,
+             MAX(d.name) AS department_name,
+             COUNT(*) AS available_count
+      ${this.borrowCatalogBaseSql()}
+        AND i.status = 'Available'`;
     const params = [];
 
     if (search && search.trim()) {
-      sql += ' AND i.item_name LIKE ?';
-      params.push(`%${search.trim()}%`);
+      sql += ' AND (i.item_name LIKE ? OR i.item_code LIKE ?)';
+      const term = `%${search.trim()}%`;
+      params.push(term, term);
     }
 
-    sql += ` ORDER BY CASE
-      WHEN i.available_quantity > 0
-        AND i.status NOT IN ('Unavailable', 'Out of Stock', 'Under Maintenance', 'Disposed') THEN 0
-      ELSE 1
-    END ASC, i.item_name ASC`;
-
+    sql += ' GROUP BY i.item_code HAVING available_count > 0 ORDER BY item_name ASC';
     const [rows] = await pool.query(sql, params);
+    return rows.map((row) => ({
+      item_code: row.item_code,
+      item_name: row.item_name,
+      department_name: row.department_name,
+      available_count: Number(row.available_count),
+      is_borrowable: true
+    }));
+  },
 
-    return rows.map((row) => this.enrichBorrowCatalogItem(row));
+  async getAvailableAssetsForModel(itemCode, limit = 10) {
+    const { getAvailableAssetsByItemCode } = require('../utils/borrowAssetService');
+    return getAvailableAssetsByItemCode(itemCode, pool, limit);
+  },
+
+  async getBorrowableItems(search = '') {
+    const models = await this.getBorrowableModels(search);
+    return models.map((model) => ({
+      id: model.item_code,
+      item_code: model.item_code,
+      item_name: model.item_name,
+      department_name: model.department_name,
+      available_count: model.available_count,
+      status: 'Available',
+      asset_classification: 'Non-Consumable (Fixed Asset)',
+      is_borrowable: true,
+      unavailable_reason: null,
+      is_model: true
+    }));
   },
 
   async findBorrowableById(id) {
     const [rows] = await pool.query(
-      `SELECT i.id, i.item_code, i.item_name, i.available_quantity, i.status, i.asset_classification,
+      `SELECT i.id, i.item_code, i.item_name, i.property_tag, i.status, i.asset_classification,
               d.name AS department_name, l.name AS location_name
        ${this.borrowCatalogBaseSql()}
          AND i.id = ?`,

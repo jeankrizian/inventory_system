@@ -142,6 +142,7 @@ function initNotifications() {
     btn.removeEventListener('click', notificationBtnHandler);
   }
   notificationBtnHandler = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     const isOpen = panel.classList.contains('show');
     document.getElementById('profileDropdown')?.classList.remove('show');
@@ -150,8 +151,10 @@ function initNotifications() {
     if (isOpen) {
       panel.classList.remove('show');
     } else {
-      panel.classList.add('show');
-      loadNotifications(true);
+      requestAnimationFrame(() => {
+        panel.classList.add('show');
+        loadNotifications(true);
+      });
     }
   };
   btn.addEventListener('click', notificationBtnHandler);

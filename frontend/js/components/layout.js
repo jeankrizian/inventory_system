@@ -10,6 +10,7 @@ const NAV_ROLES = {
 
 const NAV_ITEMS = [
   { href: '/pages/dashboard.html', icon: 'bi-grid-1x2-fill', label: 'Dashboard', page: 'dashboard', roles: ['administrator', 'property_manager', 'custodian'] },
+  { href: '/pages/pending-approvals.html', icon: 'bi-clipboard-check', label: 'Pending Approvals', page: 'pending-approvals', roles: ['property_manager'] },
   { href: '/pages/inventory.html', icon: 'bi-box-seam', label: 'Inventory', page: 'inventory', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/orders.html', icon: 'bi-box-arrow-in-right', label: 'Borrow', page: 'orders', roles: ['administrator', 'property_manager', 'custodian'] },
   { href: '/pages/transfer-requests.html', icon: 'bi-arrow-left-right', label: 'Transfers', page: 'transfer-requests', roles: ['property_manager', 'custodian'] },
@@ -40,6 +41,7 @@ const FOOTER_NAV = [
 
 const PAGE_PERMISSIONS = {
   dashboard: ['administrator', 'property_manager', 'custodian'],
+  'pending-approvals': ['property_manager'],
   inventory: ['administrator', 'property_manager', 'custodian'],
   reports: ['administrator', 'property_manager', 'custodian'],
   suppliers: ['administrator', 'property_manager'],
@@ -59,12 +61,16 @@ const PAGE_PERMISSIONS = {
 
 const MANAGE_PAGES = ['manage-departments', 'manage-locations', 'manage-users', 'suppliers', 'manage-store'];
 
+const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
+const SIDEBAR_AUTO_COLLAPSE_KEY = 'sidebarAutoCollapse';
+
 let layoutClickHandler = null;
 let searchHandler = null;
 let sidebarToggleHandler = null;
 let mobileMenuHandler = null;
 let overlayClickHandler = null;
 let resizeHandler = null;
+let navLinkClickHandler = handleNavLinkClick;
 
 function getUserRole(user) {
   return normalizeNavRole(user);
@@ -94,7 +100,44 @@ function canAccessPage(pageName, user) {
 }
 
 function isSidebarCollapsed() {
-  return localStorage.getItem('sidebarCollapsed') === 'true';
+  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+}
+
+function setSidebarCollapsedState(collapsed, { persist = true } = {}) {
+  const sidebar = document.getElementById('sidebar');
+  const mainContent = document.getElementById('mainContent');
+  if (sidebar) sidebar.classList.toggle('collapsed', collapsed);
+  if (mainContent) mainContent.classList.toggle('sidebar-collapsed', collapsed);
+  if (persist) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+  if (!isMobileView()) updateToggleIcon(collapsed);
+}
+
+function scheduleSidebarAutoCollapse() {
+  sessionStorage.setItem(SIDEBAR_AUTO_COLLAPSE_KEY, '1');
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
+}
+
+function applyAutoCollapseOnLoad() {
+  if (sessionStorage.getItem(SIDEBAR_AUTO_COLLAPSE_KEY) !== '1') return;
+  sessionStorage.removeItem(SIDEBAR_AUTO_COLLAPSE_KEY);
+  if (isMobileView()) return;
+  setSidebarCollapsedState(true);
+}
+
+function handleNavLinkClick(e) {
+  if (isMobileView()) {
+    closeMobileSidebar();
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar || sidebar.classList.contains('collapsed')) return;
+
+  const href = e.currentTarget.getAttribute('href');
+  if (!href || href === '#') return;
+
+  scheduleSidebarAutoCollapse();
 }
 
 function isMobileView() {
@@ -212,7 +255,7 @@ function renderLayout(activePage, user) {
         </button>
         <div class="topbar-search">
           <i class="bi bi-search"></i>
-          <input type="text" id="globalSearch" placeholder="Search product, supplier, order..." autocomplete="off">
+          <input type="text" id="globalSearch" placeholder="Search property tag, batch, item, department, location..." autocomplete="off">
           <div class="search-results-dropdown" id="searchResults"></div>
         </div>
         <div class="topbar-actions">
@@ -264,10 +307,7 @@ function toggleSidebar() {
   }
 
   const willCollapse = !sidebar.classList.contains('collapsed');
-  sidebar.classList.toggle('collapsed', willCollapse);
-  mainContent.classList.toggle('sidebar-collapsed', willCollapse);
-  localStorage.setItem('sidebarCollapsed', willCollapse ? 'true' : 'false');
-  updateToggleIcon(willCollapse);
+  setSidebarCollapsedState(willCollapse);
   window.dispatchEvent(new Event('resize'));
 }
 
@@ -324,6 +364,7 @@ async function initLayout(activePage) {
   appEl.innerHTML = renderLayout(activePage, user);
   initLayoutEvents();
   initNavGroups();
+  applyAutoCollapseOnLoad();
   updateToggleIcon(isSidebarCollapsed() && !isMobileView());
   initActionIconTooltips();
   return user;
@@ -361,9 +402,8 @@ function initLayoutEvents() {
   sidebarOverlay?.addEventListener('click', overlayClickHandler);
 
   sidebar?.querySelectorAll('.sidebar-nav a.nav-item, .sidebar-footer a.nav-item[href]').forEach(link => {
-    link.addEventListener('click', () => {
-      if (isMobileView()) closeMobileSidebar();
-    });
+    link.removeEventListener('click', navLinkClickHandler);
+    link.addEventListener('click', navLinkClickHandler);
   });
 
   if (resizeHandler) {
@@ -385,10 +425,12 @@ function initLayoutEvents() {
   if (layoutClickHandler) {
     document.removeEventListener('click', layoutClickHandler);
   }
-  layoutClickHandler = () => {
+  layoutClickHandler = (e) => {
     profileDropdown?.classList.remove('show');
     document.getElementById('searchResults')?.classList.remove('show');
-    closeNotificationPanel();
+    if (!e.target.closest('.notification-dropdown')) {
+      closeNotificationPanel();
+    }
   };
   document.addEventListener('click', layoutClickHandler);
 
@@ -415,7 +457,14 @@ function initLayoutEvents() {
         if (!res?.data) return;
         let html = '';
         res.data.inventory.forEach(item => {
-          html += `<div class="search-result-item" data-href="/pages/inventory.html"><strong>${item.item_name}</strong><small>${item.item_code}</small></div>`;
+          const meta = [
+            item.property_tag,
+            item.batch_id,
+            item.item_code,
+            item.department_name,
+            item.location_name
+          ].filter(Boolean).join(' · ');
+          html += `<div class="search-result-item" data-href="/pages/inventory.html"><strong>${item.item_name}</strong><small>${meta || 'Inventory item'}</small></div>`;
         });
         res.data.suppliers.forEach(s => {
           html += `<div class="search-result-item" data-href="/pages/suppliers.html"><strong>${s.name}</strong><small>Supplier</small></div>`;
@@ -429,7 +478,11 @@ function initLayoutEvents() {
           el.addEventListener('click', () => { window.location.href = el.dataset.href; });
         });
         searchResults.classList.add('show');
-      } catch { /* ignore search errors */ }
+      } catch (err) {
+        searchResults.classList.remove('show');
+        searchResults.innerHTML = '';
+        showToast(err?.message || 'Unable to perform search. Please try again.', 'error');
+      }
     }, 400);
     searchInput.addEventListener('input', searchHandler);
     searchInput.addEventListener('click', (e) => e.stopPropagation());

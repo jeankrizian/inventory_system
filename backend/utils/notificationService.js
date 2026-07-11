@@ -42,29 +42,20 @@ async function getDepartmentCustodianIds(departmentId) {
   return rows.map((r) => r.id);
 }
 
-async function getLaboratoryCustodianIds(locationId) {
-  if (!locationId) return [];
-  const [rows] = await pool.query(
-    `SELECT u.id FROM users u
-     JOIN roles r ON u.role_id = r.id
-     WHERE u.is_active = 1
-       AND u.assigned_location_id = ?
-       AND r.name = 'Custodian'`,
-    [locationId]
-  );
-  return rows.map((r) => r.id);
-}
-
 async function getCustodianIdsForItem(item) {
   if (!item) return [];
-  const ids = new Set();
-  for (const id of await getDepartmentCustodianIds(item.department_id)) ids.add(id);
-  for (const id of await getLaboratoryCustodianIds(item.location_id)) ids.add(id);
-  return [...ids];
+  return getDepartmentCustodianIds(item.department_id);
 }
 
-async function notifyUser(userId, payload) {
+function actorExcludeOptions(req) {
+  const actorId = req?.session?.user?.id;
+  return actorId ? { excludeUserIds: [actorId] } : {};
+}
+
+async function notifyUser(userId, payload, options = {}) {
   if (!userId) return;
+  const exclude = new Set((options.excludeUserIds || []).map(Number));
+  if (exclude.has(Number(userId))) return;
   const { title, message, type, reference_id = null, link_url = null, skipDuplicate = false } = payload;
   if (skipDuplicate && reference_id) {
     const exists = await NotificationModel.hasRecent(userId, type, reference_id);
@@ -73,32 +64,37 @@ async function notifyUser(userId, payload) {
   await NotificationModel.create({ user_id: userId, title, message, type, reference_id, link_url });
 }
 
-async function notifyUsers(userIds, payload) {
-  const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+function resolveRecipientIds(userIds, options = {}) {
+  const exclude = new Set((options.excludeUserIds || []).map(Number));
+  return [...new Set((userIds || []).map(Number))].filter((id) => id && !exclude.has(id));
+}
+
+async function notifyUsers(userIds, payload, options = {}) {
+  const uniqueIds = resolveRecipientIds(userIds, options);
   await Promise.all(uniqueIds.map((id) => notifyUser(id, payload)));
 }
 
 /** Notify Property Managers for operational workflow events */
-async function notifyPropertyManagers(payload) {
-  await notifyUsers(await getPropertyManagerIds(), payload);
+async function notifyPropertyManagers(payload, options = {}) {
+  await notifyUsers(await getPropertyManagerIds(), payload, options);
 }
 
 /** Notify system administrators for governance / visibility events */
-async function notifyAdministrators(payload) {
-  await notifyUsers(await getAdministratorIds(), payload);
+async function notifyAdministrators(payload, options = {}) {
+  await notifyUsers(await getAdministratorIds(), payload, options);
 }
 
 /** Notify custodians assigned to the item's department or laboratory */
-async function notifyCustodiansForItem(item, payload) {
-  await notifyUsers(await getCustodianIdsForItem(item), payload);
+async function notifyCustodiansForItem(item, payload, options = {}) {
+  await notifyUsers(await getCustodianIdsForItem(item), payload, options);
 }
 
-async function notifyCustodiansForBorrowTransaction(transaction, buildPayload) {
+async function notifyCustodiansForBorrowTransaction(transaction, buildPayload, options = {}) {
   for (const line of transaction?.items || []) {
     const item = await InventoryModel.findById(line.inventory_item_id);
     if (!item) continue;
     const payload = buildPayload(item, line, transaction);
-    await notifyCustodiansForItem(item, payload);
+    await notifyCustodiansForItem(item, payload, options);
   }
 }
 
@@ -168,7 +164,7 @@ async function checkOverdueBorrowAlertsForPropertyManagers() {
 }
 
 async function checkMaintenanceReminders(userId, roleName) {
-  const receivesMaintenanceDue = isAdministrator(roleName) || isPropertyManager(roleName);
+  const receivesMaintenanceDue = isPropertyManager(roleName);
   const upcoming = await MaintenanceModel.getUpcomingOnItems();
 
   for (const item of upcoming) {
@@ -224,12 +220,13 @@ async function runNotificationChecks(user) {
     await checkOverdueBorrowAlertsForPropertyManagers();
   }
 
-  if (isAdministrator(roleName) || isPropertyManager(roleName) || isCustodian(roleName)) {
+  if (isPropertyManager(roleName) || isCustodian(roleName)) {
     await checkMaintenanceReminders(user.id, roleName);
   }
 }
 
 module.exports = {
+  actorExcludeOptions,
   notifyUser,
   notifyUsers,
   notifyPropertyManagers,

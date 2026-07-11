@@ -14,7 +14,7 @@ const migrations = [
   `ALTER TABLE inventory_items ADD COLUMN custodian_type ENUM('Property Custodian', 'Department Custodian', 'Laboratory Custodian') NULL AFTER custodian_id`,
   `ALTER TABLE inventory_items ADD COLUMN parent_asset_id INT NULL AFTER custodian_type`,
   `ALTER TABLE inventory_items ADD COLUMN acquisition_date DATE NULL AFTER purchase_date`,
-  `ALTER TABLE inventory_items ADD COLUMN maintenance_schedule ENUM('Monthly', 'Quarterly', 'Semi-Annual', 'Annual') NULL AFTER low_stock_threshold`,
+  `ALTER TABLE inventory_items ADD COLUMN maintenance_schedule ENUM('Monthly', 'Quarterly', 'Semi-Annual', 'Annual') NULL AFTER location_id`,
   `ALTER TABLE inventory_items ADD COLUMN next_maintenance_date DATE NULL AFTER maintenance_schedule`,
   `ALTER TABLE inventory_items ADD COLUMN maintenance_status ENUM('Scheduled', 'In Progress', 'Completed', 'Overdue') NULL AFTER next_maintenance_date`,
   `ALTER TABLE inventory_items ADD COLUMN service_provider VARCHAR(150) NULL AFTER maintenance_status`,

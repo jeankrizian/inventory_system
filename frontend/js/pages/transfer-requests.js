@@ -1,6 +1,5 @@
 let currentUser = null;
 let transfers = [];
-let pendingAction = null;
 let transferableItems = [];
 let departments = [];
 let locations = [];
@@ -23,7 +22,7 @@ async function initTransferRequestsPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Requests</h3>
-        ${canSubmitTransfer(currentUser) ? `<button class="btn-primary-custom" onclick="openSubmitModal()"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
+        ${canSubmitTransfer(currentUser) ? `<button type="button" class="btn-primary-custom" id="submitTransferBtn"><i class="bi bi-plus-lg"></i> Submit Request</button>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search transfers...">
@@ -36,18 +35,28 @@ async function initTransferRequestsPage() {
     </div>
   `;
 
+  document.getElementById('submitTransferBtn')?.addEventListener('click', openSubmitModal);
+
   document.getElementById('searchInput').addEventListener('input', debounce(loadTransfers, 300));
   document.getElementById('filterStatus').addEventListener('change', loadTransfers);
-  document.getElementById('actionForm').addEventListener('submit', submitAction);
-  document.getElementById('submitForm')?.addEventListener('submit', submitCreate);
+  bindGuardedFormSubmit(document.getElementById('submitForm'), submitCreate, { loadingText: 'Submitting...' });
   document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
+  initActionMenus();
 
   if (canSubmitTransfer(currentUser)) await loadTransferDropdowns();
-  await loadTransfers();
 
   const params = new URLSearchParams(window.location.search);
+  const statusFilter = params.get('status');
+  if (statusFilter && document.getElementById('filterStatus')) {
+    document.getElementById('filterStatus').value = statusFilter;
+  }
+
+  await loadTransfers();
+
   const transferId = params.get('id');
   if (transferId) viewTransfer(parseInt(transferId, 10));
+
+  initSearchableSelects(document);
 }
 
 async function loadTransferDropdowns() {
@@ -68,7 +77,7 @@ async function loadTransferableItems() {
   try {
     const res = await API.getInventory();
     transferableItems = (res?.data || []).filter(i =>
-      i.status !== 'Disposed' && canTransferAsset(i.asset_classification)
+      i.status === 'Available' && canTransferAsset(i.asset_classification)
     );
   } catch (err) {
     showToast(err.message, 'error');
@@ -90,7 +99,7 @@ async function openSubmitModal() {
     document.getElementById('submitAssetId'),
     transferableItems,
     'id',
-    'item_name',
+    formatAssetOptionLabel,
     transferableItems.length ? 'Select asset...' : 'No transferable assets in your scope'
   );
   document.getElementById('submitPropertyTag').value = '';
@@ -99,6 +108,7 @@ async function openSubmitModal() {
   document.getElementById('submitToDepartment').value = '';
   document.getElementById('submitToLocation').value = '';
   document.getElementById('submitReason').value = '';
+  refreshSearchableSelects(document.getElementById('submitModal'));
   openModal('submitModal');
 }
 
@@ -148,6 +158,30 @@ function canOperateTransferActions() {
   return canOperateTransfers(currentUser);
 }
 
+function renderTransferActions(t) {
+  const items = [
+    { label: 'View Details', icon: 'bi-eye', handler: `viewTransfer(${t.id})` }
+  ];
+
+  if (t.status === 'Approved') {
+    items.push({
+      label: 'View TRF',
+      icon: 'bi-file-earmark-arrow-up',
+      handler: `openTransferDocument(${t.id})`
+    });
+  }
+
+  if (canOperateTransferActions() && t.status === 'Pending') {
+    items.push({
+      label: 'Review in Pending Approvals',
+      icon: 'bi-clipboard-check',
+      href: '/pages/pending-approvals.html?tab=transfer'
+    });
+  }
+
+  return renderActionMenuCell(`transfer-actions-${t.id}`, items);
+}
+
 function renderTransfers() {
   const el = document.getElementById('transferContent');
   if (!transfers.length) {
@@ -175,77 +209,43 @@ function renderTransfers() {
               <td>${t.to_location_name || '-'}</td>
               <td>${t.requested_by_name}</td>
               <td>${getStatusBadge(t.status)}</td>
-              <td style="white-space:nowrap;">
-                <button class="btn-icon" onclick="viewTransfer(${t.id})" title="View"><i class="bi bi-eye"></i></button>
-                ${t.status === 'Approved' ? `
-                  <button class="btn-icon" onclick="openTransferDocument(${t.id})" title="View TRF" aria-label="View TRF"><i class="bi bi-file-earmark-arrow-up"></i></button>
-                ` : ''}
-                ${canOperateTransferActions() && t.status === 'Pending' ? `
-                  <button class="btn-success-custom btn-sm-custom" onclick="approveTransfer(${t.id})">Approve</button>
-                  <button class="btn-danger-custom btn-sm-custom" onclick="openReject(${t.id})">Reject</button>
-                ` : ''}
-              </td>
+              <td>${renderTransferActions(t)}</td>
             </tr>
           `).join('')}
         </tbody>
       </table>
   `;
+  finishTableRender(el);
 }
 
 async function viewTransfer(id) {
   try {
     const res = await API.getTransfer(id);
     const t = res.data;
-    alert([
-      `Code: ${t.transaction_code}`,
-      `Asset: ${t.item_name}`,
-      `Property Tag: ${t.property_tag || '-'}`,
-      `From: ${t.from_department_name || '-'} / ${t.from_location_name || '-'}`,
-      `To: ${t.to_department_name || '-'} / ${t.to_location_name || '-'}`,
-      `Reason: ${t.reason}`,
-      `Requested By: ${t.requested_by_name}`,
-      `Request Date: ${formatDate(t.request_date || t.created_at)}`,
-      `Status: ${t.status}`,
-      `Rejection Reason: ${t.rejection_reason || '-'}`,
-      `Remarks: ${t.notes || '-'}`
-    ].join('\n'));
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-async function approveTransfer(id) {
-  if (!confirmAction('Approve this transfer? The asset department and location will be updated immediately.')) return;
-  try {
-    const res = await API.approveTransfer(id);
-    showToast('Transfer approved');
-    openGeneratedDocument(res?.data?.generated_document, 'TRF');
-    loadTransfers();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-function openReject(id) {
-  pendingAction = { id, action: 'reject' };
-  document.getElementById('actionModalTitle').textContent = 'Reject Transfer';
-  document.getElementById('actionModalBody').innerHTML = `
-    <div class="form-group"><label>Rejection Reason *</label><textarea class="form-control-custom" id="actionReason" rows="3" required></textarea></div>
-  `;
-  openModal('actionModal');
-}
-
-async function submitAction(e) {
-  e.preventDefault();
-  if (!pendingAction) return;
-  const reason = document.getElementById('actionReason')?.value;
-  if (!reason) return showToast('Rejection reason is required', 'error');
-  try {
-    await API.rejectTransfer(pendingAction.id, { rejection_reason: reason });
-    showToast('Transfer rejected');
-    closeModal('actionModal');
-    pendingAction = null;
-    loadTransfers();
+    await showDetailModal({
+      title: 'Transfer Details',
+      bodyHtml: [
+        renderDetailSection('General Information', [
+          { label: 'Code', value: t.transaction_code },
+          { label: 'Status', html: getStatusBadge(t.status) },
+          { label: 'Asset', value: t.item_name, fullWidth: true },
+          { label: 'Property Tag', value: t.property_tag },
+          { label: 'Requested By', value: t.requested_by_name },
+          { label: 'Request Date', value: formatDate(t.request_date || t.created_at) }
+        ]),
+        renderDetailSection('Transfer Route', [
+          { label: 'From Department', value: t.from_department_name },
+          { label: 'From Location', value: t.from_location_name },
+          { label: 'To Department', value: t.to_department_name },
+          { label: 'To Location', value: t.to_location_name }
+        ]),
+        renderDetailSection('Additional Details', [
+          { label: 'Reason', value: t.reason, fullWidth: true, wrap: true },
+          { label: 'Rejection Reason', value: t.rejection_reason, fullWidth: true, wrap: true },
+          { label: 'Remarks', value: t.notes, fullWidth: true, wrap: true }
+        ])
+      ].join('')
+    });
   } catch (err) {
     showToast(err.message, 'error');
   }

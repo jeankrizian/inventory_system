@@ -28,6 +28,7 @@ const { runUserArchiveMigration } = require('./database/runUserArchiveMigration'
 const { runDocumentMigration } = require('./database/runDocumentMigration');
 const { runPurchaseMigration } = require('./database/runPurchaseMigration');
 const { runExtendedDocumentMigration } = require('./database/runExtendedDocumentMigration');
+const { runDocumentNumberMigration } = require('./database/runDocumentNumberMigration');
 const { runRbacAssignmentMigration } = require('./database/runRbacAssignmentMigration');
 const { runItemDescriptionMigration } = require('./database/runItemDescriptionMigration');
 const { runMaterialMigration } = require('./database/runMaterialMigration');
@@ -35,6 +36,17 @@ const { runCustodianRoleMigration } = require('./database/runCustodianRoleMigrat
 const { runCustodianTypeMigration } = require('./database/runCustodianTypeMigration');
 const { runStaffRoleRemovalMigration } = require('./database/runStaffRoleRemovalMigration');
 const { runBackupMigration } = require('./database/runBackupMigration');
+const { runIndividualAssetMigration } = require('./database/runIndividualAssetMigration');
+const { runPropertyBasedInventoryMigration } = require('./database/runPropertyBasedInventoryMigration');
+const { runBatchIdMigration } = require('./database/runBatchIdMigration');
+const { runStatusAutomationMigration } = require('./database/runStatusAutomationMigration');
+const { runRemoveQuantityFieldsMigration } = require('./database/runRemoveQuantityFieldsMigration');
+const { runSerialNumberMigration } = require('./database/runSerialNumberMigration');
+const { runSerialNumberUniqueMigration } = require('./database/runSerialNumberUniqueMigration');
+const { runPerformanceIndexesMigration } = require('./database/runPerformanceIndexesMigration');
+const { runLegacyDataMigration } = require('./database/runLegacyDataMigration');
+const { runBorrowUxMigration } = require('./database/runBorrowUxMigration');
+const { runActivityLogMigration } = require('./database/runActivityLogMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
@@ -127,7 +139,7 @@ app.get('/api/search', requireAuth, async (req, res) => {
 
     const inventoryScope = getAccessScope(req.session.user);
     const inventoryPromise = canViewInventory(role)
-      ? InventoryModel.getAll({ search: q, limit: 5, scope: inventoryScope })
+      ? InventoryModel.getAll({ search: q, limit: 10, scope: inventoryScope })
       : Promise.resolve([]);
     const suppliersPromise = canManageSuppliers(role)
       ? SupplierModel.search(q, 5)
@@ -216,6 +228,7 @@ async function startServer() {
     await runDocumentMigration();
     await runPurchaseMigration();
     await runExtendedDocumentMigration();
+    await runDocumentNumberMigration();
     await runRbacAssignmentMigration();
     await runItemDescriptionMigration();
     await runMaterialMigration();
@@ -223,6 +236,27 @@ async function startServer() {
     await runCustodianTypeMigration();
     await runStaffRoleRemovalMigration();
     await runBackupMigration();
+    await runIndividualAssetMigration();
+    console.log('Running property-based inventory migration...');
+    await runPropertyBasedInventoryMigration();
+    console.log('Running batch ID migration...');
+    await runBatchIdMigration();
+    console.log('Running status automation migration...');
+    await runStatusAutomationMigration();
+    console.log('Running remove quantity fields migration...');
+    await runRemoveQuantityFieldsMigration();
+    console.log('Running serial number migration...');
+    await runSerialNumberMigration();
+    console.log('Running serial number unique migration...');
+    await runSerialNumberUniqueMigration();
+    console.log('Running performance indexes migration...');
+    await runPerformanceIndexesMigration();
+    console.log('Running legacy data migration...');
+    await runLegacyDataMigration();
+    console.log('Running borrow UX migration...');
+    await runBorrowUxMigration();
+    console.log('Running activity log migration...');
+    await runActivityLogMigration();
     startArchiveCleanupScheduler();
   } catch (err) {
     console.error('WARNING: Database connection failed:', err.message);

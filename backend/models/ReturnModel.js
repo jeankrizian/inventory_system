@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
-const { appendBorrowInventoryExistsFilters } = require('../utils/inventoryReportFilterSql');
+const { appendBorrowInventoryExistsFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const ReturnModel = {
   async getAll(filters = {}) {
@@ -30,14 +30,14 @@ const ReturnModel = {
       params.push(`%${filters.returned_by_name}%`);
     }
     if (filters.condition) {
-      sql += ' AND rt.`condition` LIKE ?';
+      sql += ' AND rt.\`condition\` LIKE ?';
       params.push(`%${filters.condition}%`);
     }
     if (filters.return_date) {
       sql += ' AND DATE(rt.return_date) = ?';
       params.push(filters.return_date);
     }
-    sql += appendBorrowInventoryExistsFilters(filters, 'bt', params);
+    sql += appendBorrowInventoryExistsFilters(inventoryFieldFilters(filters), 'bt', params);
 
     sql += appendDateRangeSql(filters, 'rt.return_date', params);
 
@@ -71,20 +71,13 @@ const ReturnModel = {
         [data.borrow_transaction_id]
       );
 
+      const InventoryModel = require('./InventoryModel');
+
       for (const item of borrowItems) {
-        await connection.query(
-          'UPDATE inventory_items SET available_quantity = available_quantity + ? WHERE id = ?',
-          [item.quantity, item.inventory_item_id]
-        );
-        await connection.query(
-          `UPDATE inventory_items SET status = CASE
-            WHEN available_quantity <= 0 THEN 'Out of Stock'
-            WHEN available_quantity <= low_stock_threshold THEN 'Low Stock'
-            WHEN available_quantity < quantity THEN 'Borrowed'
-            ELSE 'Available'
-          END WHERE id = ?`,
-          [item.inventory_item_id]
-        );
+        const returned = await InventoryModel.markAssetReturned(item.inventory_item_id, connection);
+        if (!returned) {
+          throw new Error(`Asset ID ${item.inventory_item_id} could not be returned`);
+        }
       }
 
       await connection.commit();

@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get('/', requireViewDisposal, DisposalController.getAll);
+router.get('/asset/:inventoryItemId', requireViewDisposal, DisposalController.getByAsset);
 router.get('/:id', requireViewDisposal, DisposalController.getById);
 router.post('/', requireSubmitDisposal, DisposalController.create);
 router.put('/:id/inspect', requireOperateDisposal, DisposalController.inspect);

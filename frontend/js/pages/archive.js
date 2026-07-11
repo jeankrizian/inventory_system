@@ -1,5 +1,6 @@
-let currentPage = 1;
-const pageSize = 10;
+const ARCHIVE_PAGE_SIZE = 500;
+let archiveItems = [];
+let archiveTableSelection = null;
 
 async function initArchivePage() {
   const user = await initLayout('archive');
@@ -22,83 +23,172 @@ async function initArchivePage() {
           <option value="user">User</option>
         </select>
       </div>
-      <div class="table-responsive" id="archiveList">
+      <div class="table-scroll-container table-responsive" id="archiveList">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
       </div>
-      <div class="content-card-header" id="archivePagination" style="margin-top:20px;margin-bottom:0;"></div>
+      <div class="table-record-count" id="archiveRecordCount" hidden></div>
     </div>
   `;
 
-  document.getElementById('archiveSearch').addEventListener('input', debounce(() => { currentPage = 1; loadArchive(); }, 300));
-  document.getElementById('archiveModule').addEventListener('change', () => { currentPage = 1; loadArchive(); });
+  document.getElementById('archiveSearch').addEventListener('input', debounce(loadArchive, 300));
+  document.getElementById('archiveModule').addEventListener('change', loadArchive);
+  initActionMenus();
+  initArchiveTableSelection();
 
   await loadArchive();
+  initSearchableSelects(document.getElementById('pageContent'));
+}
+
+async function fetchAllArchiveItems(filters) {
+  let page = 1;
+  let totalPages = 1;
+  const items = [];
+
+  do {
+    const res = await API.getArchive({
+      ...filters,
+      page,
+      pageSize: ARCHIVE_PAGE_SIZE
+    });
+    const data = res?.data || {};
+    items.push(...(data.items || []));
+    totalPages = data.totalPages || 1;
+    page += 1;
+  } while (page <= totalPages);
+
+  return items;
+}
+
+function initArchiveTableSelection() {
+  archiveTableSelection = createTableSelection({
+    container: 'archiveList',
+    getRowId: (item) => `${item.module_key}:${item.id}`,
+    getVisibleRows: () => archiveItems,
+    bulkActions: [
+      {
+        id: 'restore',
+        label: 'Restore Selected',
+        icon: 'bi-arrow-counterclockwise',
+        onClick: bulkRestoreArchive
+      }
+    ]
+  });
+}
+
+async function bulkRestoreArchive(ids, rows) {
+  if (!await confirmAction(`Restore ${ids.length} selected record(s) to their original modules?`)) return;
+
+  await guardAsyncAction(async () => {
+    let success = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        await API.restoreArchive(row.module_key, row.id);
+        success += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    if (success) {
+      showToast(success === 1 ? '1 record restored.' : `${success} records restored.`);
+    }
+    if (failed) {
+      showToast(failed === 1 ? '1 record could not be restored.' : `${failed} records could not be restored.`, 'error');
+    }
+    archiveTableSelection?.clearSelection();
+    loadArchive();
+  }, { loadingText: 'Restoring...', lockKey: 'bulk-restore-archive' });
+}
+
+function formatArchiveModule(module) {
+  if (!module) return '—';
+  return String(module).charAt(0).toUpperCase() + String(module).slice(1);
+}
+
+function renderArchiveTitle(item) {
+  return item.title || 'Untitled';
+}
+
+function renderArchiveDetail(item) {
+  const parts = [];
+  if (item.detail) parts.push(item.detail);
+  parts.push(`Archived by: ${item.archived_by_name || 'Unknown'}`);
+  return parts.join(' · ');
 }
 
 async function loadArchive() {
   const el = document.getElementById('archiveList');
-  const paginationEl = document.getElementById('archivePagination');
+  const countEl = document.getElementById('archiveRecordCount');
 
   try {
-    const res = await API.getArchive({
+    const filters = {
       search: document.getElementById('archiveSearch').value,
-      module: document.getElementById('archiveModule').value,
-      page: currentPage,
-      pageSize
-    });
+      module: document.getElementById('archiveModule').value
+    };
+    archiveItems = await fetchAllArchiveItems(filters);
+    archiveTableSelection?.pruneHiddenSelections();
 
-    const data = res?.data || {};
-    const items = data.items || [];
-
-    if (!items.length) {
+    if (!archiveItems.length) {
       el.innerHTML = '<div class="empty-state"><i class="bi bi-archive"></i>No archived records found</div>';
-      paginationEl.innerHTML = '';
+      countEl.hidden = true;
+      countEl.textContent = '';
+      archiveTableSelection?.bindAfterRender(el);
       return;
     }
 
-    el.innerHTML = items.map(item => `
-      <div class="low-stock-item" style="border-bottom:1px solid var(--gray-light);padding:16px 0;">
-        <div class="low-stock-icon"><i class="bi bi-archive"></i></div>
-        <div class="low-stock-info" style="flex:1;">
-          <div class="name">${item.module}: ${item.title || 'Untitled'}</div>
-          <div class="qty">${item.detail ? item.detail + ' · ' : ''}Archived by: ${item.archived_by_name || 'Unknown'}</div>
-          <div class="qty" style="margin-top:4px;">Archived: ${formatDate(item.archived_at)}</div>
-        </div>
-        <button class="btn-outline-custom btn-sm-custom" onclick="restoreRecord('${item.module_key}', ${item.id})" title="Restore" aria-label="Restore">
-          <i class="bi bi-arrow-counterclockwise"></i> Restore
-        </button>
-      </div>
-    `).join('');
-
-    const totalPages = data.totalPages || 1;
-    paginationEl.innerHTML = `
-      <span style="font-size:13px;color:var(--text-secondary);">Page ${data.page} of ${totalPages} (${data.total} records)</span>
-      <div style="display:flex;gap:8px;">
-        <button class="btn-outline-custom btn-sm-custom" ${currentPage <= 1 ? 'disabled' : ''} onclick="changeArchivePage(${currentPage - 1})">Previous</button>
-        <button class="btn-outline-custom btn-sm-custom" ${currentPage >= totalPages ? 'disabled' : ''} onclick="changeArchivePage(${currentPage + 1})">Next</button>
-      </div>
+    el.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            ${archiveTableSelection?.renderCheckboxHeader() || ''}
+            <th class="col-code">Module</th>
+            <th>Title</th>
+            <th>Details</th>
+            <th class="col-date">Archived</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${archiveItems.map((item) => `
+            <tr${archiveTableSelection?.renderRowAttrs(item) || ''}>
+              ${archiveTableSelection?.renderCheckboxCell(item) || ''}
+              <td>${formatArchiveModule(item.module)}</td>
+              <td>${renderArchiveTitle(item)}</td>
+              <td>${renderArchiveDetail(item)}</td>
+              <td>${formatDate(item.archived_at)}</td>
+              <td class="col-actions">${renderActionMenuCell(`archive-actions-${item.module_key}-${item.id}`, [
+                { label: 'Restore', icon: 'bi-arrow-counterclockwise', handler: `restoreRecord('${item.module_key}', ${item.id})` }
+              ])}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     `;
+
+    countEl.hidden = false;
+    countEl.textContent = `${archiveItems.length} archived record${archiveItems.length === 1 ? '' : 's'}`;
+    finishTableRender(el);
+    archiveTableSelection?.bindAfterRender(el);
   } catch (err) {
     showToast(err.message, 'error');
     el.innerHTML = '<div class="empty-state"><i class="bi bi-archive"></i>No archived records found</div>';
-    paginationEl.innerHTML = '';
+    countEl.hidden = true;
+    countEl.textContent = '';
+    archiveTableSelection?.bindAfterRender(el);
   }
-}
-
-function changeArchivePage(page) {
-  currentPage = page;
-  loadArchive();
 }
 
 async function restoreRecord(module, id) {
-  if (!confirmAction('Restore this record to its original module?')) return;
-  try {
-    const res = await API.restoreArchive(module, id);
-    showToast(res?.message || 'The record has been restored successfully.');
-    loadArchive();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  if (!await confirmAction('Restore this record to its original module?')) return;
+  await guardAsyncAction(async () => {
+    try {
+      const res = await API.restoreArchive(module, id);
+      showToast(res?.message || 'The record has been restored successfully.');
+      loadArchive();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }, { loadingText: 'Processing...', lockKey: `restore-${module}-${id}` });
 }
 
 document.addEventListener('DOMContentLoaded', initArchivePage);

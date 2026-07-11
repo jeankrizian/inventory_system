@@ -2,7 +2,7 @@ const pool = require('../config/database');
 const { generateCode } = require('../utils/helpers');
 const { appendTransferRequestScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
-const { appendInventoryItemFieldFilters } = require('../utils/inventoryReportFilterSql');
+const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
 
 const TransferModel = {
   async getAll(filters = {}) {
@@ -23,8 +23,8 @@ const TransferModel = {
       LEFT JOIN suppliers s ON i.supplier_id = s.id
       WHERE 1=1`;
     const params = [];
-    if (filters.status) { sql += ' AND t.status LIKE ?'; params.push(`%${filters.status}%`); }
-    sql += appendInventoryItemFieldFilters(filters, 'i', params, { supplierAlias: 's', departmentAlias: 'idpt' });
+    if (filters.status) { sql += ' AND t.status = ?'; params.push(filters.status); }
+    sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'idpt' });
     if (filters.transaction_code) { sql += ' AND t.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
     if (filters.from_department_name) { sql += ' AND fd.name LIKE ?'; params.push(`%${filters.from_department_name}%`); }
     if (filters.to_department_name) { sql += ' AND td.name LIKE ?'; params.push(`%${filters.to_department_name}%`); }
@@ -71,6 +71,17 @@ const TransferModel = {
     return rows[0] || null;
   },
 
+  async findPendingByInventoryItem(inventoryItemId) {
+    const [rows] = await pool.query(
+      `SELECT id, transaction_code FROM transfer_requests
+       WHERE inventory_item_id = ? AND status = 'Pending'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [inventoryItemId]
+    );
+    return rows[0] || null;
+  },
+
   async create(data) {
     const code = generateCode('TRF');
     const requestDate = data.request_date || new Date().toISOString().split('T')[0];
@@ -89,16 +100,16 @@ const TransferModel = {
     return { id: result.insertId, transaction_code: code };
   },
 
-  async updateStatus(id, status, approvedBy, extra = {}) {
-    await pool.query(
+  async updateStatus(id, status, approvedBy, extra = {}, conn = pool) {
+    await conn.query(
       `UPDATE transfer_requests SET status = ?, approved_by = ?, approved_at = NOW(),
         rejection_reason = COALESCE(?, rejection_reason), notes = COALESCE(?, notes) WHERE id = ?`,
       [status, approvedBy, extra.rejection_reason, extra.notes, id]
     );
   },
 
-  async recordHistory(transfer, approvedBy) {
-    await pool.query(
+  async recordHistory(transfer, approvedBy, conn = pool) {
+    await conn.query(
       `INSERT INTO transfer_history
        (transfer_request_id, inventory_item_id, from_department_id, to_department_id,
         from_location_id, to_location_id, reason, approved_by)

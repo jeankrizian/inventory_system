@@ -35,7 +35,7 @@ function enhanceSearchableSelect(selectEl) {
 
   const placeholder = selectEl.options[0]?.value === ''
     ? selectEl.options[0].textContent
-    : 'Select...';
+    : (selectEl.getAttribute('data-placeholder') || 'Select...');
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -137,14 +137,80 @@ function enhanceSearchableSelect(selectEl) {
   syncSearchableSelectValue(selectEl);
 }
 
-function initItemFormSearchableSelects() {
-  ['itemCategory', 'itemSupplier', 'itemLocation', 'itemClassification'].forEach((id) => {
-    enhanceSearchableSelect(document.getElementById(id));
+function initSearchableSelects(root = document) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll('select.form-control-custom').forEach((selectEl) => {
+    enhanceSearchableSelect(selectEl);
   });
 }
 
+let searchableSelectObserver = null;
+
+function startSearchableSelectObserver(root = document.body) {
+  if (!root || searchableSelectObserver) return;
+
+  searchableSelectObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType !== 1) return;
+        if (node.matches?.('select.form-control-custom')) {
+          enhanceSearchableSelect(node);
+        }
+        node.querySelectorAll?.('select.form-control-custom').forEach((selectEl) => {
+          enhanceSearchableSelect(selectEl);
+        });
+      });
+    }
+  });
+
+  searchableSelectObserver.observe(root, { childList: true, subtree: true });
+}
+
+function bootstrapSearchableSelects() {
+  initSearchableSelects(document);
+  startSearchableSelectObserver(document.body);
+}
+
+function refreshSearchableSelects(root = document) {
+  let selects;
+  if (Array.isArray(root)) {
+    selects = root.filter(Boolean);
+  } else if (root?.tagName === 'SELECT' && root.classList?.contains('form-control-custom')) {
+    selects = [root];
+  } else if (root && root.querySelectorAll) {
+    selects = root.querySelectorAll('select.form-control-custom');
+  } else {
+    selects = document.querySelectorAll('select.form-control-custom');
+  }
+  selects.forEach((selectEl) => {
+    if (!selectEl.dataset.searchableEnhanced) {
+      enhanceSearchableSelect(selectEl);
+    } else {
+      syncSearchableSelectValue(selectEl);
+    }
+  });
+}
+
+function initItemFormSearchableSelects() {
+  const form = document.getElementById('itemForm');
+  if (!form) return;
+  [
+    'itemCategory', 'itemSupplier', 'itemLocation', 'itemClassification',
+    'itemMaterial', 'itemCondition', 'itemCustodian', 'itemMaintenanceSchedule',
+    'transferDepartment', 'transferLocation', 'componentNewItem'
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) enhanceSearchableSelect(el);
+  });
+  initSearchableSelects(form);
+}
+
 function syncItemFormSearchableSelects() {
-  ['itemCategory', 'itemSupplier', 'itemLocation', 'itemClassification'].forEach((id) => {
+  [
+    'itemCategory', 'itemSupplier', 'itemLocation', 'itemClassification',
+    'itemMaterial', 'itemCondition', 'itemCustodian', 'itemMaintenanceSchedule',
+    'transferDepartment', 'transferLocation', 'componentNewItem'
+  ].forEach((id) => {
     syncSearchableSelectValue(document.getElementById(id));
   });
 }
@@ -152,3 +218,13 @@ function syncItemFormSearchableSelects() {
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.searchable-select')) closeSearchableSelectDropdowns();
 });
+
+window.initSearchableSelects = initSearchableSelects;
+window.refreshSearchableSelects = refreshSearchableSelects;
+window.startSearchableSelectObserver = startSearchableSelectObserver;
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapSearchableSelects);
+} else {
+  bootstrapSearchableSelects();
+}

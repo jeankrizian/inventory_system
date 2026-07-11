@@ -160,7 +160,6 @@ const CUSTODIAN_ALLOWED_REPORT_TYPES = new Set([
   'inventory',
   'borrow',
   'return',
-  'low-stock',
   'transfers',
   'maintenance',
   'disposals',
@@ -175,6 +174,24 @@ function canAccessReportType(role, reportType) {
     return CUSTODIAN_ALLOWED_REPORT_TYPES.has(reportType);
   }
   return false;
+}
+
+/** Report data scope — department for custodians, school-wide for admin/PM */
+function getReportAccessScope(user) {
+  return getAccessScope(user);
+}
+
+function applyReportDepartmentScope(filters, scope) {
+  if (
+    scope?.type === 'department'
+    && scope.departmentId
+    && filters.department_id
+    && filters.department_id !== scope.departmentId
+  ) {
+    filters.department_scope_mismatch = true;
+    delete filters.department_id;
+  }
+  return filters;
 }
 
 function canAccessArchive(role) {
@@ -207,6 +224,10 @@ function canViewReturnHistory(role) {
 
 function canViewTransfers(role) {
   return canSubmitTransfer(role) || canOperateTransfers(role);
+}
+
+function canViewAssetTransferHistory(role) {
+  return canViewTransfers(role) || canViewInventory(role);
 }
 
 function canViewMaintenance(role) {
@@ -424,6 +445,8 @@ module.exports = {
   canAccessReports,
   canAccessReportType,
   CUSTODIAN_ALLOWED_REPORT_TYPES,
+  getReportAccessScope,
+  applyReportDepartmentScope,
   canAccessArchive,
   canManageSystem,
   canViewBackups,
@@ -432,6 +455,7 @@ module.exports = {
   canViewAllBorrows,
   canViewReturnHistory,
   canViewTransfers,
+  canViewAssetTransferHistory,
   canViewMaintenance,
   canViewDisposal,
   canSubmitDisposal,

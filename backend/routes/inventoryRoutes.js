@@ -14,12 +14,14 @@ const createItemValidation = [
     }
     return true;
   }),
-  body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a positive number'),
+  body('asset_count').optional().isInt({ min: 1, max: 500 }).withMessage('Asset count must be between 1 and 500'),
+  body('quantity').optional().isInt({ min: 1, max: 500 }).withMessage('Asset count must be between 1 and 500'),
   validate
 ];
 
 router.get('/', requireViewInventory, InventoryController.getAll);
 router.get('/next-code', requireManageInventory, InventoryController.getNextCode);
+router.get('/:id/timeline', requireViewInventory, InventoryController.getTimeline);
 router.get('/:id', requireViewInventory, InventoryController.getById);
 router.post('/', requireManageInventory, createItemValidation, InventoryController.create);
 router.put('/:id', requireManageInventory, InventoryController.update);

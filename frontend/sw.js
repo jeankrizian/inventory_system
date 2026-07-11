@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ci-pms-static-v2';
+const CACHE_NAME = 'ci-pms-static-v9';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -7,7 +7,11 @@ const PRECACHE_URLS = [
   '/css/login-background.css',
   '/js/api.js',
   '/js/auth.js',
+  '/js/submitGuard.js',
+  '/js/actionMenu.js',
+  '/js/tableScroll.js',
   '/js/components/layout.js',
+  '/js/notifications.js',
   '/js/login.js',
   '/images/favicon.png'
 ];

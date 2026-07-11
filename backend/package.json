@@ -14,7 +14,9 @@
     "reset:system-data": "node database/reset-system-data.js",
     "setup": "node database/setup.js",
     "migrate:sop": "node database/runSopMigration.js",
-    "migrate:archive": "node database/runArchiveMigration.js"
+    "migrate:archive": "node database/runArchiveMigration.js",
+    "test:phase14": "node test-phase14-full-integration-api.js",
+    "test:all-phases": "node run-all-phase-tests.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

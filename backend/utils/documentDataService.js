@@ -49,7 +49,7 @@ async function buildABLPayloadFromBorrow(borrowId) {
   if (!transaction) throw new Error('Borrow transaction not found');
 
   const [items] = await pool.query(
-    `SELECT bi.quantity, i.item_name, i.item_code, i.property_tag, i.unit, i.brand, i.model,
+    `SELECT bi.quantity, i.item_name, i.item_code, i.property_tag, i.brand, i.model,
             i.department_id, d.name AS department_name
      FROM borrow_items bi
      JOIN inventory_items i ON bi.inventory_item_id = i.id
@@ -71,8 +71,8 @@ async function buildABLPayloadFromBorrow(borrowId) {
     items: items.map(item => ({
       propertyTag: item.property_tag || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: item.quantity,
-      unit: item.unit || 'pcs'
+      quantity: item.quantity || 1,
+      unit: 'pcs'
     })),
     approvedBy: transaction.approver_name || await getPropertyOfficerName(),
     departmentHead: await getDepartmentHead(departmentId),
@@ -101,7 +101,7 @@ async function buildTRFPayloadFromTransfer(transferId) {
       propertyTag: item.property_tag || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
       quantity: transfer.quantity || 1,
-      unit: item.unit || 'pcs'
+      unit: 'pcs'
     }],
     requestedBy: transfer.requested_by_name || '',
     approvedBy: transfer.approved_by_name || await getPropertyOfficerName(),
@@ -132,8 +132,8 @@ async function buildSALPayloadFromInventory(inventoryId, generatedBy) {
     items: [{
       itemCode: item.item_code || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: item.quantity || 1,
-      unit: item.unit || 'pcs',
+      quantity: 1,
+      unit: 'pcs',
       condition: item.condition || 'Good'
     }],
     issuedBy: issuedBy || await getPropertyOfficerName(),
@@ -149,7 +149,7 @@ async function buildPARPayloadFromBorrow(borrowId) {
   if (!transaction) throw new Error('Borrow transaction not found');
 
   const [items] = await pool.query(
-    `SELECT bi.quantity, i.item_name, i.item_code, i.property_tag, i.unit, i.brand, i.model,
+    `SELECT bi.quantity, i.item_name, i.item_code, i.property_tag, i.brand, i.model,
             i.department_id, d.name AS department_name, s.name AS supplier_name
      FROM borrow_items bi
      JOIN inventory_items i ON bi.inventory_item_id = i.id
@@ -170,39 +170,13 @@ async function buildPARPayloadFromBorrow(borrowId) {
     items: items.map(item => ({
       propertyTag: item.property_tag || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: item.quantity,
-      unit: item.unit || 'pcs',
+      quantity: item.quantity || 1,
+      unit: 'pcs',
       amount: ''
     })),
     preparedBy: transaction.approver_name || '',
     receivedBy: transaction.borrower_name || '',
     departmentHead: await getDepartmentHead(departmentId),
-    propertyOfficer: await getPropertyOfficerName(),
-    acknowledgement: 'I acknowledge receipt of the listed property/items and accept full responsibility for their care and custody. I agree to use them only for official purposes and report any damage, loss, or theft to the Property Office immediately. I understand I may be liable for replacement costs if they are lost, damaged through negligence, or misused.'
-  };
-}
-
-async function buildPARPayloadFromTransfer(transferId) {
-  const transfer = await TransferModel.findById(transferId);
-  if (!transfer) throw new Error('Transfer request not found');
-
-  const item = await InventoryModel.findById(transfer.inventory_item_id);
-  if (!item) throw new Error('Inventory item not found');
-
-  return {
-    supplier: item.supplier_name || '',
-    department: transfer.to_department_name || item.department_name || '',
-    deliveryDate: formatDate(transfer.transfer_date || transfer.approved_at || new Date()),
-    items: [{
-      propertyTag: item.property_tag || '-',
-      description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: 1,
-      unit: item.unit || 'pcs',
-      amount: ''
-    }],
-    preparedBy: transfer.approved_by_name || '',
-    receivedBy: item.custodian_name || '',
-    departmentHead: await getDepartmentHead(transfer.to_department_id || item.department_id),
     propertyOfficer: await getPropertyOfficerName(),
     acknowledgement: 'I acknowledge receipt of the listed property/items and accept full responsibility for their care and custody. I agree to use them only for official purposes and report any damage, loss, or theft to the Property Office immediately. I understand I may be liable for replacement costs if they are lost, damaged through negligence, or misused.'
   };
@@ -220,11 +194,8 @@ async function buildPARPayloadFromInventory(inventoryId, generatedBy) {
     preparedBy = rows[0]?.full_name || '';
   }
 
-  const qty = item.quantity || 1;
   const unitCost = item.unit_cost != null ? parseFloat(item.unit_cost) : null;
-  const amountValue = item.acquisition_cost != null
-    ? parseFloat(item.acquisition_cost)
-    : (unitCost != null && !Number.isNaN(unitCost) ? unitCost * qty : null);
+  const amountValue = unitCost != null && !Number.isNaN(unitCost) ? unitCost : null;
 
   return {
     supplier: item.supplier_name || '',
@@ -233,9 +204,9 @@ async function buildPARPayloadFromInventory(inventoryId, generatedBy) {
     items: [{
       propertyTag: item.property_tag || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: qty,
-      unit: item.unit || 'pcs',
-      amount: amountValue != null && !Number.isNaN(amountValue) ? formatMoney(amountValue) : ''
+      quantity: 1,
+      unit: 'pcs',
+      amount: amountValue != null ? formatMoney(amountValue) : ''
     }],
     preparedBy: preparedBy || await getPropertyOfficerName(),
     receivedBy: item.custodian_name || '',
@@ -255,11 +226,8 @@ async function buildGRNPayload(inventoryId, generatedBy) {
     receivedBy = rows[0]?.full_name || receivedBy;
   }
 
-  const qty = item.quantity || 1;
   const unitCost = item.unit_cost != null ? parseFloat(item.unit_cost) : null;
-  const totalCost = item.acquisition_cost != null
-    ? parseFloat(item.acquisition_cost)
-    : (unitCost != null && !Number.isNaN(unitCost) ? unitCost * qty : null);
+  const totalCost = unitCost != null && !Number.isNaN(unitCost) ? unitCost : null;
 
   return {
     department: item.department_name || '',
@@ -269,10 +237,10 @@ async function buildGRNPayload(inventoryId, generatedBy) {
     invoiceNumber: item.invoice_number || '',
     items: [{
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: qty,
-      unit: item.unit || 'pcs',
+      quantity: 1,
+      unit: 'pcs',
       unitCost: unitCost != null && !Number.isNaN(unitCost) ? formatMoney(unitCost) : '',
-      totalAmount: totalCost != null && !Number.isNaN(totalCost) ? formatMoney(totalCost) : ''
+      totalAmount: totalCost != null ? formatMoney(totalCost) : ''
     }],
     dateReceived: formatDate(item.acquisition_date || item.purchase_date || new Date()),
     receivedBy,
@@ -283,7 +251,7 @@ async function buildGRNPayload(inventoryId, generatedBy) {
 
 async function buildRDFPayload(disposalId) {
   const [rows] = await pool.query(
-    `SELECT d.*, i.item_code, i.item_name, i.property_tag, i.unit, i.brand, i.model,
+    `SELECT d.*, i.item_code, i.item_name, i.property_tag, i.brand, i.model,
             i.department_id, dept.name AS department_name,
             req.full_name AS requested_by_name,
             ins.full_name AS inspected_by_name,
@@ -307,7 +275,7 @@ async function buildRDFPayload(disposalId) {
     dateOfRequest: formatDate(disposal.created_at),
     items: [{
       description: [disposal.item_name, disposal.brand, disposal.model].filter(Boolean).join(' / '),
-      qtyUnit: `${disposal.quantity || 1} ${disposal.unit || 'pcs'}`,
+      qtyUnit: `${disposal.quantity || 1} unit`,
       propertyTag: disposal.property_tag || '-',
       parNo: parDoc?.document_number || '-',
       recommendation: disposal.inspection_notes || disposal.disposal_method || 'For evaluation'
@@ -405,21 +373,6 @@ const DocumentDataService = {
   /** Legacy alias — routes to ABL per SOP */
   async generatePARForBorrow(borrowId, generatedBy) {
     return this.generateABLForBorrow(borrowId, generatedBy);
-  },
-
-  async generatePARForTransfer(transferId, generatedBy) {
-    const transfer = await TransferModel.findById(transferId);
-    if (!transfer) throw new Error('Transfer not found');
-    const item = await InventoryModel.findById(transfer.inventory_item_id);
-    if (!item || !isFixedAsset(item.asset_classification)) return null;
-
-    return generateDocument({
-      documentType: 'PAR',
-      relatedModule: 'transfer',
-      relatedTransactionId: transferId,
-      generatedBy,
-      payloadBuilder: () => buildPARPayloadFromTransfer(transferId)
-    });
   },
 
   async generatePARForCustodianAssignment(inventoryId, generatedBy) {
