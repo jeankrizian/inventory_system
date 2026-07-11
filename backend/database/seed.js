@@ -60,7 +60,7 @@ async function seed() {
     // Inventory Items
     await connection.query(`
       INSERT IGNORE INTO inventory_items 
-      (id, item_code, item_name, department_id, brand, model, quantity, available_quantity, unit, supplier_id, purchase_date, \`condition\`, status, location_id, low_stock_threshold) VALUES
+      (id, item_code, item_name, department_id, brand, model, quantity, available_quantity, unit, supplier_id, acquisition_date, \`condition\`, status, location_id, low_stock_threshold) VALUES
       (1, 'ICT-001', 'Desktop Computer', 1, 'Dell', 'OptiPlex 7090', 25, 20, 'units', 1, '2024-01-15', 'Good', 'Available', 1, 5),
       (2, 'ICT-002', 'LCD Projector', 11, 'Epson', 'EB-X06', 10, 8, 'units', 1, '2024-02-20', 'Good', 'Available', 1, 3),
       (3, 'ICT-003', 'Network Switch', 1, 'Cisco', 'SG350-28', 5, 3, 'units', 1, '2024-03-10', 'Good', 'Low Stock', 1, 3),

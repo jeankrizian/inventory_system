@@ -16,8 +16,9 @@ const {
 } = require('../utils/assetClassification');
 const { getReportAccessScope, applyReportDepartmentScope } = require('../utils/roleHelpers');
 const { buildReportPayload, buildReportSummary, resolveDepartmentLabel } = require('../utils/reportSummaryService');
+const { CONDITION_OPTIONS } = require('../utils/conditionOptions');
 
-const INVENTORY_REPORT_DATE_EXPR = 'COALESCE(i.acquisition_date, i.purchase_date, DATE(i.created_at))';
+const INVENTORY_REPORT_DATE_EXPR = 'COALESCE(i.acquisition_date, DATE(i.created_at))';
 
 function getFilters(query) {
   const filters = parseReportFilters(query);
@@ -119,7 +120,7 @@ const ReportController = {
           'Under Maintenance',
           'Disposed'
         ],
-        conditions: ['New', 'Good', 'Fair', 'Poor', 'Damaged']
+        conditions: [...CONDITION_OPTIONS]
       });
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);

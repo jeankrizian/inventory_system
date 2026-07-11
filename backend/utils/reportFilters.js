@@ -75,8 +75,8 @@ function parseReportFilters(query = {}) {
     filters.material = String(query.material);
   }
 
-  if (query.purchase_date) {
-    filters.purchase_date = String(query.purchase_date);
+  if (query.acquisition_date) {
+    filters.acquisition_date = String(query.acquisition_date);
   }
 
   if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {
@@ -115,8 +115,8 @@ function parseInventoryReportFilters(query = {}) {
     filters.material = String(query.material);
   }
 
-  if (query.purchase_date) {
-    filters.purchase_date = String(query.purchase_date);
+  if (query.acquisition_date) {
+    filters.acquisition_date = String(query.acquisition_date);
   }
 
   if (query.unit_cost != null && String(query.unit_cost).trim() !== '') {

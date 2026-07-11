@@ -21,7 +21,7 @@ function isAssetBorrowable(item) {
 
 function fifoOrderSql(alias = 'i') {
   return `ORDER BY
-    COALESCE(${alias}.acquisition_date, ${alias}.purchase_date, '9999-12-31') ASC,
+    COALESCE(${alias}.acquisition_date, '9999-12-31') ASC,
     ${alias}.created_at ASC,
     ${alias}.property_tag ASC`;
 }

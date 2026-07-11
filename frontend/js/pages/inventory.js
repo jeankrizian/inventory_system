@@ -342,7 +342,7 @@ function bulkExportInventory(_ids, rows) {
       { key: 'location_name', label: 'Location' },
       { key: 'condition', label: 'Condition' },
       { key: 'status', label: 'Status' },
-      { label: 'Acquisition Date', getValue: (row) => formatDetailDate(row.acquisition_date || row.purchase_date) }
+      { label: 'Acquisition Date', getValue: (row) => formatDetailDate(row.acquisition_date) }
     ]
   );
   showToast(`Exported ${rows.length} item(s)`);
@@ -398,7 +398,6 @@ async function initInventoryPage() {
   document.getElementById('filterStatus').addEventListener('change', loadItems);
   document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
   document.getElementById('itemQuantity').addEventListener('input', syncCreatePreviewDisplay);
-  document.getElementById('itemCategory').addEventListener('change', updateItemCodePreview);
   bindGuardedFormSubmit(document.getElementById('itemForm'), saveItem, { loadingText: 'Saving...' });
   bindGuardedFormSubmit(document.getElementById('transferForm'), submitTransfer, { loadingText: 'Submitting...' });
   bindGuardedFormSubmit(document.getElementById('disposalForm'), submitDisposal, { loadingText: 'Submitting...' });
@@ -503,7 +502,7 @@ function renderTable() {
             <td>${displayCell(item.location_name)}</td>
             <td>${displayCell(item.condition)}</td>
             <td>${getStatusBadge(item.status)}</td>
-            <td>${displayCell(formatDetailDate(item.acquisition_date || item.purchase_date))}</td>
+            <td>${displayCell(formatDetailDate(item.acquisition_date))}</td>
             <td class="inventory-actions-td">${renderInventoryActionsCell(item, formatClassificationDisplay(item.asset_classification), permissions)}</td>
           </tr>
         `).join('')}
@@ -530,79 +529,29 @@ function applyClassificationFormState() {
   const isFixed = isFixedAssetClassification(classification);
   const isConsumable = classification === 'Consumable';
 
-  const propertyTagInfo = document.getElementById('autoPropertyTagInfo');
   const custodianRow = document.getElementById('custodianRow');
   const maintenanceRow = document.getElementById('maintenanceRow');
   const serviceProviderRow = document.getElementById('serviceProviderRow');
-  const isEdit = Boolean(document.getElementById('itemId')?.value);
 
-  if (propertyTagInfo) propertyTagInfo.style.display = (isEdit || isConsumable) ? 'none' : '';
   if (custodianRow) custodianRow.style.display = isFixed ? '' : 'none';
   if (maintenanceRow) maintenanceRow.style.display = isFixed ? '' : 'none';
   if (serviceProviderRow) serviceProviderRow.style.display = isFixed ? '' : 'none';
 
-  if (isConsumable) {
+  if (isConsumable || !isFixed) {
     document.getElementById('itemCustodian').value = '';
     document.getElementById('itemMaintenanceSchedule').value = '';
     document.getElementById('itemNextMaintenance').value = '';
     document.getElementById('itemServiceProvider').value = '';
-  } else if (!isFixed) {
-    document.getElementById('itemCustodian').value = '';
-    document.getElementById('itemMaintenanceSchedule').value = '';
-    document.getElementById('itemNextMaintenance').value = '';
-    document.getElementById('itemServiceProvider').value = '';
-  }
-}
-
-function setItemCodeFieldState(isEdit) {
-  const itemCodeInput = document.getElementById('itemCode');
-  if (!itemCodeInput) return;
-
-  itemCodeInput.readOnly = true;
-  if (!isEdit) {
-    itemCodeInput.value = '';
-    itemCodeInput.placeholder = 'Auto-generated from category';
-  }
-}
-
-async function updateItemCodePreview() {
-  const itemId = document.getElementById('itemId').value;
-  if (itemId) return;
-
-  const departmentId = document.getElementById('itemCategory').value;
-  const itemCodeInput = document.getElementById('itemCode');
-  if (!itemCodeInput) return;
-
-  if (!departmentId) {
-    itemCodeInput.value = '';
-    itemCodeInput.placeholder = 'Auto-generated from category';
-    return;
-  }
-
-  try {
-    const res = await API.getNextItemCode(departmentId);
-    itemCodeInput.value = res?.data?.item_code || '';
-    itemCodeInput.placeholder = '';
-  } catch (err) {
-    itemCodeInput.value = '';
-    itemCodeInput.placeholder = 'Unable to preview item code';
-    showToast(err.message || 'Unable to preview item code', 'error');
   }
 }
 
 function setAssetFormMode(isEdit) {
   const assetCountRow = document.getElementById('assetCountRow');
-  const editPropertyTagRow = document.getElementById('editPropertyTagRow');
-  const editBatchIdRow = document.getElementById('editBatchIdRow');
   const editSerialNumberRow = document.getElementById('editSerialNumberRow');
-  const autoPropertyTagInfo = document.getElementById('autoPropertyTagInfo');
   const quantityInput = document.getElementById('itemQuantity');
 
   if (assetCountRow) assetCountRow.style.display = isEdit ? 'none' : '';
-  if (editPropertyTagRow) editPropertyTagRow.style.display = isEdit ? '' : 'none';
-  if (editBatchIdRow) editBatchIdRow.style.display = isEdit ? '' : 'none';
   if (editSerialNumberRow) editSerialNumberRow.style.display = isEdit ? '' : 'none';
-  if (autoPropertyTagInfo) autoPropertyTagInfo.style.display = isEdit ? 'none' : '';
   if (quantityInput) quantityInput.required = !isEdit;
 }
 
@@ -616,13 +565,13 @@ function syncCreatePreviewDisplay() {
   if (itemId) return;
 
   if (Number.isNaN(qty) || qty < 1) {
-    previewEl.value = 'Each asset = one inventory record; one batch ID per save';
+    previewEl.value = 'Each asset becomes one inventory record';
     return;
   }
 
   previewEl.value = qty === 1
-    ? '1 asset record (new batch ID on save)'
-    : `${qty} asset records (shared batch ID on save)`;
+    ? '1 asset record'
+    : `${qty} asset records`;
 }
 
 function openAddModal() {
@@ -630,12 +579,10 @@ function openAddModal() {
   document.getElementById('itemForm').reset();
   document.getElementById('itemId').value = '';
   document.getElementById('itemQuantity').value = '1';
-  document.getElementById('itemStatus').value = 'Auto-computed';
   const previewEl = document.getElementById('itemCreatePreview');
   if (previewEl) previewEl.value = '1 asset record';
   setAssetFormMode(false);
   syncClassificationOptions('');
-  setItemCodeFieldState(false);
   applyClassificationFormState();
   syncItemFormSearchableSelects();
   openModal('itemModal');
@@ -651,28 +598,23 @@ async function editItem(id) {
     }
     document.getElementById('itemModalTitle').textContent = 'Edit Item';
     document.getElementById('itemId').value = item.id;
-    document.getElementById('itemCode').value = item.item_code;
-    setItemCodeFieldState(true);
     document.getElementById('itemName').value = item.item_name;
     document.getElementById('itemDescription').value = item.description || '';
     document.getElementById('itemCategory').value = item.department_id || item.category_id;
     document.getElementById('itemSupplier').value = item.supplier_id || '';
     document.getElementById('itemBrand').value = item.brand || '';
     document.getElementById('itemModel').value = item.model || '';
-    document.getElementById('itemEditPropertyTag').value = item.property_tag || '';
-    document.getElementById('itemEditBatchId').value = item.batch_id || '';
     document.getElementById('itemEditSerialNumber').value = item.serial_number || '';
     setAssetFormMode(true);
     document.getElementById('itemLocation').value = item.location_id || '';
-    document.getElementById('itemPurchaseDate').value = item.purchase_date ? item.purchase_date.split('T')[0] : '';
     document.getElementById('itemPR').value = item.purchase_request_number || '';
     document.getElementById('itemPO').value = item.purchase_order_number || '';
     document.getElementById('itemInvoice').value = item.invoice_number || '';
-    const acquisitionDate = item.acquisition_date || item.purchase_date;
-    document.getElementById('itemAcquisitionDate').value = acquisitionDate ? String(acquisitionDate).split('T')[0] : '';
+    document.getElementById('itemAcquisitionDate').value = item.acquisition_date
+      ? String(item.acquisition_date).split('T')[0]
+      : '';
     document.getElementById('itemUnitCost').value = item.unit_cost != null ? item.unit_cost : '';
     document.getElementById('itemCondition').value = item.condition;
-    document.getElementById('itemStatus').value = item.status || 'Auto-computed';
     syncClassificationOptions(item.asset_classification);
     document.getElementById('itemMaterial').value = item.material || '';
     document.getElementById('itemCustodian').value = item.custodian_id || '';
@@ -698,7 +640,6 @@ function getItemFormData() {
     brand: document.getElementById('itemBrand').value,
     model: document.getElementById('itemModel').value,
     location_id: document.getElementById('itemLocation').value ? parseInt(document.getElementById('itemLocation').value) : null,
-    purchase_date: document.getElementById('itemPurchaseDate').value || null,
     acquisition_date: document.getElementById('itemAcquisitionDate').value || null,
     purchase_request_number: document.getElementById('itemPR').value.trim() || null,
     purchase_order_number: document.getElementById('itemPO').value.trim() || null,
@@ -1057,7 +998,6 @@ function renderDetailSection(title, fields) {
 }
 
 function renderAssetDetailSummary(item) {
-  const category = item.department_name || item.category_name;
   return `
     <div class="asset-detail-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:14px 16px;background:var(--gray-light,#f5f5f5);border-radius:8px;border:1px solid var(--border-color,#e5e5e5);">
       <div>
@@ -1065,30 +1005,19 @@ function renderAssetDetailSummary(item) {
         <div style="font-weight:600;font-size:15px;">${displayDetailValue(item.property_tag)}</div>
       </div>
       <div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Batch ID</div>
-        <div style="font-weight:500;">${displayDetailValue(item.batch_id)}</div>
-      </div>
-      <div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Serial Number</div>
-        <div style="font-weight:500;">${displayDetailValue(item.serial_number)}</div>
-      </div>
-      <div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Status</div>
         <div>${getStatusBadge(item.status)}</div>
       </div>
       <div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted,#666);margin-bottom:4px;">Department</div>
-        <div style="font-weight:500;">${displayDetailValue(category)}</div>
+        <div style="font-weight:500;">${displayDetailValue(item.department_name || item.category_name)}</div>
       </div>
     </div>
   `;
 }
 
 const ASSET_DETAIL_TABS = [
-  { key: 'general', panelId: 'assetDetailGeneral' },
-  { key: 'inventory', panelId: 'assetDetailInventory' },
-  { key: 'purchase', panelId: 'assetDetailPurchase' },
-  { key: 'assignment', panelId: 'assetDetailAssignment' },
+  { key: 'overview', panelId: 'assetDetailOverview' },
   { key: 'documents', panelId: 'assetDetailDocuments' },
   { key: 'history', panelId: 'assetDetailHistory' },
   { key: 'maintenance', panelId: 'assetDetailMaintenance' },
@@ -1099,61 +1028,52 @@ const ASSET_DETAIL_TABS = [
 
 const ASSET_INVENTORY_DOCUMENT_TYPES = ['PAR', 'GRN', 'SAL'];
 
-function renderAssetDetailGeneral(item) {
-  return `
-    ${renderDetailSection('General Information', [
-      { label: 'Item Code (Model)', value: item.item_code },
-      { label: 'Item Name', value: item.item_name },
-      { label: 'Classification', value: formatClassificationDisplay(item.asset_classification) },
-      { label: 'Department', value: item.department_name || item.category_name }
-    ])}
-    ${renderDetailSection('Description', [
-      { label: 'Description', value: item.description, fullWidth: true, wrap: true }
-    ])}
-  `;
-}
-
-function renderAssetDetailInventory(item, replacements = [], linkedParts = []) {
+function renderAssetDetailOverview(item, replacements = [], linkedParts = []) {
   const componentsHtml = canReplaceComponent(item.asset_classification)
     ? renderComponentHistory(replacements, linkedParts)
-    : renderEmptyHistory('Component tracking is available for Non-Consumable (Fixed Asset) items only.');
+    : '';
 
-  return `
-    ${renderDetailSection('Inventory Details', [
-      { label: 'Property Tag', value: item.property_tag },
-      { label: 'Batch ID', value: item.batch_id },
-      { label: 'Serial Number', value: item.serial_number },
-      { label: 'Material', value: item.material },
-      { label: 'Condition', value: item.condition },
-      { label: 'Status', html: getStatusBadge(item.status) }
-    ])}
-    ${componentsHtml}
-  `;
-}
-
-function renderAssetDetailPurchase(item) {
-  return renderDetailSection('Purchase Information', [
+  const itemInformation = renderDetailSection('Item Information', [
+    { label: 'Item Name', value: item.item_name },
+    { label: 'Classification', value: formatClassificationDisplay(item.asset_classification) },
+    { label: 'Condition', value: item.condition },
+    { label: 'Material', value: item.material },
+    { label: 'Department', value: item.department_name || item.category_name },
+    { label: 'Location', value: item.location_name },
     { label: 'Supplier', value: item.supplier_name },
+    { label: 'Custodian', value: item.custodian_name },
+    { label: 'Serial Number', value: item.serial_number },
     { label: 'Brand', value: item.brand },
     { label: 'Model', value: item.model },
-    { label: 'Purchase Date', value: formatDetailDate(item.purchase_date) },
-    { label: 'Acquisition Date', value: formatDetailDate(item.acquisition_date || item.purchase_date) },
+    { label: 'Unit Cost', value: formatDetailCurrency(item.unit_cost) },
+    { label: 'Acquisition Date', value: formatDetailDate(item.acquisition_date) },
     { label: 'Purchase Request (PR)', value: item.purchase_request_number },
     { label: 'Purchase Order (PO)', value: item.purchase_order_number },
     { label: 'Invoice Number', value: item.invoice_number },
-    { label: 'Unit Cost', value: formatDetailCurrency(item.unit_cost) }
-  ]);
-}
-
-function renderAssetDetailAssignment(item) {
-  return renderDetailSection('Assignment & Maintenance', [
-    { label: 'Department', value: item.department_name || item.category_name },
-    { label: 'Location', value: item.location_name },
-    { label: 'Assigned Custodian', value: item.custodian_name },
     { label: 'Maintenance Schedule', value: item.maintenance_schedule },
     { label: 'Next Maintenance Date', value: formatDetailDate(item.next_maintenance_date) },
-    { label: 'Service Provider', value: item.service_provider }
+    { label: 'Service Provider', value: item.service_provider },
+    { label: 'Description', value: item.description, fullWidth: true, wrap: true }
   ]);
+
+  const systemInformation = renderDetailSection('System Information', [
+    { label: 'Inventory ID', value: item.id },
+    { label: 'Item Code', value: item.item_code },
+    { label: 'Property Tag', value: item.property_tag },
+    { label: 'Batch ID', value: item.batch_id },
+    { label: 'Status', html: getStatusBadge(item.status) },
+    { label: 'Created At', value: formatDetailDate(item.created_at) },
+    { label: 'Updated At', value: formatDetailDate(item.updated_at) },
+    { label: 'Archived At', value: formatDetailDate(item.archived_at) },
+    { label: 'Archived By', value: item.archived_by_name || item.archived_by }
+  ]);
+
+  return `
+    ${itemInformation}
+    <hr style="border:none;border-top:1px solid var(--border-color,#e5e5e5);margin:8px 0 20px;">
+    ${systemInformation}
+    ${componentsHtml}
+  `;
 }
 
 const ASSET_WORKFLOW_DOCUMENT_TYPES = [
@@ -1323,10 +1243,7 @@ async function viewAssetDetails(id) {
 
     document.getElementById('assetDetailTitle').textContent = item.item_name;
     document.getElementById('assetDetailSummary').innerHTML = renderAssetDetailSummary(item);
-    document.getElementById('assetDetailGeneral').innerHTML = renderAssetDetailGeneral(item);
-    document.getElementById('assetDetailInventory').innerHTML = renderAssetDetailInventory(item, replacements, linkedParts);
-    document.getElementById('assetDetailPurchase').innerHTML = renderAssetDetailPurchase(item);
-    document.getElementById('assetDetailAssignment').innerHTML = renderAssetDetailAssignment(item);
+    document.getElementById('assetDetailOverview').innerHTML = renderAssetDetailOverview(item, replacements, linkedParts);
     document.getElementById('assetDetailDocuments').innerHTML = renderAssetDocuments(documents);
     document.getElementById('assetDetailHistory').innerHTML = renderAssetTimeline(timeline);
 
@@ -1362,7 +1279,7 @@ async function viewAssetDetails(id) {
       </tbody></table></div>`
       : renderEmptyHistory('No disposal history yet.');
 
-    switchAssetDetailTab('general');
+    switchAssetDetailTab('overview');
     finishTableRender(document.getElementById('assetDetailModal'));
     openModal('assetDetailModal');
   } catch (err) {
@@ -1371,7 +1288,7 @@ async function viewAssetDetails(id) {
 }
 
 function switchAssetDetailTab(tab) {
-  const activeTab = ASSET_DETAIL_TABS.some((entry) => entry.key === tab) ? tab : 'general';
+  const activeTab = ASSET_DETAIL_TABS.some((entry) => entry.key === tab) ? tab : 'overview';
 
   document.querySelectorAll('#assetDetailModal .nav-tab-custom').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.detailTab === activeTab);

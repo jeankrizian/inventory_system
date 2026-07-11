@@ -58,9 +58,9 @@ function appendInventoryItemFieldFilters(filters, itemAlias, params, options = {
     clause += ` AND ${supplierAlias}.name LIKE ?`;
     params.push(`%${filters.supplier_name}%`);
   }
-  if (filters.purchase_date) {
-    clause += ` AND DATE(${itemAlias}.purchase_date) = ?`;
-    params.push(filters.purchase_date);
+  if (filters.acquisition_date) {
+    clause += ` AND DATE(${itemAlias}.acquisition_date) = ?`;
+    params.push(filters.acquisition_date);
   }
 
   return clause;
@@ -117,9 +117,9 @@ function appendBorrowInventoryExistsFilters(filters, borrowAlias, params) {
     inv.push('sup_f.name LIKE ?');
     invParams.push(`%${filters.supplier_name}%`);
   }
-  if (filters.purchase_date) {
-    inv.push('DATE(ii_f.purchase_date) = ?');
-    invParams.push(filters.purchase_date);
+  if (filters.acquisition_date) {
+    inv.push('DATE(ii_f.acquisition_date) = ?');
+    invParams.push(filters.acquisition_date);
   }
 
   if (!inv.length) {

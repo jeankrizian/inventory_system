@@ -47,6 +47,8 @@ const { runPerformanceIndexesMigration } = require('./database/runPerformanceInd
 const { runLegacyDataMigration } = require('./database/runLegacyDataMigration');
 const { runBorrowUxMigration } = require('./database/runBorrowUxMigration');
 const { runActivityLogMigration } = require('./database/runActivityLogMigration');
+const { runConditionOptionsMigration } = require('./database/runConditionOptionsMigration');
+const { runPurchaseDateRemovalMigration } = require('./database/runPurchaseDateRemovalMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
@@ -271,6 +273,8 @@ async function startServer() {
       await runLegacyDataMigration();
       await runBorrowUxMigration();
       await runActivityLogMigration();
+      await runConditionOptionsMigration();
+      await runPurchaseDateRemovalMigration();
     });
     startArchiveCleanupScheduler();
   } catch (err) {

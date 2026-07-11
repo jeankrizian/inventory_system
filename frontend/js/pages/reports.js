@@ -24,7 +24,7 @@ const REPORT_FILTER_FIELD_IDS = [
   'reportFilterUnitCost',
   'reportFilterSupplier',
   'reportFilterMaterial',
-  'reportFilterPurchaseDate',
+  'reportFilterAcquisitionDate',
   'reportFilterDateFrom',
   'reportFilterDateTo'
 ];
@@ -36,7 +36,7 @@ let lastReportFilterParams = {};
 let filterOptions = {
   materials: ['Metal', 'Plastic', 'Wood', 'Paper', 'Glass', 'Fabric', 'Rubber', 'Electronic', 'Composite', 'Other'],
   statuses: ['Available', 'Borrowed', 'Under Maintenance', 'Disposed'],
-  conditions: ['New', 'Good', 'Fair', 'Poor', 'Damaged'],
+  conditions: ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'For Repair', 'Damaged', 'Unserviceable'],
   custodians: []
 };
 
@@ -74,7 +74,7 @@ function getReportFilterParams() {
   const unitCost = document.getElementById('reportFilterUnitCost')?.value?.trim();
   const supplier = document.getElementById('reportFilterSupplier')?.value?.trim();
   const material = document.getElementById('reportFilterMaterial')?.value;
-  const purchaseDate = document.getElementById('reportFilterPurchaseDate')?.value;
+  const acquisitionDate = document.getElementById('reportFilterAcquisitionDate')?.value;
   const dateFrom = document.getElementById('reportFilterDateFrom')?.value;
   const dateTo = document.getElementById('reportFilterDateTo')?.value;
 
@@ -95,7 +95,7 @@ function getReportFilterParams() {
   if (unitCost) params.unit_cost = unitCost;
   if (supplier) params.supplier_name = supplier;
   if (material) params.material = material;
-  if (purchaseDate) params.purchase_date = purchaseDate;
+  if (acquisitionDate) params.acquisition_date = acquisitionDate;
   if (dateFrom) params.date_from = dateFrom;
   if (dateTo) params.date_to = dateTo;
 
@@ -192,7 +192,7 @@ async function renderReportFilters(type) {
       <option value="">All Materials</option>
       ${materialOptions}
     </select>
-    <input type="date" class="form-control-custom" id="reportFilterPurchaseDate" title="Purchase Date">
+    <input type="date" class="form-control-custom" id="reportFilterAcquisitionDate" title="Acquisition Date">
     <input type="date" class="form-control-custom" id="reportFilterDateFrom" title="Date From">
     <input type="date" class="form-control-custom" id="reportFilterDateTo" title="Date To">
     <div style="display:flex;gap:8px;grid-column:1/-1;">

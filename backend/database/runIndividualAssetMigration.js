@@ -70,10 +70,10 @@ async function insertAssetClone(connection, source, propertyTag, status) {
     `INSERT INTO inventory_items
      (item_code, item_name, description, department_id, asset_classification, material, property_tag, custodian_id,
       parent_asset_id, brand, model, quantity, available_quantity, unit,
-      supplier_id, purchase_date, acquisition_date, purchase_request_number, purchase_order_number,
+      supplier_id, acquisition_date, purchase_request_number, purchase_order_number,
       invoice_number, unit_cost, acquisition_cost, \`condition\`, status, location_id, low_stock_threshold,
       maintenance_schedule, next_maintenance_date, maintenance_status, service_provider)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       source.item_code,
       source.item_name,
@@ -89,8 +89,7 @@ async function insertAssetClone(connection, source, propertyTag, status) {
       availableQty,
       source.unit,
       source.supplier_id,
-      source.purchase_date,
-      source.acquisition_date,
+      source.acquisition_date || source.purchase_date || null,
       source.purchase_request_number,
       source.purchase_order_number,
       source.invoice_number,

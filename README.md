@@ -141,7 +141,6 @@ Administrator (`admin` / `admin123`) comes from `npm run seed` and is not overwr
 inventory_system/
 ├── README.md
 ├── TEST_ACCOUNTS.md
-├── scripts/                 # Verification helpers
 ├── backend/
 │   ├── config/              # Database configuration
 │   ├── controllers/         # Route controllers (MVC)
@@ -239,7 +238,6 @@ npm run cleanup:sample-data
 npm run reset:system-data
 npm run migrate:sop
 npm run migrate:archive
-npm run test:all-phases        # API phase tests
 ```
 
 ## License

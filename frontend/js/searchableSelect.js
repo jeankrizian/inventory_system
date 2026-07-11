@@ -82,20 +82,22 @@ function enhanceSearchableSelect(selectEl) {
     });
   }
 
-  function showDropdown() {
+  function showDropdown(filterText) {
     closeSearchableSelectDropdowns(wrapper);
-    renderDropdown(input.value);
+    // Opening the list should show all options; only filter while the user is typing.
+    const term = filterText === undefined ? '' : filterText;
+    renderDropdown(term);
     dropdown.classList.add('show');
   }
 
   input.addEventListener('focus', () => {
     input.select();
-    showDropdown();
+    showDropdown('');
   });
-  input.addEventListener('click', showDropdown);
+  input.addEventListener('click', () => showDropdown(''));
   input.addEventListener('input', () => {
     selectEl.value = '';
-    showDropdown();
+    showDropdown(input.value);
   });
   input.addEventListener('blur', () => {
     setTimeout(() => {
@@ -110,22 +112,27 @@ function enhanceSearchableSelect(selectEl) {
 
   input.addEventListener('keydown', (e) => {
     const options = dropdown.querySelectorAll('.searchable-select-option:not(.searchable-select-empty)');
-    if (!options.length) return;
+    if (!options.length && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 
     const active = dropdown.querySelector('.searchable-select-option.active');
     let index = active ? Array.from(options).indexOf(active) : -1;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      if (!dropdown.classList.contains('show')) showDropdown('');
+      const opts = dropdown.querySelectorAll('.searchable-select-option:not(.searchable-select-empty)');
+      if (!opts.length) return;
       if (active) active.classList.remove('active');
-      index = Math.min(index + 1, options.length - 1);
-      options[index].classList.add('active');
-      if (!dropdown.classList.contains('show')) showDropdown();
+      index = Math.min(Math.max(index, -1) + 1, opts.length - 1);
+      opts[index].classList.add('active');
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (!dropdown.classList.contains('show')) showDropdown('');
+      const opts = dropdown.querySelectorAll('.searchable-select-option:not(.searchable-select-empty)');
+      if (!opts.length) return;
       if (active) active.classList.remove('active');
-      index = Math.max(index - 1, 0);
-      options[index].classList.add('active');
+      index = Math.max(index < 0 ? opts.length - 1 : index - 1, 0);
+      opts[index].classList.add('active');
     } else if (e.key === 'Enter' && active) {
       e.preventDefault();
       selectOption(active.dataset.value, active.textContent);

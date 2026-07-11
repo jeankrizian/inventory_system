@@ -20,7 +20,7 @@ function formatDate(value) {
 
 /** Match inventory report acquisition COALESCE — never fall back to "now". */
 function resolveAcquisitionDate(item) {
-  return item?.acquisition_date || item?.purchase_date || item?.created_at || null;
+  return item?.acquisition_date || item?.created_at || null;
 }
 
 function formatMoney(value) {

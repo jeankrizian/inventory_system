@@ -173,9 +173,9 @@ const InventoryModel = {
       }
     }
 
-    if (filters.purchase_date) {
-      sql += ' AND DATE(i.purchase_date) = ?';
-      params.push(filters.purchase_date);
+    if (filters.acquisition_date) {
+      sql += ' AND DATE(i.acquisition_date) = ?';
+      params.push(filters.acquisition_date);
     }
 
     if (filters.department_id) {
@@ -234,7 +234,7 @@ const InventoryModel = {
 
     sql += appendDateRangeSql(
       filters,
-      filters.date_column || 'COALESCE(i.acquisition_date, i.purchase_date, DATE(i.created_at))',
+      filters.date_column || 'COALESCE(i.acquisition_date, DATE(i.created_at))',
       params
     );
 
@@ -316,10 +316,10 @@ const InventoryModel = {
       `INSERT INTO inventory_items
        (item_code, item_name, description, department_id, asset_classification, material, property_tag, batch_id, serial_number, custodian_id,
         parent_asset_id, brand, model,
-        supplier_id, purchase_date, acquisition_date, purchase_request_number, purchase_order_number,
+        supplier_id, acquisition_date, purchase_request_number, purchase_order_number,
         invoice_number, unit_cost, \`condition\`, status, location_id,
         maintenance_schedule, next_maintenance_date, maintenance_status, service_provider)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.item_code, data.item_name,
         data.description || null,
@@ -335,8 +335,7 @@ const InventoryModel = {
         data.parent_asset_id || null,
         data.brand || null, data.model || null,
         data.supplier_id || null,
-        data.purchase_date || null,
-        data.acquisition_date || data.purchase_date || null,
+        data.acquisition_date || null,
         data.purchase_request_number || null,
         data.purchase_order_number || null,
         data.invoice_number || null,
@@ -440,13 +439,9 @@ const InventoryModel = {
       await validateSerialNumberUnique(nextSerial, pool, [id]);
     }
 
-    const nextPurchaseDate = data.purchase_date !== undefined
-      ? (data.purchase_date || null)
-      : existing.purchase_date;
-    const nextAcquisitionRaw = data.acquisition_date !== undefined
-      ? data.acquisition_date
+    const nextAcquisitionDate = data.acquisition_date !== undefined
+      ? (data.acquisition_date || null)
       : existing.acquisition_date;
-    const nextAcquisitionDate = nextAcquisitionRaw || nextPurchaseDate || null;
 
     await pool.query(
 
@@ -458,7 +453,7 @@ const InventoryModel = {
 
         brand = ?, model = ?, supplier_id = ?,
 
-        purchase_date = ?, acquisition_date = ?, purchase_request_number = ?, purchase_order_number = ?,
+        acquisition_date = ?, purchase_request_number = ?, purchase_order_number = ?,
 
         invoice_number = ?, unit_cost = ?, \`condition\` = ?, status = ?, location_id = ?,
 
@@ -495,8 +490,6 @@ const InventoryModel = {
         data.model ?? existing.model,
 
         data.supplier_id !== undefined ? data.supplier_id : existing.supplier_id,
-
-        nextPurchaseDate,
 
         nextAcquisitionDate,
 

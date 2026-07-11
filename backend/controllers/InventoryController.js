@@ -18,6 +18,7 @@ const {
   CONSUMABLE_DISABLED_MESSAGE
 } = require('../utils/assetClassification');
 const { normalizeMaterial, isValidMaterial } = require('../utils/materialOptions');
+const { normalizeCondition, isValidCondition } = require('../utils/conditionOptions');
 const { hasManualStatusInput } = require('../utils/inventoryStatusService');
 const DocumentService = require('../utils/documentService');
 
@@ -31,6 +32,9 @@ function normalizeItemBody(body) {
   if (Object.prototype.hasOwnProperty.call(data, 'material')) {
     data.material = normalizeMaterial(data.material);
   }
+  if (Object.prototype.hasOwnProperty.call(data, 'condition')) {
+    data.condition = normalizeCondition(data.condition);
+  }
   if (Object.prototype.hasOwnProperty.call(data, 'serial_number')) {
     const serial = data.serial_number != null ? String(data.serial_number).trim() : '';
     data.serial_number = serial || null;
@@ -43,6 +47,7 @@ function normalizeItemBody(body) {
   delete data.property_tag;
   delete data.starting_property_tag;
   delete data.batch_id;
+  delete data.purchase_date;
   return data;
 }
 
@@ -180,6 +185,9 @@ const InventoryController = {
       if (!validation.valid) return sendError(res, validation.message, 400);
       if (!isValidMaterial(normalized.material)) {
         return sendError(res, 'Invalid material value', 400);
+      }
+      if (!isValidCondition(normalized.condition)) {
+        return sendError(res, 'Invalid condition value', 400);
       }
 
       const body = sanitizeInventoryByClassification(normalized);
@@ -329,6 +337,9 @@ const InventoryController = {
       if (!isValidMaterial(forValidation.material)) {
         return sendError(res, 'Invalid material value', 400);
       }
+      if (!isValidCondition(forValidation.condition)) {
+        return sendError(res, 'Invalid condition value', 400);
+      }
 
       const body = sanitizeInventoryByClassification(forValidation);
       delete body.item_code;
@@ -344,7 +355,7 @@ const InventoryController = {
       const updated = await InventoryModel.findById(req.params.id);
       const inventoryFields = [
         'item_name', 'department_id', 'location_id', 'custodian_id', 'asset_classification',
-        'serial_number', 'material', 'supplier_id', 'purchase_date', 'unit_cost',
+        'serial_number', 'material', 'supplier_id', 'acquisition_date', 'unit_cost',
         'description', 'condition', 'next_maintenance_date', 'status'
       ];
       await logActivityWithChanges(
