@@ -68,6 +68,14 @@ async function sendReportSuccess(res, reportType, rows, filters = {}) {
   sendSuccess(res, payload);
 }
 
+/** Custodian selected a department outside their scope — match inventory empty behavior. */
+function rowsForReportFilters(filters, rows) {
+  if (filters?.department_scope_mismatch) {
+    return [];
+  }
+  return rows;
+}
+
 const ReportController = {
   async getFilterOptions(req, res) {
     try {
@@ -122,7 +130,7 @@ const ReportController = {
     try {
       const filters = getInventoryReportFilters(req.query, req.session.user);
       const items = await InventoryModel.getAll(filters);
-      await sendReportSuccess(res, 'inventory', items, filters);
+      await sendReportSuccess(res, 'inventory', rowsForReportFilters(filters, items), filters);
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
     }
@@ -131,7 +139,7 @@ const ReportController = {
   async getBorrowReport(req, res) {
     try {
       const filters = getBorrowReportFilters(req.query, req.session.user);
-      const data = await BorrowModel.getAll(filters);
+      const data = filters.department_scope_mismatch ? [] : await BorrowModel.getAll(filters);
       await sendReportSuccess(res, 'borrow', data, filters);
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
@@ -141,7 +149,7 @@ const ReportController = {
   async getReturnReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = await ReturnModel.getAll(filters);
+      const data = filters.department_scope_mismatch ? [] : await ReturnModel.getAll(filters);
       await sendReportSuccess(res, 'return', data, filters);
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
@@ -173,7 +181,7 @@ const ReportController = {
   async getTransferReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = await TransferModel.getAll(filters);
+      const data = filters.department_scope_mismatch ? [] : await TransferModel.getAll(filters);
       await sendReportSuccess(res, 'transfers', data, filters);
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
@@ -181,7 +189,7 @@ const ReportController = {
   async getMaintenanceReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = await MaintenanceModel.getAll(filters);
+      const data = filters.department_scope_mismatch ? [] : await MaintenanceModel.getAll(filters);
       await sendReportSuccess(res, 'maintenance', data, filters);
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
@@ -189,7 +197,7 @@ const ReportController = {
   async getDisposalReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = await DisposalModel.getAll(filters);
+      const data = filters.department_scope_mismatch ? [] : await DisposalModel.getAll(filters);
       await sendReportSuccess(res, 'disposals', data, filters);
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
@@ -197,6 +205,10 @@ const ReportController = {
   async getDepartmentReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
+      if (filters.department_scope_mismatch) {
+        await sendReportSuccess(res, 'departments', [], filters);
+        return;
+      }
       const scope = filters.scope;
       let sql = `
         SELECT d.*, u.full_name AS custodian_name,
@@ -234,13 +246,17 @@ const ReportController = {
     try {
       const filters = getInventoryReportFilters(req.query, req.session.user);
       const items = await InventoryModel.getAll(filters);
-      await sendReportSuccess(res, 'asset-status', items, filters);
+      await sendReportSuccess(res, 'asset-status', rowsForReportFilters(filters, items), filters);
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getCustodianReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
+      if (filters.department_scope_mismatch) {
+        await sendReportSuccess(res, 'custodians', [], filters);
+        return;
+      }
       const scope = filters.scope;
       let sql = `
         SELECT u.full_name AS custodian_name, u.email,
@@ -294,7 +310,7 @@ const ReportController = {
         }
         case 'borrow': {
           reportFilters = getBorrowReportFilters(req.query, req.session.user);
-          const data = await BorrowModel.getAll(reportFilters);
+          const data = reportFilters.department_scope_mismatch ? [] : await BorrowModel.getAll(reportFilters);
           sourceRows = data;
           title = 'Borrow Report';
           headers = ['Code', 'Borrower', 'Department', 'Date', 'Status'];
@@ -303,7 +319,7 @@ const ReportController = {
         }
         case 'return': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
-          const data = await ReturnModel.getAll(reportFilters);
+          const data = reportFilters.department_scope_mismatch ? [] : await ReturnModel.getAll(reportFilters);
           sourceRows = data;
           title = 'Process Return Report';
           headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition'];
@@ -327,7 +343,7 @@ const ReportController = {
         }
         case 'transfers': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
-          const data = await TransferModel.getAll(reportFilters);
+          const data = reportFilters.department_scope_mismatch ? [] : await TransferModel.getAll(reportFilters);
           sourceRows = data;
           title = 'Transfer Report';
           headers = ['Code', 'Item', 'Property Tag', 'From Dept', 'To Dept', 'Status', 'Requested By'];
@@ -336,7 +352,7 @@ const ReportController = {
         }
         case 'maintenance': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
-          const data = await MaintenanceModel.getAll(reportFilters);
+          const data = reportFilters.department_scope_mismatch ? [] : await MaintenanceModel.getAll(reportFilters);
           sourceRows = data;
           title = 'Maintenance Report';
           headers = ['Item', 'Property Tag', 'Type', 'Scheduled', 'Completed', 'Status', 'Provider'];
@@ -345,7 +361,7 @@ const ReportController = {
         }
         case 'disposals': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
-          const data = await DisposalModel.getAll(reportFilters);
+          const data = reportFilters.department_scope_mismatch ? [] : await DisposalModel.getAll(reportFilters);
           sourceRows = data;
           title = 'Disposal Report';
           headers = ['Code', 'Item', 'Property Tag', 'Qty', 'Method', 'Status', 'Requested By'];
@@ -363,6 +379,13 @@ const ReportController = {
         }
         case 'departments': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
+          title = 'Department Report';
+          headers = ['Name', 'Code', 'Head', 'Custodian', 'Assets', 'Status'];
+          if (reportFilters.department_scope_mismatch) {
+            sourceRows = [];
+            rows = [];
+            break;
+          }
           const scope = reportFilters.scope;
           let sql = `
             SELECT d.*, u.full_name AS custodian_name,
@@ -385,13 +408,18 @@ const ReportController = {
           sql += ' ORDER BY d.name';
           const [deptRows] = await pool.query(sql, params);
           sourceRows = deptRows;
-          title = 'Department Report';
-          headers = ['Name', 'Code', 'Head', 'Custodian', 'Assets', 'Status'];
           rows = deptRows.map(d => [d.name, d.code, d.department_head, d.custodian_name, d.asset_count, d.status]);
           break;
         }
         case 'custodians': {
           reportFilters = getScopedReportFilters(req.query, req.session.user);
+          title = 'Custodian Report';
+          headers = ['Custodian', 'Email', 'Assigned Assets'];
+          if (reportFilters.department_scope_mismatch) {
+            sourceRows = [];
+            rows = [];
+            break;
+          }
           const scope = reportFilters.scope;
           let sql = `
             SELECT u.full_name AS custodian_name, u.email,
@@ -411,8 +439,6 @@ const ReportController = {
           sql += ` GROUP BY u.id, u.full_name, u.email ORDER BY assigned_assets DESC`;
           const [custRows] = await pool.query(sql, params);
           sourceRows = custRows;
-          title = 'Custodian Report';
-          headers = ['Custodian', 'Email', 'Assigned Assets'];
           rows = custRows.map(c => [c.custodian_name, c.email, c.assigned_assets]);
           break;
         }
@@ -529,14 +555,16 @@ const ReportController = {
           break;
         }
         case 'borrow': {
-          const data = await BorrowModel.getAll(getBorrowReportFilters(req.query, req.session.user));
+          const borrowFilters = getBorrowReportFilters(req.query, req.session.user);
+          const data = borrowFilters.department_scope_mismatch ? [] : await BorrowModel.getAll(borrowFilters);
           title = 'Borrow Report';
           headers = ['Code', 'Borrower', 'Department', 'Purpose', 'Borrow Date', 'Expected Return', 'Status'];
           rows = data.map(b => [b.transaction_code, b.borrower_name, b.borrower_department, b.purpose, b.borrow_date, b.expected_return_date, b.status]);
           break;
         }
         case 'return': {
-          const data = await ReturnModel.getAll(getScopedReportFilters(req.query, req.session.user));
+          const returnFilters = getScopedReportFilters(req.query, req.session.user);
+          const data = returnFilters.department_scope_mismatch ? [] : await ReturnModel.getAll(returnFilters);
           title = 'Process Return Report';
           headers = ['Code', 'Borrow Code', 'Processed By', 'Process Return Date', 'Condition', 'Notes'];
           rows = data.map(r => [r.transaction_code, r.borrow_code, r.returned_by_name, r.return_date, r.condition, r.notes]);
@@ -556,21 +584,24 @@ const ReportController = {
           break;
         }
         case 'transfers': {
-          const data = await TransferModel.getAll(getScopedReportFilters(req.query, req.session.user));
+          const transferFilters = getScopedReportFilters(req.query, req.session.user);
+          const data = transferFilters.department_scope_mismatch ? [] : await TransferModel.getAll(transferFilters);
           title = 'Transfer Report';
           headers = ['Code', 'Item', 'Property Tag', 'From Dept', 'To Dept', 'Status', 'Requested By'];
           rows = data.map(t => [t.transaction_code, t.item_name, t.property_tag, t.from_department_name, t.to_department_name, t.status, t.requested_by_name]);
           break;
         }
         case 'maintenance': {
-          const data = await MaintenanceModel.getAll(getScopedReportFilters(req.query, req.session.user));
+          const maintFilters = getScopedReportFilters(req.query, req.session.user);
+          const data = maintFilters.department_scope_mismatch ? [] : await MaintenanceModel.getAll(maintFilters);
           title = 'Maintenance Report';
           headers = ['Item', 'Property Tag', 'Type', 'Scheduled', 'Completed', 'Status', 'Provider'];
           rows = data.map(m => [m.item_name, m.property_tag, m.maintenance_type, m.scheduled_date, m.completed_date, m.status, m.service_provider]);
           break;
         }
         case 'disposals': {
-          const data = await DisposalModel.getAll(getScopedReportFilters(req.query, req.session.user));
+          const disposalFilters = getScopedReportFilters(req.query, req.session.user);
+          const data = disposalFilters.department_scope_mismatch ? [] : await DisposalModel.getAll(disposalFilters);
           title = 'Disposal Report';
           headers = ['Code', 'Item', 'Property Tag', 'Qty', 'Method', 'Status', 'Requested By'];
           rows = data.map(d => [d.transaction_code, d.item_name, d.property_tag, d.quantity, d.disposal_method, d.status, d.requested_by_name]);
@@ -584,8 +615,14 @@ const ReportController = {
           break;
         }
         case 'departments': {
-          const filters = getScopedReportFilters(req.query, req.session.user);
-          const scope = filters.scope;
+          const deptFilters = getScopedReportFilters(req.query, req.session.user);
+          title = 'Department Report';
+          headers = ['Name', 'Code', 'Head', 'Custodian', 'Assets', 'Status'];
+          if (deptFilters.department_scope_mismatch) {
+            rows = [];
+            break;
+          }
+          const scope = deptFilters.scope;
           let sql = `
             SELECT d.*, u.full_name AS custodian_name,
                    (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id AND i.is_archived = 0 AND i.status != 'Disposed') AS asset_count
@@ -596,24 +633,28 @@ const ReportController = {
             sql += ' AND d.id = ?';
             params.push(scope.departmentId);
           }
-          if (filters.department_id) {
+          if (deptFilters.department_id) {
             sql += ' AND d.id = ?';
-            params.push(filters.department_id);
+            params.push(deptFilters.department_id);
           }
-          if (filters.name) {
+          if (deptFilters.name) {
             sql += ' AND d.name LIKE ?';
-            params.push(`%${filters.name}%`);
+            params.push(`%${deptFilters.name}%`);
           }
           sql += ' ORDER BY d.name';
           const [deptRows] = await pool.query(sql, params);
-          title = 'Department Report';
-          headers = ['Name', 'Code', 'Head', 'Custodian', 'Assets', 'Status'];
           rows = deptRows.map(d => [d.name, d.code, d.department_head, d.custodian_name, d.asset_count, d.status]);
           break;
         }
         case 'custodians': {
-          const filters = getScopedReportFilters(req.query, req.session.user);
-          const scope = filters.scope;
+          const custFilters = getScopedReportFilters(req.query, req.session.user);
+          title = 'Custodian Report';
+          headers = ['Custodian', 'Email', 'Assigned Assets'];
+          if (custFilters.department_scope_mismatch) {
+            rows = [];
+            break;
+          }
+          const scope = custFilters.scope;
           let sql = `
             SELECT u.full_name AS custodian_name, u.email,
                    COUNT(i.id) AS assigned_assets
@@ -625,14 +666,12 @@ const ReportController = {
             sql += ' AND i.department_id = ?';
             params.push(scope.departmentId);
           }
-          if (filters.department_id) {
+          if (custFilters.department_id) {
             sql += ' AND i.department_id = ?';
-            params.push(filters.department_id);
+            params.push(custFilters.department_id);
           }
           sql += ` GROUP BY u.id, u.full_name, u.email ORDER BY assigned_assets DESC`;
           const [custRows] = await pool.query(sql, params);
-          title = 'Custodian Report';
-          headers = ['Custodian', 'Email', 'Assigned Assets'];
           rows = custRows.map(c => [c.custodian_name, c.email, c.assigned_assets]);
           break;
         }

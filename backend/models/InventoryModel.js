@@ -637,19 +637,19 @@ const InventoryModel = {
 
 
 
-  async markDisposed(id) {
-    const item = await this.findById(id);
-    if (!item || item.status === 'Disposed') return false;
-
-    await pool.query(
-      `UPDATE inventory_items SET status = 'Disposed' WHERE id = ?`,
+  async markDisposed(id, conn = null) {
+    const db = conn || pool;
+    const [result] = await db.query(
+      `UPDATE inventory_items SET status = 'Disposed'
+       WHERE id = ? AND status = 'Available' AND is_archived = 0`,
       [id]
     );
-    return true;
+    return result.affectedRows > 0;
   },
 
-  async setUnderMaintenance(id, maintenanceStatus = 'In Progress') {
-    const [result] = await pool.query(
+  async setUnderMaintenance(id, maintenanceStatus = 'In Progress', conn = null) {
+    const db = conn || pool;
+    const [result] = await db.query(
       `UPDATE inventory_items SET status = 'Under Maintenance', maintenance_status = ?
        WHERE id = ? AND status = 'Available' AND is_archived = 0`,
       [maintenanceStatus, id]
@@ -657,12 +657,27 @@ const InventoryModel = {
     return result.affectedRows > 0;
   },
 
-  async recalculateStatusAfterMaintenance(id) {
-    const item = await this.findById(id);
+  async setMaintenanceInProgress(id, conn = null) {
+    const db = conn || pool;
+    const [result] = await db.query(
+      `UPDATE inventory_items SET maintenance_status = 'In Progress'
+       WHERE id = ? AND status = 'Under Maintenance' AND is_archived = 0`,
+      [id]
+    );
+    return result.affectedRows > 0;
+  },
+
+  async recalculateStatusAfterMaintenance(id, conn = null) {
+    const db = conn || pool;
+    const [rows] = await db.query(
+      `SELECT id, status FROM inventory_items WHERE id = ?`,
+      [id]
+    );
+    const item = rows[0];
     if (!item) return null;
 
     const status = recalculateInventoryStatus(item);
-    await pool.query(
+    await db.query(
       `UPDATE inventory_items SET status = ?, maintenance_status = 'Completed' WHERE id = ?`,
       [status, id]
     );

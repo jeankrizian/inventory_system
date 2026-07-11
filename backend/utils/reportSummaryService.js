@@ -132,9 +132,7 @@ async function buildReportPayload(reportType, rows, filters = {}) {
 }
 
 module.exports = {
-  REPORT_META,
   buildReportSummary,
   buildReportPayload,
-  resolveDepartmentLabel,
-  countByField
+  resolveDepartmentLabel
 };

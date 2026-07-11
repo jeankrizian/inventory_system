@@ -58,7 +58,7 @@ async function loadMaintainableItems() {
   try {
     const res = await API.getInventory();
     maintainableItems = (res?.data || []).filter(i =>
-      i.status !== 'Disposed' && canMaintainAsset(i.asset_classification)
+      i.status === 'Available' && canMaintainAsset(i.asset_classification)
     );
   } catch (err) {
     showToast(err.message, 'error');

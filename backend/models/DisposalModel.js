@@ -7,7 +7,8 @@ const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../u
 const DisposalModel = {
   async getAll(filters = {}) {
     let sql = `
-      SELECT d.*, i.item_code, i.item_name, i.property_tag, u.full_name AS requested_by_name,
+      SELECT d.*, i.item_code, i.item_name, i.property_tag, dept.name AS department_name,
+             u.full_name AS requested_by_name,
              ins.full_name AS inspected_by_name, app.full_name AS approved_by_name
       FROM disposal_requests d
       JOIN inventory_items i ON d.inventory_item_id = i.id
@@ -19,7 +20,7 @@ const DisposalModel = {
       WHERE 1=1`;
     const params = [];
     if (filters.inventory_item_id) { sql += ' AND d.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.status) { sql += ' AND d.status LIKE ?'; params.push(`%${filters.status}%`); }
+    if (filters.status) { sql += ' AND d.status = ?'; params.push(filters.status); }
     sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'dept' });
     if (filters.transaction_code) { sql += ' AND d.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
     if (filters.disposal_method) { sql += ' AND d.disposal_method LIKE ?'; params.push(`%${filters.disposal_method}%`); }
@@ -59,6 +60,17 @@ const DisposalModel = {
     return rows[0] || null;
   },
 
+  async findPendingByInventoryItem(inventoryItemId) {
+    const [rows] = await pool.query(
+      `SELECT id, transaction_code, status FROM disposal_requests
+       WHERE inventory_item_id = ? AND status IN ('Pending', 'Inspected')
+       ORDER BY id DESC
+       LIMIT 1`,
+      [inventoryItemId]
+    );
+    return rows[0] || null;
+  },
+
   async create(data) {
     const code = generateCode('DSP');
     const [result] = await pool.query(
@@ -71,19 +83,25 @@ const DisposalModel = {
   },
 
   async inspect(id, userId, inspectionNotes) {
-    await pool.query(
-      `UPDATE disposal_requests SET status = 'Inspected', inspected_by = ?, inspection_notes = ? WHERE id = ?`,
+    const [result] = await pool.query(
+      `UPDATE disposal_requests SET status = 'Inspected', inspected_by = ?, inspection_notes = ?
+       WHERE id = ? AND status = 'Pending'`,
       [userId, inspectionNotes, id]
     );
+    if (result.affectedRows === 0) {
+      throw new Error('Only pending requests can be inspected');
+    }
   },
 
-  async updateStatus(id, status, approvedBy, extra = {}) {
-    await pool.query(
+  async updateStatus(id, status, approvedBy, extra = {}, conn = null) {
+    const db = conn || pool;
+    const [result] = await db.query(
       `UPDATE disposal_requests SET status = ?, approved_by = ?,
         disposal_method = COALESCE(?, disposal_method), disposal_date = COALESCE(?, disposal_date),
         notes = COALESCE(?, notes) WHERE id = ?`,
       [status, approvedBy, extra.disposal_method, extra.disposal_date, extra.notes, id]
     );
+    return result.affectedRows > 0;
   },
 
   async countPending(scope) {

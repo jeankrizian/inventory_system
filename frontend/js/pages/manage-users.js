@@ -46,6 +46,12 @@ async function initManageUsers() {
   await Promise.all([loadRoles(), loadDepartments()]);
   await loadUsers();
   initSearchableSelects(document);
+
+  const deepLinkId = new URLSearchParams(window.location.search).get('id');
+  if (deepLinkId) {
+    const userId = parseInt(deepLinkId, 10);
+    if (!Number.isNaN(userId)) editUser(userId);
+  }
 }
 
 async function loadDepartments() {

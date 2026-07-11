@@ -9,8 +9,5 @@ module.exports = {
   maintenanceLink: (id) => pageLink('maintenance-requests', id),
   transferLink: (id) => pageLink('transfer-requests', id),
   disposalLink: (id) => pageLink('disposal-requests', id),
-  inventoryLink: (id, extraQuery = '') => pageLink('inventory', id, extraQuery),
-  usersLink: (id) => pageLink('manage-users', id),
-  departmentsLink: (id) => pageLink('manage-departments', id),
-  archiveLink: () => '/pages/archive.html'
+  usersLink: (id) => pageLink('manage-users', id)
 };

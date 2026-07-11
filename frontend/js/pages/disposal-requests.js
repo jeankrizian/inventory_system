@@ -65,7 +65,7 @@ async function initDisposalRequestsPage() {
 async function loadDisposableItems() {
   try {
     const res = await API.getInventory();
-    disposableItems = (res?.data || []).filter(i => i.status !== 'Disposed');
+    disposableItems = (res?.data || []).filter(i => i.status === 'Available');
   } catch (err) {
     showToast(err.message, 'error');
     disposableItems = [];

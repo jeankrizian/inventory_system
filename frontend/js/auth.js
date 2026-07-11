@@ -343,14 +343,6 @@ function getDashboardQuickLink(user, workflowType) {
   return moduleLinks[workflowType] || null;
 }
 
-function canViewOperationalDashboard(user) {
-  return canViewTransferDashboard(user) || canViewMaintenanceDashboard(user);
-}
-
-function canViewPersonalDashboardOnly(user) {
-  return false;
-}
-
 function canViewPendingWorkflowDashboard(user) {
   return isCustodian(user);
 }

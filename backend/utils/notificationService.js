@@ -125,13 +125,13 @@ async function checkDueDateReminders(userId, roleName) {
         message: `Your borrowed item (${b.transaction_code}) is due tomorrow.`,
         type: 'due_soon',
         reference_id: b.id,
-        link_url: '/pages/orders.html',
+        link_url: borrowLink(b.id),
         skipDuplicate: true
       });
     } else if (diffDays < 0) {
       await notifyUser(userId, {
         title: 'Item Overdue',
-        message: 'Your borrowed item is overdue.',
+        message: `Your borrowed item (${b.transaction_code}) is overdue.`,
         type: 'overdue',
         reference_id: b.id,
         link_url: borrowLink(b.id),

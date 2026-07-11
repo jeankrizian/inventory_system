@@ -5,7 +5,6 @@
 let notificationPollTimer = null;
 let notificationBtnHandler = null;
 let markAllHandler = null;
-let notificationsLoaded = false;
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -108,7 +107,6 @@ async function loadNotifications(showLoading = false) {
     if (!res?.data) return;
     renderNotificationList(res.data.notifications);
     updateNotificationBadge(res.data.unreadCount);
-    notificationsLoaded = true;
   } catch {
     if (list) {
       list.innerHTML = '<div class="notification-empty"><p>Unable to load notifications</p></div>';

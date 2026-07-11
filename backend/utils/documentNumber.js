@@ -55,10 +55,6 @@ function parseDocumentNumber(documentNumber) {
   };
 }
 
-function isStandardDocumentNumber(documentNumber) {
-  return STANDARD_DOCUMENT_NUMBER_REGEX.test(String(documentNumber || '').trim().toUpperCase());
-}
-
 async function getNextDocumentNumber(documentType, conn = null) {
   const type = String(documentType || '').toUpperCase();
   if (!DOCUMENT_TYPES.has(type)) {
@@ -106,6 +102,5 @@ module.exports = {
   STANDARD_DOCUMENT_NUMBER_REGEX,
   formatDocumentNumber,
   parseDocumentNumber,
-  isStandardDocumentNumber,
   getNextDocumentNumber
 };

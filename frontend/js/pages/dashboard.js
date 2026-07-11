@@ -734,13 +734,6 @@ function showDashboardError(err) {
   });
 }
 
-function reloadDashboard() {
-  if (!dashboardUser) return;
-  destroyAllCharts();
-  document.getElementById('pageContent').innerHTML = buildDashboardHtml(dashboardUser);
-  loadDashboardData(dashboardUser);
-}
-
 async function loadDashboardData(user) {
   try {
     const res = await API.getDashboard();

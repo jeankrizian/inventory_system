@@ -43,14 +43,6 @@ const NotificationModel = {
     return true;
   },
 
-  async findById(id, userId) {
-    const [rows] = await pool.query(
-      'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
-    return rows[0] || null;
-  },
-
   async hasRecent(userId, type, referenceId, hours = 24) {
     const [rows] = await pool.query(
       `SELECT id FROM notifications

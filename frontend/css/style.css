@@ -912,10 +912,6 @@ body {
   min-height: 160px;
 }
 
-.chart-card--span-5 { grid-column: span 5; }
-.chart-card--span-6 { grid-column: span 6; }
-.chart-card--span-7 { grid-column: span 7; }
-
 .dashboard-empty-chart {
   grid-column: 1 / -1;
   text-align: center;
@@ -1676,10 +1672,6 @@ body.modal-open { overflow: hidden; }
   .summary-cards-grid,
   .summary-cards-grid--asset-overview,
   .pending-cards-grid { grid-template-columns: repeat(2, 1fr); }
-  .dashboard-bottom-row { grid-template-columns: 1fr; }
-  .chart-card--span-5,
-  .chart-card--span-6,
-  .chart-card--span-7 { grid-column: span 12; }
 }
 
 @media (max-width: 1024px) {

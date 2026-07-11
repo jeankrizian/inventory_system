@@ -1,5 +1,6 @@
 const DisposalModel = require('../models/DisposalModel');
 const InventoryModel = require('../models/InventoryModel');
+const pool = require('../config/database');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyPropertyManagers, notifyUser, actorExcludeOptions } = require('../utils/notificationService');
@@ -76,10 +77,25 @@ const DisposalController = {
         return sendError(res, `Disposal can only be requested for available assets (current status: ${item.status})`, 400);
       }
 
+      const reason = String(req.body.reason || '').trim();
+      if (!reason) {
+        return sendError(res, 'Disposal reason is required', 400);
+      }
+
+      const existingPending = await DisposalModel.findPendingByInventoryItem(item.id);
+      if (existingPending) {
+        return sendError(
+          res,
+          `A pending disposal request already exists for this asset (${existingPending.transaction_code})`,
+          400
+        );
+      }
+
       const quantity = 1;
 
       const result = await DisposalModel.create({
         ...req.body,
+        reason,
         quantity,
         requested_by: req.session.user.id
       });
@@ -123,7 +139,12 @@ const DisposalController = {
       if (!disposal) return;
       if (disposal.status !== 'Pending') return sendError(res, 'Only pending requests can be inspected', 400);
 
-      await DisposalModel.inspect(req.params.id, req.session.user.id, req.body.inspection_notes);
+      const inspectionNotes = String(req.body.inspection_notes || '').trim();
+      if (!inspectionNotes) {
+        return sendError(res, 'Inspection notes are required', 400);
+      }
+
+      await DisposalModel.inspect(req.params.id, req.session.user.id, inspectionNotes);
       await logActivity(req.session.user.id, 'INSPECT', 'Disposal', `Inspected ${disposal.transaction_code}`, req.ip, {
         entity_type: 'disposal_request',
         entity_id: disposal.id,
@@ -137,6 +158,7 @@ const DisposalController = {
   },
 
   async approve(req, res) {
+    const connection = await pool.getConnection();
     try {
       const disposal = await getScopedDisposal(req, res);
       if (!disposal) return;
@@ -144,12 +166,32 @@ const DisposalController = {
         return sendError(res, 'Only inspected requests can be approved', 400);
       }
 
-      await InventoryModel.markDisposed(disposal.inventory_item_id);
-      await DisposalModel.updateStatus(disposal.id, 'Completed', req.session.user.id, {
-        disposal_method: req.body.disposal_method,
-        disposal_date: req.body.disposal_date || new Date().toISOString().split('T')[0],
-        notes: req.body.notes
-      });
+      const disposalMethod = String(req.body.disposal_method || '').trim();
+      const disposalDate = String(req.body.disposal_date || '').trim() || new Date().toISOString().split('T')[0];
+      if (!disposalMethod) {
+        return sendError(res, 'Disposal method is required', 400);
+      }
+
+      await connection.beginTransaction();
+      try {
+        const marked = await InventoryModel.markDisposed(disposal.inventory_item_id, connection);
+        if (!marked) {
+          throw new Error('Asset must be available to complete disposal');
+        }
+        const updated = await DisposalModel.updateStatus(disposal.id, 'Completed', req.session.user.id, {
+          disposal_method: disposalMethod,
+          disposal_date: disposalDate,
+          notes: req.body.notes
+        }, connection);
+        if (!updated) {
+          throw new Error('Failed to update disposal request');
+        }
+        await connection.commit();
+      } catch (txErr) {
+        await connection.rollback();
+        throw txErr;
+      }
+
       await logActivity(req.session.user.id, 'APPROVE', 'Disposal', `Approved ${disposal.transaction_code}`, req.ip, {
         entity_type: 'disposal_request',
         entity_id: disposal.id,
@@ -179,21 +221,13 @@ const DisposalController = {
         reference_id: disposal.id,
         link_url: disposalLink(disposal.id)
       }, actorExcludeOptions(req));
-      await notifyUser(disposal.requested_by, {
-        title: 'Disposal Finalized',
-        message: buildAssetNotificationMessage({
-          action: 'Disposal finalized',
-          itemName: disposal.item_name,
-          propertyTag: disposal.property_tag,
-          detail: disposal.transaction_code
-        }),
-        type: 'disposal_finalized',
-        reference_id: disposal.id,
-        link_url: disposalLink(disposal.id)
-      }, actorExcludeOptions(req));
 
       sendSuccess(res, { generated_document: generatedDocument }, 'Disposal approved and inventory updated');
-    } catch (err) { sendError(res, err.message, 500); }
+    } catch (err) {
+      sendError(res, err.message, 500);
+    } finally {
+      connection.release();
+    }
   },
 
   async reject(req, res) {
@@ -204,8 +238,13 @@ const DisposalController = {
         return sendError(res, 'Request cannot be rejected', 400);
       }
 
+      const rejectionReason = String(req.body.rejection_reason || req.body.reason || '').trim();
+      if (!rejectionReason) {
+        return sendError(res, 'Rejection reason is required', 400);
+      }
+
       await DisposalModel.updateStatus(disposal.id, 'Rejected', req.session.user.id, {
-        notes: req.body.rejection_reason || req.body.reason || null
+        notes: rejectionReason
       });
       await logActivity(req.session.user.id, 'REJECT', 'Disposal', `Rejected ${disposal.transaction_code}`, req.ip, {
         entity_type: 'disposal_request',
@@ -218,7 +257,7 @@ const DisposalController = {
 
       await notifyUser(disposal.requested_by, {
         title: 'Disposal Rejected',
-        message: `Your disposal request ${disposal.transaction_code} has been rejected.`,
+        message: `Your disposal request ${disposal.transaction_code} has been rejected. Reason: ${rejectionReason}`,
         type: 'disposal_rejected',
         reference_id: disposal.id,
         link_url: disposalLink(disposal.id)

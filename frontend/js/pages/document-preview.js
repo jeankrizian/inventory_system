@@ -24,6 +24,9 @@ async function initDocumentPreview() {
     const doc = res.data;
     document.title = `${doc.document_number} - Document Preview`;
     document.getElementById('documentSheet').innerHTML = renderDocument(doc);
+    if (params.get('print') === '1') {
+      setTimeout(() => window.print(), 400);
+    }
   } catch (err) {
     const message = err.message || 'Unable to load document.';
     showToast(message, 'error');

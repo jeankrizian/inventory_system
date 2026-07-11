@@ -6,6 +6,7 @@ const { ArchiveBlockedError } = require('../utils/archiveIntegrityService');
 const { logActivity, logActivityWithChanges, collectChanges } = require('../utils/activityLogger');
 const { notifyAdministrators } = require('../utils/notificationService');
 const { buildGovernanceNotificationMessage } = require('../utils/assetNotificationHelper');
+const { usersLink } = require('../utils/notificationLinks');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
 const {
   isCustodian,
@@ -197,7 +198,7 @@ const UserController = {
         }),
         type: 'user_created',
         reference_id: id,
-        link_url: '/pages/manage-users.html'
+        link_url: usersLink(id)
       }, { excludeUserIds: [req.session.user.id] });
       sendSuccess(res, user, 'User created successfully', 201);
     } catch (err) {

@@ -199,9 +199,9 @@ function renderInventoryActionsCell(item, classification, permissions) {
   const showBorrow = permissions.canSubmitBorrow && canBorrowType && itemBorrowable;
   const showBorrowUnavailable = permissions.canSubmitBorrow && canBorrowType && !itemBorrowable && !isDisposed;
   const showTransfer = permissions.canSubmitTransfer && item.status === 'Available' && canTransferAsset(classification);
-  const showMaintain = permissions.canSubmitMaintenance && !isDisposed && canMaintainAsset(classification);
+  const showMaintain = permissions.canSubmitMaintenance && item.status === 'Available' && canMaintainAsset(classification);
   const showReplace = permissions.canManageInventory && !isDisposed && canReplaceComponent(classification);
-  const showDispose = permissions.canSubmitDisposal && !isDisposed;
+  const showDispose = permissions.canSubmitDisposal && item.status === 'Available';
   const documentOptions = getInventoryDocumentOptions(item, classification);
   const hasOverflowItems = showBorrow || showBorrowUnavailable || showTransfer || showMaintain || showReplace || showDispose ||
     documentOptions.length || permissions.canArchiveInventory;
@@ -829,6 +829,11 @@ async function submitTransfer(e) {
 
 function openDisposalModal(id) {
   const item = items.find(i => i.id === id);
+  if (!item) return;
+  if (item.status !== 'Available') {
+    showToast(`Only available assets can be submitted for disposal (current status: ${item.status})`, 'error');
+    return;
+  }
   document.getElementById('disposalItemId').value = id;
   document.getElementById('disposalPropertyTag').value = item?.property_tag || '-';
   const qtyGroup = document.getElementById('disposalQuantityGroup');
@@ -857,6 +862,10 @@ function openMaintenanceModal(id) {
   if (!item) return;
   if (!canMaintainAsset(item.asset_classification)) {
     showToast('Maintenance is only available for Non-Consumable (Fixed Asset) items', 'error');
+    return;
+  }
+  if (item.status !== 'Available') {
+    showToast(`Only available assets can be submitted for maintenance (current status: ${item.status})`, 'error');
     return;
   }
   document.getElementById('maintenanceItemId').value = id;

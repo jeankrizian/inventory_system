@@ -290,7 +290,7 @@ const DashboardModel = {
         ? BorrowModel.countPending(borrowScope) : Promise.resolve(0),
       ctx.modules.transferStats ? TransferModel.countPending(ctx.operationalScope) : Promise.resolve(0),
       ctx.showDisposalStats ? DisposalModel.countPending(ctx.operationalScope) : Promise.resolve(0),
-      ctx.modules.assetsNeedingAttention || ctx.modules.maintenanceStats
+      ctx.modules.maintenanceStats
         ? MaintenanceModel.countDue(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.maintenanceStats ? MaintenanceModel.countPending(ctx.operationalScope) : Promise.resolve(0),
       ctx.modules.maintenanceStats ? MaintenanceModel.countOngoing(ctx.operationalScope) : Promise.resolve(0),

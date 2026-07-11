@@ -26,7 +26,7 @@ const MaintenanceModel = {
     let sql = `${this._baseSelect()} WHERE 1=1`;
     const params = [];
     if (filters.inventory_item_id) { sql += ' AND m.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.status) { sql += ' AND m.status LIKE ?'; params.push(`%${filters.status}%`); }
+    if (filters.status) { sql += ' AND m.status = ?'; params.push(filters.status); }
     sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
     if (filters.transaction_code) { sql += ' AND m.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
     if (filters.maintenance_type) { sql += ' AND m.maintenance_type LIKE ?'; params.push(`%${filters.maintenance_type}%`); }
@@ -59,6 +59,17 @@ const MaintenanceModel = {
     return this.getAll({ inventory_item_id: inventoryItemId });
   },
 
+  async findPendingByInventoryItem(inventoryItemId) {
+    const [rows] = await pool.query(
+      `SELECT id, transaction_code FROM maintenance_records
+       WHERE inventory_item_id = ? AND status = 'Pending'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [inventoryItemId]
+    );
+    return rows[0] || null;
+  },
+
   async create(data) {
     const code = generateCode('MNT');
     const [result] = await pool.query(
@@ -86,17 +97,39 @@ const MaintenanceModel = {
   },
 
   async approve(id, userId, remarks) {
-    await pool.query(
-      `UPDATE maintenance_records SET status = 'Approved', approved_by = ?, approved_at = NOW(),
-        admin_remarks = COALESCE(?, admin_remarks) WHERE id = ? AND status = 'Pending'`,
-      [userId, remarks, id]
-    );
-    const record = await this.findById(id);
-    if (record) {
-      const updated = await InventoryModel.setUnderMaintenance(record.inventory_item_id, 'Scheduled');
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [upd] = await connection.query(
+        `UPDATE maintenance_records SET status = 'Approved', approved_by = ?, approved_at = NOW(),
+          admin_remarks = COALESCE(?, admin_remarks) WHERE id = ? AND status = 'Pending'`,
+        [userId, remarks, id]
+      );
+      if (upd.affectedRows === 0) {
+        throw new Error('Only pending requests can be approved');
+      }
+
+      const [rows] = await connection.query(
+        `SELECT inventory_item_id FROM maintenance_records WHERE id = ?`,
+        [id]
+      );
+      const inventoryItemId = rows[0]?.inventory_item_id;
+      if (!inventoryItemId) {
+        throw new Error('Maintenance request not found');
+      }
+
+      const updated = await InventoryModel.setUnderMaintenance(inventoryItemId, 'Scheduled', connection);
       if (!updated) {
         throw new Error('Asset is not available for maintenance');
       }
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
     }
   },
 
@@ -118,45 +151,91 @@ const MaintenanceModel = {
   },
 
   async start(id, data) {
-    await pool.query(
-      `UPDATE maintenance_records SET status = 'Ongoing', technician = COALESCE(?, technician),
-        service_provider = COALESCE(?, service_provider) WHERE id = ?`,
-      [data.technician, data.technician, id]
-    );
-    const record = await this.findById(id);
-    if (record) {
-      const updated = await InventoryModel.setUnderMaintenance(record.inventory_item_id, 'In Progress');
-      if (!updated) {
-        throw new Error('Asset is not available for maintenance');
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [upd] = await connection.query(
+        `UPDATE maintenance_records SET status = 'Ongoing', technician = COALESCE(?, technician),
+          service_provider = COALESCE(?, service_provider)
+         WHERE id = ? AND status IN ('Approved', 'Scheduled')`,
+        [data.technician, data.technician, id]
+      );
+      if (upd.affectedRows === 0) {
+        throw new Error('Only approved or scheduled maintenance can be started');
       }
+
+      const [rows] = await connection.query(
+        `SELECT inventory_item_id FROM maintenance_records WHERE id = ?`,
+        [id]
+      );
+      const inventoryItemId = rows[0]?.inventory_item_id;
+      if (!inventoryItemId) {
+        throw new Error('Maintenance request not found');
+      }
+
+      const updated = await InventoryModel.setMaintenanceInProgress(inventoryItemId, connection);
+      if (!updated) {
+        throw new Error('Asset must be under maintenance before work can start');
+      }
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
     }
   },
 
   async complete(id, data) {
-    await pool.query(
-      `UPDATE maintenance_records SET status = 'Completed', completed_date = ?,
-        performed_by = ?, completion_remarks = COALESCE(?, completion_remarks),
-        service_provider = COALESCE(?, service_provider), cost = ?,
-        next_maintenance_date = COALESCE(?, next_maintenance_date) WHERE id = ?`,
-      [
-        data.completed_date,
-        data.performed_by,
-        data.completion_remarks,
-        data.service_provider,
-        data.cost || null,
-        data.next_maintenance_date,
-        id
-      ]
-    );
-    const record = await this.findById(id);
-    if (record) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [upd] = await connection.query(
+        `UPDATE maintenance_records SET status = 'Completed', completed_date = ?,
+          performed_by = ?, completion_remarks = COALESCE(?, completion_remarks),
+          service_provider = COALESCE(?, service_provider), cost = ?,
+          next_maintenance_date = COALESCE(?, next_maintenance_date)
+         WHERE id = ? AND status IN ('Ongoing', 'In Progress', 'Scheduled', 'Approved')`,
+        [
+          data.completed_date,
+          data.performed_by,
+          data.completion_remarks,
+          data.service_provider,
+          data.cost || null,
+          data.next_maintenance_date,
+          id
+        ]
+      );
+      if (upd.affectedRows === 0) {
+        throw new Error('This maintenance cannot be completed');
+      }
+
+      const [rows] = await connection.query(
+        `SELECT inventory_item_id FROM maintenance_records WHERE id = ?`,
+        [id]
+      );
+      const inventoryItemId = rows[0]?.inventory_item_id;
+      if (!inventoryItemId) {
+        throw new Error('Maintenance request not found');
+      }
+
       if (data.next_maintenance_date) {
-        await pool.query(
+        await connection.query(
           `UPDATE inventory_items SET next_maintenance_date = ? WHERE id = ?`,
-          [data.next_maintenance_date, record.inventory_item_id]
+          [data.next_maintenance_date, inventoryItemId]
         );
       }
-      await InventoryModel.recalculateStatusAfterMaintenance(record.inventory_item_id);
+      await InventoryModel.recalculateStatusAfterMaintenance(inventoryItemId, connection);
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
     }
   },
 

@@ -18,6 +18,11 @@ function formatDate(value) {
   return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+/** Match inventory report acquisition COALESCE — never fall back to "now". */
+function resolveAcquisitionDate(item) {
+  return item?.acquisition_date || item?.purchase_date || item?.created_at || null;
+}
+
 function formatMoney(value) {
   const num = parseFloat(value);
   if (Number.isNaN(num)) return '';
@@ -128,7 +133,7 @@ async function buildSALPayloadFromInventory(inventoryId, generatedBy) {
 
   return {
     department: item.department_name || '',
-    issueDate: formatDate(item.acquisition_date || item.purchase_date || new Date()),
+    issueDate: formatDate(resolveAcquisitionDate(item)),
     items: [{
       itemCode: item.item_code || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
@@ -141,44 +146,6 @@ async function buildSALPayloadFromInventory(inventoryId, generatedBy) {
     departmentHead: await getDepartmentHead(item.department_id),
     propertyOfficer: await getPropertyOfficerName(),
     acknowledgement: 'The assigned custodian acknowledges receipt of the semi-durable item(s) listed above and accepts responsibility for monitoring usage, safekeeping, and reporting any loss or damage to the Property Office.'
-  };
-}
-
-async function buildPARPayloadFromBorrow(borrowId) {
-  const transaction = await BorrowModel.findById(borrowId);
-  if (!transaction) throw new Error('Borrow transaction not found');
-
-  const [items] = await pool.query(
-    `SELECT bi.quantity, i.item_name, i.item_code, i.property_tag, i.brand, i.model,
-            i.department_id, d.name AS department_name, s.name AS supplier_name
-     FROM borrow_items bi
-     JOIN inventory_items i ON bi.inventory_item_id = i.id
-     LEFT JOIN departments d ON i.department_id = d.id
-     LEFT JOIN suppliers s ON i.supplier_id = s.id
-     WHERE bi.borrow_transaction_id = ?`,
-    [borrowId]
-  );
-
-  const department = transaction.borrower_department || items[0]?.department_name || '';
-  const departmentId = items[0]?.department_id;
-  const supplier = items[0]?.supplier_name || '';
-
-  return {
-    supplier,
-    department,
-    deliveryDate: formatDate(transaction.borrow_date),
-    items: items.map(item => ({
-      propertyTag: item.property_tag || '-',
-      description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: item.quantity || 1,
-      unit: 'pcs',
-      amount: ''
-    })),
-    preparedBy: transaction.approver_name || '',
-    receivedBy: transaction.borrower_name || '',
-    departmentHead: await getDepartmentHead(departmentId),
-    propertyOfficer: await getPropertyOfficerName(),
-    acknowledgement: 'I acknowledge receipt of the listed property/items and accept full responsibility for their care and custody. I agree to use them only for official purposes and report any damage, loss, or theft to the Property Office immediately. I understand I may be liable for replacement costs if they are lost, damaged through negligence, or misused.'
   };
 }
 
@@ -200,7 +167,7 @@ async function buildPARPayloadFromInventory(inventoryId, generatedBy) {
   return {
     supplier: item.supplier_name || '',
     department: item.department_name || '',
-    deliveryDate: formatDate(item.acquisition_date || item.purchase_date || new Date()),
+    deliveryDate: formatDate(resolveAcquisitionDate(item)),
     items: [{
       propertyTag: item.property_tag || '-',
       description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
@@ -242,7 +209,7 @@ async function buildGRNPayload(inventoryId, generatedBy) {
       unitCost: unitCost != null && !Number.isNaN(unitCost) ? formatMoney(unitCost) : '',
       totalAmount: totalCost != null ? formatMoney(totalCost) : ''
     }],
-    dateReceived: formatDate(item.acquisition_date || item.purchase_date || new Date()),
+    dateReceived: formatDate(resolveAcquisitionDate(item)),
     receivedBy,
     notedBy: await getPropertyOfficerName(),
     acknowledgement: 'I hereby acknowledge receipt of the items listed in this report in good condition as per the approved MRF/Purchase Order.'
@@ -368,11 +335,6 @@ const DocumentDataService = {
       generatedBy,
       payloadBuilder: () => buildSALPayloadFromInventory(inventoryId, generatedBy)
     });
-  },
-
-  /** Legacy alias — routes to ABL per SOP */
-  async generatePARForBorrow(borrowId, generatedBy) {
-    return this.generateABLForBorrow(borrowId, generatedBy);
   },
 
   async generatePARForCustodianAssignment(inventoryId, generatedBy) {

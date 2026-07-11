@@ -78,7 +78,7 @@ function renderDocumentActions(d) {
   return renderActionMenuCell(`document-actions-${d.id}`, [
     { label: 'View', icon: 'bi-eye', handler: `API.openDocumentPreview(${d.id})` },
     { label: 'Download PDF', icon: 'bi-file-pdf', handler: `API.downloadDocumentPdf(${d.id})` },
-    { label: 'Print', icon: 'bi-printer', handler: `window.open('/pages/document-preview.html?id=${d.id}','_blank'); setTimeout(()=>window.print(), 500)` }
+    { label: 'Print', icon: 'bi-printer', handler: `window.open('/pages/document-preview.html?id=${d.id}&print=1','_blank')` }
   ]);
 }
 

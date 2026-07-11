@@ -23,20 +23,7 @@ function buildGovernanceNotificationMessage({ action, subject, detail = '' }) {
   return parts.join(' | ');
 }
 
-function assetTagSuffix(item) {
-  return item?.property_tag ? ` Property Tag: ${item.property_tag}.` : '';
-}
-
-function assetTagMessage(item, prefix = '') {
-  const suffix = assetTagSuffix(item);
-  if (!suffix) return prefix;
-  return `${prefix}${suffix}`;
-}
-
 module.exports = {
-  formatNotificationTimestamp,
   buildAssetNotificationMessage,
-  buildGovernanceNotificationMessage,
-  assetTagSuffix,
-  assetTagMessage
+  buildGovernanceNotificationMessage
 };

@@ -81,6 +81,15 @@ const MaintenanceController = {
         return sendError(res, 'Reported problem is required', 400);
       }
 
+      const existingPending = await MaintenanceModel.findPendingByInventoryItem(item.id);
+      if (existingPending) {
+        return sendError(
+          res,
+          `A pending maintenance request already exists for this asset (${existingPending.transaction_code})`,
+          400
+        );
+      }
+
       const result = await MaintenanceModel.create({
         ...req.body,
         requested_by: req.session.user.id
@@ -119,12 +128,14 @@ const MaintenanceController = {
 
       await MaintenanceModel.approve(req.params.id, req.session.user.id, req.body.admin_remarks);
       const schedDate = req.body.scheduled_date || record.scheduled_date;
+      let finalStatus = 'Approved';
       if (schedDate) {
         await MaintenanceModel.reschedule(req.params.id, {
           scheduled_date: schedDate,
           technician: req.body.technician,
           admin_remarks: req.body.admin_remarks
         });
+        finalStatus = 'Scheduled';
       }
 
       await logActivity(req.session.user.id, 'APPROVE', 'Maintenance', `Approved ${record.transaction_code}`, req.ip, {
@@ -133,7 +144,7 @@ const MaintenanceController = {
         reference_code: record.transaction_code,
         field_name: 'status',
         old_value: 'Pending',
-        new_value: 'Approved'
+        new_value: finalStatus
       });
       await notifyUser(record.requested_by, {
         title: 'Maintenance Approved',
@@ -158,18 +169,23 @@ const MaintenanceController = {
       if (!record) return;
       if (record.status !== 'Pending') return sendError(res, 'Only pending requests can be rejected', 400);
 
-      await MaintenanceModel.reject(req.params.id, req.session.user.id, req.body.rejection_reason || req.body.reason);
+      const rejectionReason = (req.body.rejection_reason || req.body.reason || '').trim();
+      if (!rejectionReason) {
+        return sendError(res, 'Rejection reason is required', 400);
+      }
+
+      await MaintenanceModel.reject(req.params.id, req.session.user.id, rejectionReason);
       await logActivity(req.session.user.id, 'REJECT', 'Maintenance', `Rejected ${record.transaction_code}`, req.ip, {
         entity_type: 'maintenance_record',
         entity_id: record.id,
         reference_code: record.transaction_code,
         field_name: 'status',
         old_value: 'Pending',
-        new_value: 'Rejected'
+        new_value: 'Cancelled'
       });
       await notifyUser(record.requested_by, {
         title: 'Maintenance Rejected',
-        message: `Your maintenance request ${record.transaction_code} has been rejected.${req.body.rejection_reason ? ` Reason: ${req.body.rejection_reason}` : ''}`,
+        message: `Your maintenance request ${record.transaction_code} has been rejected. Reason: ${rejectionReason}`,
         type: 'maintenance_rejected',
         reference_id: record.id,
         link_url: maintenanceLink(record.id)
@@ -252,13 +268,6 @@ const MaintenanceController = {
         completion_remarks: req.body.completion_remarks || req.body.description,
         next_maintenance_date: req.body.next_maintenance_date
       });
-
-      if (req.body.next_maintenance_date) {
-        await InventoryModel.update(record.inventory_item_id, {
-          next_maintenance_date: req.body.next_maintenance_date,
-          maintenance_status: 'Completed'
-        });
-      }
 
       await logActivity(req.session.user.id, 'COMPLETE', 'Maintenance', `Completed ${record.transaction_code}`, req.ip, {
         entity_type: 'maintenance_record',

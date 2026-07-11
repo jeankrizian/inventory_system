@@ -4,7 +4,6 @@ const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity, logActivityWithChanges, collectChanges } = require('../utils/activityLogger');
 const { notifyPropertyManagers, actorExcludeOptions } = require('../utils/notificationService');
 const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
-const { inventoryLink } = require('../utils/notificationLinks');
 const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const {
   sanitizeInventoryByClassification,
