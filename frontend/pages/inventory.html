@@ -29,7 +29,7 @@
             <div class="form-group"><label>Item Name *</label><input type="text" class="form-control-custom" id="itemName" required></div>
             <div class="form-group"><label>Description</label><textarea class="form-control-custom" id="itemDescription" rows="2" placeholder="Optional item description"></textarea></div>
             <div class="form-row">
-              <div class="form-group"><label>Category *</label><select class="form-control-custom" id="itemCategory" required></select></div>
+              <div class="form-group"><label>Department *</label><select class="form-control-custom" id="itemCategory" required></select></div>
               <div class="form-group"><label>Classification *</label>
                 <select class="form-control-custom" id="itemClassification" required>
                   <option value="">Select classification</option>
@@ -229,41 +229,78 @@
   </div>
 
   <div class="modal-overlay" id="componentModal">
-    <div class="modal-content-custom" style="max-width:720px;">
+    <div class="modal-content-custom" style="max-width:860px;">
       <div class="modal-header-custom">
-        <h3>Component Replacement</h3>
+        <h3>Components Management</h3>
         <button class="btn-icon" title="Close" aria-label="Close" onclick="closeModal('componentModal')"><i class="bi bi-x-lg"></i></button>
       </div>
-      <form id="componentForm">
-        <div class="modal-body-custom">
-          <input type="hidden" id="componentParentId">
-          <div class="form-row">
-            <div class="form-group"><label>Parent Asset</label><input type="text" class="form-control-custom" id="componentParentName" readonly></div>
-            <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="componentPropertyTag" readonly></div>
+      <div class="modal-body-custom">
+        <input type="hidden" id="componentParentId">
+        <input type="hidden" id="componentReplaceId">
+        <div class="form-row">
+          <div class="form-group"><label>Parent Asset</label><input type="text" class="form-control-custom" id="componentParentName" readonly></div>
+          <div class="form-group"><label>Property Tag</label><input type="text" class="form-control-custom" id="componentPropertyTag" readonly></div>
+        </div>
+        
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <button type="button" class="btn-primary-custom btn-sm-custom" id="componentShowAddBtn"><i class="bi bi-plus-lg"></i> Add Component</button>
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="componentShowListBtn" style="display:none;">Back to Components</button>
+        </div>
+
+        <div id="componentListPanel">
+          <h4 style="font-size:14px;margin:0 0 8px;">Current Components</h4>
+          <div id="componentActiveList" class="table-responsive" style="margin-bottom:18px;"></div>
+          <h4 style="font-size:14px;margin:0 0 8px;">Replacement History</h4>
+          <div id="componentHistoryList" class="table-responsive"></div>
+        </div>
+
+        <form id="componentForm" style="display:none;">
+          <h4 style="font-size:14px;margin:0 0 12px;" id="componentFormTitle">Add Component</h4>
+          <div class="form-group">
+            <label>Component Name *</label>
+            <input type="text" class="form-control-custom" id="componentName" required placeholder="e.g. Motherboard">
           </div>
-          <div class="form-group"><label>Old / Defective Component *</label><input type="text" class="form-control-custom" id="componentOldName" required placeholder="e.g. Motherboard (defective)"></div>
+          <div class="form-group">
+            <label>Classification *</label>
+            <select class="form-control-custom" id="componentClassification" required>
+              <option value="">Select classification</option>
+              <option value="Durable">Durable</option>
+              <option value="Semi-Durable">Semi-Durable</option>
+            </select>
+          </div>
           <div class="form-row">
-            <div class="form-group"><label>New Part from Inventory</label>
-              <select class="form-control-custom" id="componentNewItem">
-                <option value="">Manual entry / not in stock</option>
+            <div class="form-group"><label>Brand</label><input type="text" class="form-control-custom" id="componentBrand" placeholder="Optional"></div>
+            <div class="form-group"><label>Model</label><input type="text" class="form-control-custom" id="componentModel" placeholder="Optional"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Serial Number</label><input type="text" class="form-control-custom" id="componentSerial" placeholder="Optional"></div>
+            <div class="form-group"><label id="componentDateLabel">Date Installed</label><input type="date" class="form-control-custom" id="componentDate"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Condition</label>
+              <select class="form-control-custom" id="componentCondition">
+                <option value="New">New</option>
+                <option value="Excellent">Excellent</option>
+                <option value="Good" selected>Good</option>
+                <option value="Fair">Fair</option>
+                <option value="Poor">Poor</option>
+                <option value="For Repair">For Repair</option>
+                <option value="Damaged">Damaged</option>
+                <option value="Unserviceable">Unserviceable</option>
               </select>
-              <small style="font-size:12px;color:var(--text-muted);">Optional — select a Semi-Durable part to link to this asset</small>
             </div>
-            <div class="form-group"><label>New Component Name</label><input type="text" class="form-control-custom" id="componentNewName" placeholder="If not selected from inventory"></div>
+            <div class="form-group"><label>Remarks</label><input type="text" class="form-control-custom" id="componentNotes" placeholder="Optional remarks"></div>
           </div>
-          <div class="form-row">
-            <div class="form-group"><label>Replacement Date *</label><input type="date" class="form-control-custom" id="componentDate" required></div>
-            <div class="form-group"><label>Notes</label><input type="text" class="form-control-custom" id="componentNotes" placeholder="Optional remarks"></div>
+          <div class="modal-footer-custom" style="padding:0;border:none;margin-top:8px;">
+            <button type="button" class="btn-outline-custom" id="componentCancelFormBtn">Cancel</button>
+            <button type="submit" class="btn-primary-custom" id="componentSubmitBtn">Save Component</button>
           </div>
-          <p style="font-size:0.875rem;color:var(--text-muted);margin:0;">
-            The parent asset record, property tag, and PAR remain unchanged. Dispose the old component separately if needed.
-          </p>
-        </div>
-        <div class="modal-footer-custom">
-          <button type="button" class="btn-outline-custom" onclick="closeModal('componentModal')">Cancel</button>
-          <button type="submit" class="btn-primary-custom">Record Replacement</button>
-        </div>
-      </form>
+        </form>
+      </div>
+      <div class="modal-footer-custom" id="componentModalFooter">
+        <button type="button" class="btn-outline-custom" onclick="closeModal('componentModal')">Close</button>
+      </div>
     </div>
   </div>
 
@@ -294,6 +331,42 @@
       </div>
       <div class="modal-footer-custom">
         <button type="button" class="btn-outline-custom" onclick="closeModal('assetDetailModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="inventoryImportModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Import Inventory</h3>
+        <button class="btn-icon" type="button" title="Close" aria-label="Close" onclick="closeInventoryImportModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="modal-body-custom">
+        <div id="inventoryImportUploadStep">
+          <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px;">
+            Upload an Excel file (.xlsx). Download the template first to use the correct columns.
+          </p>
+          <div class="form-group">
+            <label>Excel File *</label>
+            <input type="file" class="form-control-custom" id="inventoryImportFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+          </div>
+        </div>
+        <div id="inventoryImportPreviewStep" style="display:none;">
+          <div id="inventoryImportSummary" style="margin-bottom:14px;"></div>
+          <div id="inventoryImportReasons" style="margin-bottom:14px;"></div>
+          <div class="table-responsive" id="inventoryImportInvalidTable" style="max-height:240px;overflow:auto;"></div>
+        </div>
+        <div id="inventoryImportResultStep" style="display:none;">
+          <div id="inventoryImportResultSummary"></div>
+        </div>
+      </div>
+      <div class="modal-footer-custom" id="inventoryImportFooter">
+        <button type="button" class="btn-outline-custom" onclick="closeInventoryImportModal()">Cancel</button>
+        <button type="button" class="btn-primary-custom" id="inventoryImportValidateBtn">
+          <i class="bi bi-file-earmark-check"></i> Validate File
+        </button>
       </div>
     </div>
   </div>

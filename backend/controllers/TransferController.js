@@ -6,7 +6,7 @@ const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyPropertyManagers, notifyUser, actorExcludeOptions } = require('../utils/notificationService');
 const { transferLink } = require('../utils/notificationLinks');
-const { canTransfer, isSemiDurable } = require('../utils/assetClassification');
+const { canTransfer } = require('../utils/assetClassification');
 const { getAccessScope, itemMatchesScope, transferMatchesScope } = require('../utils/roleHelpers');
 const DocumentService = require('../utils/documentService');
 const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
@@ -186,20 +186,6 @@ const TransferController = {
 
       const item = await InventoryModel.findById(transfer.inventory_item_id);
 
-      try {
-        await DocumentService.refreshPARForCustodianAssignment(transfer.inventory_item_id, req.session.user.id);
-      } catch (docErr) {
-        console.error('Inventory PAR refresh failed:', docErr.message);
-      }
-
-      if (item && isSemiDurable(item.asset_classification)) {
-        try {
-          await DocumentService.refreshSALForSemiDurableIssuance(transfer.inventory_item_id, req.session.user.id);
-        } catch (docErr) {
-          console.error('SAL refresh failed:', docErr.message);
-        }
-      }
-
       await logActivity(req.session.user.id, 'APPROVE', 'Transfer', `Approved ${transfer.transaction_code}`, req.ip, {
         entity_type: 'transfer_request',
         entity_id: transfer.id,
@@ -225,10 +211,14 @@ const TransferController = {
       try {
         const doc = await DocumentService.generateTRFForTransfer(transfer.id, req.session.user.id);
         if (doc) {
-          generatedDocument = { id: doc.id, document_number: doc.document_number, document_type: 'TRF' };
+          generatedDocument = {
+            id: doc.id,
+            document_number: doc.document_number,
+            document_type: doc.document_type || 'RTF'
+          };
         }
       } catch (docErr) {
-        console.error('TRF generation failed:', docErr.message);
+        console.error('RTF generation failed:', docErr.message);
       }
 
       sendSuccess(res, { generated_document: generatedDocument }, 'Transfer approved and inventory updated');

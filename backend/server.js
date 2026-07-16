@@ -2,7 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const pool = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
@@ -49,6 +49,9 @@ const { runBorrowUxMigration } = require('./database/runBorrowUxMigration');
 const { runActivityLogMigration } = require('./database/runActivityLogMigration');
 const { runConditionOptionsMigration } = require('./database/runConditionOptionsMigration');
 const { runPurchaseDateRemovalMigration } = require('./database/runPurchaseDateRemovalMigration');
+const { runPasswordResetMigration } = require('./database/runPasswordResetMigration');
+const { runAssetComponentsMigration } = require('./database/runAssetComponentsMigration');
+const { runDurableClassificationMigration } = require('./database/runDurableClassificationMigration');
 const archiveRoutes = require('./routes/archiveRoutes');
 const userRoutes = require('./routes/userRoutes');
 const documentRoutes = require('./routes/documentRoutes');
@@ -275,6 +278,9 @@ async function startServer() {
       await runActivityLogMigration();
       await runConditionOptionsMigration();
       await runPurchaseDateRemovalMigration();
+      await runPasswordResetMigration();
+      await runAssetComponentsMigration();
+      await runDurableClassificationMigration();
     });
     startArchiveCleanupScheduler();
   } catch (err) {

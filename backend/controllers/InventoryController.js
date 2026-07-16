@@ -21,6 +21,14 @@ const { normalizeMaterial, isValidMaterial } = require('../utils/materialOptions
 const { normalizeCondition, isValidCondition } = require('../utils/conditionOptions');
 const { hasManualStatusInput } = require('../utils/inventoryStatusService');
 const DocumentService = require('../utils/documentService');
+const {
+  buildTemplateBuffer,
+  parseWorkbookBuffer,
+  validateImportRows,
+  storePreview,
+  takePreview,
+  commitValidRows
+} = require('../utils/inventoryImportService');
 
 function isSemiDurableClassification(value) {
   return normalizeClassification(value) === 'Semi-Durable';
@@ -75,14 +83,6 @@ function toDocumentMeta(doc, documentType) {
     document_number: doc.document_number,
     document_type: documentType || doc.document_type
   };
-}
-
-function hasCustodianAssignmentChanged(before, after) {
-  return (before.custodian_id ?? null) != (after.custodian_id ?? null);
-}
-
-function hasDepartmentAssignmentChanged(before, after) {
-  return (before.department_id ?? null) != (after.department_id ?? null);
 }
 
 function isDuplicateItemCodeError(err) {
@@ -259,27 +259,20 @@ const InventoryController = {
 
       let generatedDocument = null;
       let custodianPar = null;
-      try {
-        const doc = await DocumentService.generateGRN(id, req.session.user.id);
-        generatedDocument = toDocumentMeta(doc, 'GRN');
-      } catch (docErr) {
-        console.error('GRN generation failed:', docErr.message);
-      }
+      let generatedParCount = 0;
+      const inventoryIds = result.ids || [id];
 
-      try {
-        const par = await DocumentService.generatePARForCustodianAssignment(id, req.session.user.id);
-        custodianPar = toDocumentMeta(par, 'PAR');
-      } catch (docErr) {
-        console.error('PAR generation failed:', docErr.message);
-      }
-
-      let semiDurableSal = null;
-      if (isSemiDurableClassification(item.asset_classification) && item.department_id) {
+      if (isFixedAsset(item.asset_classification) || isSemiDurableClassification(item.asset_classification)) {
         try {
-          const sal = await DocumentService.generateSALForSemiDurableIssuance(id, req.session.user.id);
-          semiDurableSal = toDocumentMeta(sal, 'SAL');
+          const parResult = await DocumentService.generatePARsForInventoryAssets(
+            inventoryIds,
+            req.session.user.id
+          );
+          generatedParCount = parResult.created_count || 0;
+          custodianPar = toDocumentMeta(parResult.first, 'PAR');
+          generatedDocument = custodianPar;
         } catch (docErr) {
-          console.error('SAL generation failed:', docErr.message);
+          console.error('PAR generation failed:', docErr.message);
         }
       }
 
@@ -295,7 +288,7 @@ const InventoryController = {
         batch_id: result.batch_id,
         generated_document: generatedDocument,
         custodian_par: custodianPar,
-        semi_durable_sal: semiDurableSal
+        generated_par_count: generatedParCount
       }, message, 201);
     } catch (err) {
       if (isDuplicatePropertyTagError(err)) {
@@ -383,41 +376,8 @@ const InventoryController = {
         link_url: '/pages/inventory.html'
       }, actorExcludeOptions(req));
 
-      try {
-        await DocumentService.refreshGRN(updated.id, req.session.user.id);
-      } catch (docErr) {
-        console.error('GRN refresh failed:', docErr.message);
-      }
-
-      let custodianPar = null;
-      if (
-        isFixedAsset(updated.asset_classification) &&
-        updated.custodian_id &&
-        hasCustodianAssignmentChanged(item, updated)
-      ) {
-        try {
-          const par = await DocumentService.refreshPARForCustodianAssignment(updated.id, req.session.user.id);
-          custodianPar = toDocumentMeta(par, 'PAR');
-        } catch (docErr) {
-          console.error('PAR refresh failed:', docErr.message);
-        }
-      }
-
-      let semiDurableSal = null;
-      if (
-        isSemiDurableClassification(updated.asset_classification) &&
-        updated.department_id &&
-        hasDepartmentAssignmentChanged(item, updated)
-      ) {
-        try {
-          const sal = await DocumentService.refreshSALForSemiDurableIssuance(updated.id, req.session.user.id);
-          semiDurableSal = toDocumentMeta(sal, 'SAL');
-        } catch (docErr) {
-          console.error('SAL refresh failed:', docErr.message);
-        }
-      }
-
-      sendSuccess(res, { ...updated, custodian_par: custodianPar, semi_durable_sal: semiDurableSal }, 'Item updated successfully');
+      // Acquisition PAR is created only on Add Item — never regenerate/overwrite on edit
+      sendSuccess(res, updated, 'Item updated successfully');
     } catch (err) {
       if (isDuplicatePropertyTagError(err)) {
         return sendError(res, 'Property tag already exists', 400);
@@ -480,6 +440,101 @@ const InventoryController = {
       }, actorExcludeOptions(req));
 
       sendSuccess(res, null, 'The record has been archived successfully. It will remain in the Archive for 30 days before being permanently deleted.');
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async downloadImportTemplate(req, res) {
+    try {
+      const buffer = await buildTemplateBuffer();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="inventory-import-template.xlsx"');
+      res.send(buffer);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async previewImport(req, res) {
+    try {
+      if (!req.file?.buffer?.length) {
+        return sendError(res, 'Excel file is required', 400);
+      }
+
+      const originalName = String(req.file.originalname || '').toLowerCase();
+      const isXlsx = originalName.endsWith('.xlsx') || req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const isXls = originalName.endsWith('.xls');
+      if (!isXlsx && !isXls) {
+        return sendError(res, 'Only .xlsx or .xls files are allowed', 400);
+      }
+      if (isXls && !isXlsx) {
+        return sendError(res, 'Legacy .xls format is not supported. Please save the file as .xlsx and try again.', 400);
+      }
+
+      const rawRows = await parseWorkbookBuffer(req.file.buffer);
+      const validation = await validateImportRows(rawRows);
+      const previewToken = storePreview(req.session.user.id, validation);
+
+      sendSuccess(res, {
+        preview_token: previewToken,
+        summary: validation.summary,
+        invalid_rows: validation.invalidRows.slice(0, 100),
+        valid_preview: validation.validRows.slice(0, 20).map((row) => ({
+          row_number: row.row_number,
+          item_name: row.payload.item_name,
+          department_id: row.payload.department_id,
+          asset_count: row.payload.asset_count,
+          unit_cost: row.payload.unit_cost,
+          acquisition_date: row.payload.acquisition_date
+        }))
+      }, 'Import preview ready');
+    } catch (err) {
+      sendError(res, err.message || 'Unable to preview import', 400);
+    }
+  },
+
+  async confirmImport(req, res) {
+    try {
+      const token = String(req.body?.preview_token || '').trim();
+      if (!token) {
+        return sendError(res, 'Preview token is required', 400);
+      }
+
+      const preview = takePreview(token, req.session.user.id);
+      if (!preview) {
+        return sendError(res, 'Import preview expired or not found. Please upload the file again.', 400);
+      }
+
+      if (!preview.validRows.length) {
+        return sendError(res, 'No valid records to import', 400);
+      }
+
+      const { imported, parsGenerated, failures } = await commitValidRows(preview.validRows, req.session.user.id);
+
+      await logActivity(
+        req.session.user.id,
+        'IMPORT',
+        'Inventory',
+        `Imported ${imported} asset(s) from Excel with ${parsGenerated} PAR(s) (${preview.summary.total_rows} rows, ${preview.summary.invalid_records} skipped)`,
+        req.ip
+      );
+
+      await notifyPropertyManagers({
+        title: 'Inventory Import Completed',
+        message: `${imported} asset(s) imported from Excel${parsGenerated ? ` (${parsGenerated} PAR generated)` : ''}.`,
+        type: 'inventory_added',
+        link_url: '/pages/inventory.html'
+      }, actorExcludeOptions(req));
+
+      sendSuccess(res, {
+        total_rows: preview.summary.total_rows,
+        successfully_imported: imported,
+        pars_generated: parsGenerated,
+        skipped: preview.summary.invalid_records + failures.length,
+        reason_summary: preview.summary.reason_summary,
+        import_failures: failures
+      }, 'Import completed');
     } catch (err) {
       sendError(res, err.message, 500);
     }

@@ -40,18 +40,50 @@ function esc(value) {
 
 function renderDocument(doc) {
   const p = doc.payload || {};
-  switch (doc.document_type) {
+  const type = String(doc.document_type || '').trim().toUpperCase();
+  switch (type) {
     case 'PAR': return renderPAR(p);
     case 'GRN': return renderGRN(p);
     case 'RDF': return renderRDF(p);
     case 'ABL': return renderABL(p);
-    case 'TRF': return renderTRF(p);
-    case 'SAL': return renderSAL(p);
-    default: return '<div class="loading">Unsupported document type.</div>';
+    case 'TRF':
+    case 'RTF': return renderTRF(p);
+    default: return `<div class="loading">Unsupported document type${type ? `: ${esc(type)}` : ''}.</div>`;
   }
 }
 
+function renderPropertyTagAttachment(p, documentLabel) {
+  const tags = Array.isArray(p.propertyTags) ? p.propertyTags : (p.items?.[0]?.propertyTags || []);
+  if (!p.attachPropertyTagList && tags.length <= 5) return '';
+
+  const description = p.itemDescription || p.items?.[0]?.description || '';
+  const quantity = p.items?.[0]?.quantity ?? tags.length;
+
+  return `
+    <div class="document-attachment">
+      <h1 class="doc-title">PROPERTY TAG LIST</h1>
+      <p class="doc-office">Property Management Office</p>
+      <p class="doc-institution">Cavite Institute</p>
+      <div class="doc-meta">
+        <div><strong>${esc(documentLabel)}:</strong> ${esc(p.documentNumber || '')}</div>
+        <div class="right"><strong>Quantity:</strong> ${esc(quantity)}</div>
+        <div><strong>Item Description:</strong> ${esc(description)}</div>
+        <div class="right"><strong>Department:</strong> ${esc(p.department || '')}</div>
+        <div><strong>Classification:</strong> ${esc(p.classification || '')}</div>
+      </div>
+      <p class="doc-body-text"><strong>Property Tags</strong></p>
+      <div class="property-tag-list">
+        ${tags.map((tag) => `<div>${esc(tag)}</div>`).join('') || '<div></div>'}
+      </div>
+    </div>
+  `;
+}
+
 function renderPAR(p) {
+  const propertyTagNote = p.attachPropertyTagList
+    ? `<p class="doc-body-text"><strong>Property Tags:</strong> See Attached Property Tag List</p>`
+    : '';
+
   return `
     <h1 class="doc-title">Property Acknowledgement Receipt</h1>
     <p class="doc-office">Property Management Office</p>
@@ -61,9 +93,16 @@ function renderPAR(p) {
       <div class="right"><strong>PAR #:</strong> ${esc(p.documentNumber)}</div>
       <div><strong>Department:</strong> ${esc(p.department)}</div>
       <div class="right"><strong>Delivery Date:</strong> ${esc(p.deliveryDate)}</div>
+      <div><strong>Classification:</strong> ${esc(p.classification || '')}</div>
+      <div class="right"><strong>Location:</strong> ${esc(p.location || '')}</div>
+      <div><strong>Assigned Custodian:</strong> ${esc(p.custodian || p.receivedBy || '')}</div>
+      <div class="right"><strong>Asset Condition:</strong> ${esc(p.condition || '')}</div>
+      <div><strong>Serial Number:</strong> ${esc(p.serialNumber || '')}</div>
+      <div class="right"><strong>Brand / Model:</strong> ${esc([p.brand, p.model].filter(Boolean).join(' / '))}</div>
     </div>
     ${renderItemsTable(['Property Tag Number', 'Item Description', 'Quantity', 'Unit', 'Amount'],
       (p.items || []).map(i => [i.propertyTag, i.description, i.quantity, i.unit, i.amount || '']))}
+    ${propertyTagNote}
     <p class="doc-ack">${esc(p.acknowledgement)}</p>
     <div class="signatures">
       ${signatureBlock('Prepared by:', p.preparedBy, 'Property Officer')}
@@ -72,6 +111,7 @@ function renderPAR(p) {
       ${signatureBlock('Noted by:', p.propertyOfficer, 'Head, Property Management Office')}
     </div>
     <p class="doc-footer">Copies for: Property Office, Receiving Department</p>
+    ${renderPropertyTagAttachment(p, 'PAR No.')}
   `;
 }
 
@@ -101,31 +141,63 @@ function renderGRN(p) {
   `;
 }
 
+function resolveRdfSourceDocLabel() {
+  return 'PAR No.';
+}
+
 function renderRDF(p) {
+  const items = p.items || [];
+  const emptyRows = Math.max(0, 7 - items.length);
+  const itemRows = items.concat(Array.from({ length: emptyRows }, () => ({})));
+  const sourceDocLabel = resolveRdfSourceDocLabel(p);
+  const evalHeader = 'ICT/FCU Evaluation/Recommendation<br><span style="font-weight:400;font-size:9px;">(safekeeping, dispose, salvageable for parts)</span>';
+
   return `
+    <div style="text-align:right;font-size:12px;margin-bottom:4px;"><strong>RDF No.</strong> ${esc(p.documentNumber || '')}</div>
     <h1 class="doc-title">REQUEST FOR DISPOSAL FORM</h1>
     <p class="doc-office">Property Management Office</p>
     <p class="doc-institution">Cavite Institute</p>
     <div class="doc-meta">
-      <div><strong>Requesting Department:</strong> ${esc(p.requestingDepartment)}</div>
-      <div class="right"><strong>RDF No.:</strong> ${esc(p.documentNumber)}</div>
-      <div><strong>Date of Request:</strong> ${esc(p.dateOfRequest)}</div>
+      <div><strong>Requesting Department:</strong> ${esc(p.requestingDepartment || '')}</div>
+      <div class="right"><strong>Date of Request:</strong> ${esc(p.dateOfRequest || '')}</div>
     </div>
-    ${renderItemsTable(
-      ['Item Description', 'Qty/Unit', 'Property Tag', 'PAR No.', 'ICT/FCU Evaluation/Recommendation'],
-      (p.items || []).map(i => [i.description, i.qtyUnit, i.propertyTag, i.parNo, i.recommendation])
-    )}
-    <p class="doc-body-text"><strong>Reason for disposal:</strong> ${esc(p.reason)}</p>
-    <div class="signatures">
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Item Description</th>
+          <th style="width:70px;">Qty/Unit</th>
+          <th style="width:100px;">Property Tag</th>
+          <th style="width:100px;">${esc(sourceDocLabel)}</th>
+          <th style="width:160px;">${evalHeader}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRows.map((i) => `
+          <tr>
+            <td>${esc(i.description || '')}</td>
+            <td>${esc(i.qtyUnit || '')}</td>
+            <td>${esc(i.propertyTag || '')}</td>
+            <td>${esc(i.sourceDocNumber || i.parNo || '')}</td>
+            <td>${esc(i.recommendation || '')}</td>
+          </tr>
+        `).join('')}
+        <tr>
+          <td colspan="5"><strong>Reason for disposal:</strong> ${esc(p.reason || '')}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="signatures signatures-3">
       ${signatureBlock('Requested by:', p.requestedBy)}
       ${signatureBlock('Request Noted by:', p.departmentHead, 'Department Head')}
       ${signatureBlock('Evaluated by:', p.evaluatedBy, 'ICT/FCU')}
+    </div>
+    <div class="signatures">
       ${signatureBlock('Disposal Processed and Received by:', p.disposalProcessedBy)}
       ${signatureBlock('Date Processed:', p.dateProcessed)}
       ${signatureBlock('Request for Disposal Approved by:', p.approvedBy, 'Head, PPMO')}
       ${signatureBlock('Date Approved:', p.dateApproved)}
     </div>
-    <p class="doc-footer">${esc(p.footerNote)}</p>
+    <p class="doc-footer" style="font-style:italic;">${esc(p.footerNote || 'Copies for: Property Office, Requesting Department, Accounting Office')}</p>
   `;
 }
 
@@ -157,55 +229,52 @@ function renderABL(p) {
 }
 
 function renderTRF(p) {
+  const items = p.items || [];
+  const emptyRows = Math.max(0, 5 - items.length);
+  const itemRows = items.concat(Array.from({ length: emptyRows }, () => ({})));
+
   return `
-    <h1 class="doc-title">Transfer Request Form</h1>
+    <div style="text-align:right;font-size:12px;margin-bottom:4px;"><strong>RTF No.</strong> ${esc(p.documentNumber || '')}</div>
+    <h1 class="doc-title">REQUEST FOR TRANSFER FORM</h1>
     <p class="doc-office">Property Management Office</p>
     <p class="doc-institution">Cavite Institute</p>
     <div class="doc-meta">
-      <div><strong>Transfer Code:</strong> ${esc(p.transferCode)}</div>
-      <div class="right"><strong>TRF No.:</strong> ${esc(p.documentNumber)}</div>
-      <div><strong>From Department:</strong> ${esc(p.fromDepartment)}</div>
-      <div class="right"><strong>To Department:</strong> ${esc(p.toDepartment)}</div>
-      <div><strong>From Location:</strong> ${esc(p.fromLocation)}</div>
-      <div class="right"><strong>To Location:</strong> ${esc(p.toLocation)}</div>
-      <div><strong>Request Date:</strong> ${esc(p.requestDate)}</div>
+      <div><strong>Requesting Department:</strong> ${esc(p.requestingDepartment || p.fromDepartment || '')}</div>
+      <div class="right"><strong>Date of Request:</strong> ${esc(p.dateOfRequest || p.requestDate || '')}</div>
     </div>
-    <p class="doc-body-text"><strong>Reason for Transfer:</strong> ${esc(p.reason)}</p>
-    ${renderItemsTable(['Property Tag', 'Item Description', 'Quantity', 'Unit'],
-      (p.items || []).map(i => [i.propertyTag, i.description, i.quantity, i.unit]))}
-    <p class="doc-ack">${esc(p.acknowledgement)}</p>
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Item Description</th>
+          <th style="width:70px;">Qty/Unit</th>
+          <th style="width:110px;">Property Tag</th>
+          <th style="width:110px;">PAR No.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRows.map((i) => `
+          <tr>
+            <td>${esc(i.description || '')}</td>
+            <td>${esc(i.qtyUnit || (i.quantity != null ? `${i.quantity} ${i.unit || 'pcs'}` : ''))}</td>
+            <td>${esc(i.propertyTag || '')}</td>
+            <td>${esc(i.parNo || '')}</td>
+          </tr>
+        `).join('')}
+        <tr>
+          <td colspan="4"><strong>Reason for transfer:</strong> ${esc(p.reason || '')}</td>
+        </tr>
+      </tbody>
+    </table>
     <div class="signatures">
       ${signatureBlock('Requested by:', p.requestedBy)}
-      ${signatureBlock('Approved by:', p.approvedBy, 'Property Office')}
-      ${signatureBlock('Transferring Dept:', p.fromDepartmentHead, 'Department Head')}
-      ${signatureBlock('Receiving Dept:', p.toDepartmentHead, 'Department Head')}
-      ${signatureBlock('Received by:', p.receivingSignatory, 'Receiving Custodian')}
-      ${signatureBlock('Noted by:', p.propertyOfficer, 'Head, Property Management Office')}
+      ${signatureBlock('Request Noted by:', p.departmentHead || p.fromDepartmentHead, 'Department Head')}
+      ${signatureBlock('Received by (new custodian):', p.receivingSignatory)}
+      ${signatureBlock('Date Processed:', p.dateProcessed || p.approvedDate)}
+      ${signatureBlock('Request for Transfer Approved by:', p.approvedBy, 'Head, PPMO')}
+      ${signatureBlock('Date Approved:', p.dateApproved || p.approvedDate)}
     </div>
-    <p class="doc-footer">Copies for: Property Office, Transferring Department, Receiving Department</p>
-  `;
-}
-
-function renderSAL(p) {
-  return `
-    <h1 class="doc-title">Semi-Durable Acknowledgment Log</h1>
-    <p class="doc-office">Property Management Office</p>
-    <p class="doc-institution">Cavite Institute</p>
-    <div class="doc-meta">
-      <div><strong>Department:</strong> ${esc(p.department)}</div>
-      <div class="right"><strong>SAL No.:</strong> ${esc(p.documentNumber)}</div>
-      <div><strong>Issue Date:</strong> ${esc(p.issueDate)}</div>
-    </div>
-    ${renderItemsTable(['Item Code', 'Item Description', 'Quantity', 'Unit', 'Condition'],
-      (p.items || []).map(i => [i.itemCode, i.description, i.quantity, i.unit, i.condition || '']))}
     <p class="doc-ack">${esc(p.acknowledgement)}</p>
-    <div class="signatures">
-      ${signatureBlock('Issued by:', p.issuedBy, 'Property Manager')}
-      ${signatureBlock('Received by:', p.receivedBy, 'Custodian')}
-      ${signatureBlock('Noted by:', p.departmentHead, 'Department Head')}
-      ${signatureBlock('Noted by:', p.propertyOfficer, 'Head, Property Management Office')}
-    </div>
-    <p class="doc-footer">Copies for: Property Office, Receiving Department</p>
+    <p class="doc-footer" style="font-style:italic;">${esc(p.footerNote || 'Copies for: Property Office, Requesting Department, Accounting Office')}</p>
   `;
 }
 

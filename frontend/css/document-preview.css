@@ -49,11 +49,26 @@ body {
 .doc-ack { font-size: 10px; font-style: italic; margin: 12px 0 18px; line-height: 1.45; word-break: break-word; overflow-wrap: break-word; }
 .doc-body-text { font-size: 12px; line-height: 1.45; margin: 0 0 14px; word-break: break-word; overflow-wrap: break-word; }
 .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 40px; margin-top: 10px; }
+.signatures-3 { grid-template-columns: 1fr 1fr 1fr; gap: 24px 28px; margin-top: 18px; margin-bottom: 8px; }
 .signature-block { font-size: 11px; word-break: break-word; overflow-wrap: break-word; line-height: 1.4; }
 .signature-line { border-bottom: 1px solid #111; min-height: 28px; margin: 10px 0 4px; }
 .signature-caption { text-align: center; font-size: 10px; line-height: 1.35; word-break: break-word; overflow-wrap: break-word; }
 .signature-name { text-align: center; font-weight: 600; min-height: 16px; word-break: break-word; overflow-wrap: break-word; }
 .doc-footer { margin-top: 24px; font-size: 10px; line-height: 1.4; word-break: break-word; overflow-wrap: break-word; }
+.document-attachment {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px dashed #999;
+  page-break-before: always;
+  break-before: page;
+}
+.property-tag-list {
+  column-count: 3;
+  column-gap: 18px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.property-tag-list > div { break-inside: avoid; }
 .loading { text-align: center; padding: 40px; color: #666; }
 @media print {
   body { background: #fff; }

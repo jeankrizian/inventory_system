@@ -15,7 +15,7 @@ Built with **HTML5, CSS3, Bootstrap 5, JavaScript**, **Node.js + Express.js**, a
 - **Pending Approvals** — Property Manager hub for borrow, transfer, maintenance, and disposal queues
 - **Departments, Locations & Users** — System configuration (Administrator)
 - **Suppliers** — Supplier directory
-- **Documents** — Generated forms (PAR, GRN, RDF, ABL, TRF, SAL)
+- **Documents** — Generated forms (PAR, GRN, RDF, ABL, TRF, RTF)
 - **Reports** — View, print, and export to PDF/Excel
 - **Archive** — Archived records (Administrator & Property Manager)
 - **Notifications** — In-app alerts

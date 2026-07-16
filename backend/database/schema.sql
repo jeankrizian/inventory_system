@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   item_name VARCHAR(200) NOT NULL,
   description TEXT NULL,
   department_id INT NOT NULL,
-  asset_classification ENUM('Consumable', 'Semi-Durable', 'Non-Consumable (Fixed Asset)') DEFAULT 'Consumable',
+  asset_classification ENUM('Consumable', 'Semi-Durable', 'Durable') DEFAULT 'Consumable',
   material VARCHAR(50) NULL,
   property_tag VARCHAR(50) NULL UNIQUE,
   custodian_id INT NULL,

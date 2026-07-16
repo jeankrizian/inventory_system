@@ -188,9 +188,9 @@ const InventoryModel = {
 
     if (filters.asset_classification) {
 
-      sql += ' AND i.asset_classification LIKE ?';
+      sql += ' AND i.asset_classification = ?';
 
-      params.push(`%${filters.asset_classification}%`);
+      params.push(filters.asset_classification);
 
     }
 
@@ -384,7 +384,7 @@ const InventoryModel = {
       }
 
       if (requiresPropertyTag(classification) && propertyTags.some((tag) => !tag)) {
-        throw new Error('Property tag is required for each fixed asset');
+        throw new Error('Property tag is required for each Durable and Semi-Durable asset');
       }
 
       const batchId = data.batch_id || await generateNextBatchId(connection);
@@ -585,7 +585,44 @@ const InventoryModel = {
     return rows || [];
   },
 
-
+  async getMonthlyDepartmentCosts(scope) {
+    if (isInventoryScopeDenied(scope)) {
+      return [];
+    }
+    const scopeFilter = appendInventoryScopeSql(scope, 'i');
+    if (scopeFilter.denied) {
+      return [];
+    }
+    const consumableClause = shouldExcludeConsumableFromLists()
+      ? " AND i.asset_classification != 'Consumable'"
+      : '';
+    const dateExpr = 'COALESCE(i.acquisition_date, DATE(i.created_at))';
+    const [rows] = await pool.query(`
+      SELECT DATE_FORMAT(${dateExpr}, '%b') AS month,
+             YEAR(${dateExpr}) AS year_num,
+             MONTH(${dateExpr}) AS month_num,
+             d.name AS department,
+             COALESCE(SUM(i.unit_cost), 0) AS total_cost
+      FROM inventory_items i
+      INNER JOIN departments d ON d.id = i.department_id
+      WHERE i.is_archived = 0
+        AND i.status != 'Disposed'
+        AND i.unit_cost IS NOT NULL
+        AND i.unit_cost > 0
+        AND ${dateExpr} IS NOT NULL
+        AND ${dateExpr} >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        ${consumableClause}${scopeFilter.clause}
+      GROUP BY YEAR(${dateExpr}), MONTH(${dateExpr}), DATE_FORMAT(${dateExpr}, '%b'), d.id, d.name
+      ORDER BY year_num, month_num, department
+    `, scopeFilter.params);
+    return (rows || []).map((row) => ({
+      month: row.month,
+      year_num: Number(row.year_num),
+      month_num: Number(row.month_num),
+      department: row.department,
+      total_cost: Number(row.total_cost) || 0
+    }));
+  },
 
   async adjustQuantity(id, delta) {
     if (Number(delta) < 0) {
@@ -670,7 +707,7 @@ const InventoryModel = {
        LEFT JOIN locations l ON i.location_id = l.id
        WHERE i.is_archived = 0
          AND i.status != 'Disposed'
-         AND i.asset_classification IN ('Non-Consumable (Fixed Asset)', 'Fixed Asset')`;
+         AND i.asset_classification IN ('Durable', 'Semi-Durable', 'Non-Consumable (Fixed Asset)', 'Fixed Asset', 'Non-Consumable')`;
   },
 
   enrichBorrowCatalogItem(row) {
@@ -704,28 +741,33 @@ const InventoryModel = {
   },
 
   async getBorrowableModels(search = '') {
+    // School-wide borrow catalog — no department / custodian scope filter
     let sql = `
       SELECT i.item_code,
              MAX(i.item_name) AS item_name,
              MAX(d.name) AS department_name,
+             MAX(i.department_id) AS department_id,
+             MAX(i.asset_classification) AS asset_classification,
              COUNT(*) AS available_count
       ${this.borrowCatalogBaseSql()}
         AND i.status = 'Available'`;
     const params = [];
 
     if (search && search.trim()) {
-      sql += ' AND (i.item_name LIKE ? OR i.item_code LIKE ?)';
+      sql += ' AND (i.item_name LIKE ? OR i.item_code LIKE ? OR d.name LIKE ?)';
       const term = `%${search.trim()}%`;
-      params.push(term, term);
+      params.push(term, term, term);
     }
 
-    sql += ' GROUP BY i.item_code HAVING available_count > 0 ORDER BY item_name ASC';
+    sql += ' GROUP BY i.item_code HAVING available_count > 0 ORDER BY item_name ASC, department_name ASC';
     const [rows] = await pool.query(sql, params);
     return rows.map((row) => ({
       item_code: row.item_code,
       item_name: row.item_name,
       department_name: row.department_name,
+      department_id: row.department_id,
       available_count: Number(row.available_count),
+      asset_classification: row.asset_classification || 'Durable',
       is_borrowable: true
     }));
   },
@@ -742,9 +784,10 @@ const InventoryModel = {
       item_code: model.item_code,
       item_name: model.item_name,
       department_name: model.department_name,
+      department_id: model.department_id,
       available_count: model.available_count,
       status: 'Available',
-      asset_classification: 'Non-Consumable (Fixed Asset)',
+      asset_classification: model.asset_classification || 'Durable',
       is_borrowable: true,
       unavailable_reason: null,
       is_model: true

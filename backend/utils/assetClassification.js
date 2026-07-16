@@ -1,7 +1,7 @@
 const CLASSIFICATIONS = [
   'Consumable',
   'Semi-Durable',
-  'Non-Consumable (Fixed Asset)'
+  'Durable'
 ];
 
 /** Temporarily disable new Consumable items while keeping existing records compatible */
@@ -9,8 +9,11 @@ const CONSUMABLE_TEMPORARILY_DISABLED = true;
 const CONSUMABLE_DISABLED_MESSAGE = 'Consumable items are currently disabled.';
 const DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED = 'Semi-Durable';
 
-const FIXED_ASSET = 'Non-Consumable (Fixed Asset)';
+/** Canonical Durable classification (formerly Non-Consumable / Fixed Asset) */
+const FIXED_ASSET = 'Durable';
 const LEGACY_FIXED_ASSET = 'Fixed Asset';
+const LEGACY_NON_CONSUMABLE = 'Non-Consumable';
+const LEGACY_NON_CONSUMABLE_FIXED = 'Non-Consumable (Fixed Asset)';
 const PROPERTY_TAG_MAX_LENGTH = 50;
 const PROPERTY_TAG_PATTERN = /^[\w][\w\-/.]*$/;
 
@@ -35,8 +38,16 @@ function normalizeClassification(value) {
   if (!value || String(value).trim() === '') {
     return CONSUMABLE_TEMPORARILY_DISABLED ? '' : 'Consumable';
   }
-  if (value === LEGACY_FIXED_ASSET) return FIXED_ASSET;
-  return value;
+  const trimmed = String(value).trim();
+  if (
+    trimmed === LEGACY_FIXED_ASSET
+    || trimmed === LEGACY_NON_CONSUMABLE
+    || trimmed === LEGACY_NON_CONSUMABLE_FIXED
+    || trimmed === 'Durable (Fixed Asset)'
+  ) {
+    return FIXED_ASSET;
+  }
+  return trimmed;
 }
 
 function isConsumableClassification(classification) {
@@ -99,15 +110,21 @@ function canMaintain(classification) {
 }
 
 function canBorrow(classification) {
-  return isFixedAsset(classification);
+  return isFixedAsset(classification) || isSemiDurable(classification);
 }
 
 function isSemiDurable(classification) {
   return normalizeClassification(classification) === 'Semi-Durable';
 }
 
-function requiresPropertyTag(classification) {
+/** Components action is available only for Durable (parent) assets */
+function canManageComponents(classification) {
   return isFixedAsset(classification);
+}
+
+function requiresPropertyTag(classification) {
+  // Both Durable and Semi-Durable use the same auto property-tag format
+  return isFixedAsset(classification) || isSemiDurable(classification);
 }
 
 function requiresCustodian(classification) {
@@ -158,18 +175,21 @@ function validateInventoryClassification(body, options = {}) {
   const skipPropertyTag = Boolean(options.skipPropertyTag);
 
   if (!skipPropertyTag && requiresPropertyTag(classification) && !propertyTag) {
-    return { valid: false, message: 'Property tag is required for Non-Consumable (Fixed Asset) items' };
+    return {
+      valid: false,
+      message: 'Property tag is required for Durable and Semi-Durable items'
+    };
   }
 
   if (propertyTag && !isValidPropertyTagFormat(propertyTag)) {
     return {
       valid: false,
-      message: 'Property tag format is invalid. Use YYYYMMDD-000001.'
+      message: 'Property tag format is invalid. Use YYYYMMDD-000001 (same format for Durable and Semi-Durable).'
     };
   }
 
   if (requiresCustodian(classification) && !body.custodian_id) {
-    return { valid: false, message: 'Assigned custodian is required for Non-Consumable (Fixed Asset) items' };
+    return { valid: false, message: 'Assigned custodian is required for Durable items' };
   }
 
   return { valid: true, classification };
@@ -201,6 +221,8 @@ module.exports = {
   DEFAULT_CLASSIFICATION_WHEN_CONSUMABLE_DISABLED,
   FIXED_ASSET,
   LEGACY_FIXED_ASSET,
+  LEGACY_NON_CONSUMABLE,
+  LEGACY_NON_CONSUMABLE_FIXED,
   normalizeClassification,
   isValidClassification,
   isConsumableClassification,
@@ -216,6 +238,7 @@ module.exports = {
   canMaintain,
   canBorrow,
   isSemiDurable,
+  canManageComponents,
   requiresPropertyTag,
   requiresCustodian,
   normalizePropertyTag,

@@ -5,7 +5,7 @@ const {
   canAutoSequencePropertyTag
 } = require('../utils/propertyTagGenerator');
 
-const FIXED_ASSET = 'Non-Consumable (Fixed Asset)';
+const FIXED_ASSET = 'Durable';
 
 async function columnExists(table, column) {
   const [rows] = await pool.query(

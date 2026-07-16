@@ -152,7 +152,7 @@ function canAccessArchive(role) {
 }
 
 function canManageSystem(role) {
-  return isAdministrator(role);
+  return isAdministrator(role) || isPropertyManager(role);
 }
 
 function canViewBackups(role) {
@@ -172,7 +172,7 @@ function canViewReturnHistory(role) {
 }
 
 function canViewTransfers(role) {
-  return canSubmitTransfer(role) || canOperateTransfers(role);
+  return isAdministrator(role) || isPropertyManager(role) || isCustodian(role);
 }
 
 function canViewAssetTransferHistory(role) {
@@ -217,6 +217,7 @@ function getBorrowListScope(user) {
   const userId = user?.id;
 
   if (isCustodian(role)) {
+    // Own request list only — does NOT limit which departments' assets they may borrow
     return { type: 'own', userId };
   }
 
@@ -225,6 +226,15 @@ function getBorrowListScope(user) {
   }
 
   return { type: 'none', userId };
+}
+
+/**
+ * Borrow asset catalog is school-wide (cross-department).
+ * Admin / Property Manager / Custodian may request Available Durable assets
+ * from any department. Never apply getAccessScope / department filters here.
+ */
+function getBorrowCatalogScope() {
+  return { type: 'all' };
 }
 
 function isInventoryScopeDenied(scope) {
@@ -401,6 +411,7 @@ module.exports = {
   canSubmitDisposal,
   getAccessScope,
   getBorrowListScope,
+  getBorrowCatalogScope,
   isInventoryScopeDenied,
   appendInventoryScopeSql,
   appendTransferRequestScopeSql,

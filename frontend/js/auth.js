@@ -125,10 +125,20 @@ async function openBorrowDocument(borrowId) {
 
 async function openTransferDocument(transferId) {
   try {
-    const res = await API.lookupDocument('TRF', 'transfer', transferId);
-    API.openDocumentPreview(res.data.id);
+    let res;
+    try {
+      res = await API.lookupDocument('RTF', 'transfer', transferId);
+    } catch {
+      res = null;
+    }
+    if (!res?.data) {
+      res = await API.lookupDocument('TRF', 'transfer', transferId);
+    }
+    if (res?.data) {
+      API.openDocumentPreview(res.data.id);
+    }
   } catch (err) {
-    showToast(err.message || 'TRF document not found', 'error');
+    showToast(err.message || 'Transfer document not found', 'error');
   }
 }
 
@@ -249,7 +259,7 @@ function canAccessArchive(user) {
 }
 
 function canManageSystem(user) {
-  return isAdministrator(user);
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
 function canViewBackups(user) {
@@ -269,7 +279,7 @@ function canViewReturnHistory(user) {
 }
 
 function canViewTransfers(user) {
-  return canSubmitTransfer(user) || canOperateTransfers(user);
+  return isAdministrator(user) || isPropertyManager(user) || isCustodian(user);
 }
 
 function canViewMaintenance(user) {
@@ -313,20 +323,13 @@ function canViewPendingApprovalsDashboard(user) {
 }
 
 function getDashboardQuickLink(user, workflowType) {
-  // Disposal actionable queue = Pending + Inspected (matches dashboard/PA counts).
+  // Disposal actionable queue = Pending + Inspected (matches dashboard counts).
   const moduleLinks = {
     borrow: '/pages/orders.html?status=Pending',
     maintenance: '/pages/maintenance-requests.html?status=Pending',
     transfer: '/pages/transfer-requests.html?status=Pending',
     disposal: '/pages/disposal-requests.html?queue=pending'
   };
-
-  if (isPropertyManager(user)) {
-    const tab = workflowType;
-    if (tab && moduleLinks[tab]) {
-      return `/pages/pending-approvals.html?tab=${tab}`;
-    }
-  }
 
   return moduleLinks[workflowType] || null;
 }
@@ -339,20 +342,20 @@ function canViewDashboardCharts(user) {
   return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewBorrowTrendsChart(user) {
+function canViewDepartmentChart(user) {
   return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewDepartmentChart(user) {
-  return isAdministrator(user);
+function canViewDepartmentCostChart(user) {
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
 function canViewAssetStatusChart(user) {
-  return isAdministrator(user);
+  return isAdministrator(user) || isPropertyManager(user);
 }
 
-function canViewMaintenanceTrendChart(user) {
-  return isPropertyManager(user);
+function canViewMaintenanceTrendChart(_user) {
+  return false;
 }
 
 function canViewLowStockDashboard(_user) {
@@ -408,8 +411,8 @@ function canViewDashboardModule(user, module) {
     maintenanceStats: canViewMaintenanceDashboard(user),
     disposalStats: canViewDisposalDashboard(user),
     charts: canViewDashboardCharts(user),
-    borrowTrendsChart: canViewBorrowTrendsChart(user),
     departmentChart: canViewDepartmentChart(user),
+    departmentCostChart: canViewDepartmentCostChart(user),
     assetStatusChart: canViewAssetStatusChart(user),
     maintenanceTrendChart: canViewMaintenanceTrendChart(user),
     recentInventory: canViewInventoryDashboard(user),
@@ -478,7 +481,10 @@ function getStatusBadge(status) {
     'Approved': 'badge-approved',
     'Rejected': 'badge-rejected',
     'Returned': 'badge-returned',
-    'Overdue': 'badge-low-stock'
+    'Overdue': 'badge-low-stock',
+    'Active': 'badge-available',
+    'Replaced': 'badge-rejected',
+    'Disposed': 'badge-rejected'
   };
   const cls = map[status] || 'badge-available';
   return `<span class="badge ${cls}">${status}</span>`;

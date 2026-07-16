@@ -7,6 +7,7 @@ router.use(requireAuth);
 
 router.get('/', DocumentController.getAll);
 router.get('/lookup', DocumentController.findByTransaction);
+router.get('/by-inventory/:inventoryItemId', DocumentController.findByInventoryItem);
 router.get('/:id/pdf', DocumentController.downloadPdf);
 router.get('/:id', DocumentController.getById);
 

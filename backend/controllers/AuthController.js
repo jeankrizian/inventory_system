@@ -4,7 +4,12 @@ const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
 const { isValidSchoolEmail, normalizeSchoolEmail, isValidUsername, normalizeUsername } = require('../utils/authValidation');
 const { buildSessionUser } = require('../utils/roleHelpers');
-const { requestPasswordReset } = require('../utils/passwordResetService');
+const {
+  requestPasswordReset,
+  verifyOtp,
+  resetPassword: completePasswordReset,
+  clearPasswordResetSession
+} = require('../utils/passwordResetService');
 
 const PUBLIC_REGISTRATION_DISABLED = true;
 
@@ -149,9 +154,57 @@ const AuthController = {
         return sendError(res, 'Only @caviteinstitute.edu.ph email addresses are allowed', 400);
       }
 
+      clearPasswordResetSession(req.session);
+
       const result = await requestPasswordReset(normalizedEmail);
       if (!result.success) {
-        return sendError(res, result.message, result.code === 'not_found' ? 404 : 400);
+        const status = result.code === 'not_found' ? 404 : 400;
+        return sendError(res, result.message, status);
+      }
+
+      sendSuccess(res, null, result.message);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async verifyResetOtp(req, res) {
+    try {
+      const { email, otp } = req.body;
+      const normalizedEmail = normalizeSchoolEmail(email || '');
+
+      if (!isValidSchoolEmail(normalizedEmail)) {
+        return sendError(res, 'Only @caviteinstitute.edu.ph email addresses are allowed', 400);
+      }
+
+      const result = await verifyOtp(normalizedEmail, otp, req.session);
+      if (!result.success) {
+        return sendError(res, result.message, 400);
+      }
+
+      sendSuccess(res, null, result.message);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async resetPassword(req, res) {
+    try {
+      const { email, password, confirm_password } = req.body;
+      const normalizedEmail = normalizeSchoolEmail(email || '');
+
+      if (!isValidSchoolEmail(normalizedEmail)) {
+        return sendError(res, 'Only @caviteinstitute.edu.ph email addresses are allowed', 400);
+      }
+
+      const result = await completePasswordReset(
+        normalizedEmail,
+        password,
+        confirm_password,
+        req.session
+      );
+      if (!result.success) {
+        return sendError(res, result.message, 400);
       }
 
       sendSuccess(res, null, result.message);

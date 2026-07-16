@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 
-const DOCUMENT_TYPES = new Set(['GRN', 'PAR', 'ABL', 'TRF', 'RDF', 'SAL']);
+const DOCUMENT_TYPES = new Set(['GRN', 'PAR', 'ABL', 'TRF', 'RTF', 'RDF']);
 const STANDARD_DOCUMENT_NUMBER_REGEX = /^([A-Z]+)-(\d{4})-(\d{6})$/;
 const LEGACY_YEAR_SUFFIX_REGEX = /^([A-Z]+)-(\d{4})-(\d+)$/;
 const LEGACY_SHORT_REGEX = /^([A-Z]+)-(\d+)$/;

@@ -163,7 +163,7 @@ const requireViewBackups = requireRole(
 
 const requireSystemManage = requireRole(
   canManageSystem,
-  'System management requires Administrator access'
+  'System management requires Administrator or Property Manager access'
 );
 
 const requireSuppliersManage = requireRole(
@@ -193,7 +193,7 @@ const requireViewAssetTransferHistory = requireRole(
 
 const requireViewTransfers = requireRole(
   canViewTransfers,
-  'Transfer access requires Property Manager or Custodian role'
+  'Transfer access requires Administrator, Property Manager, or Custodian role'
 );
 
 const requireViewMaintenance = requireRole(

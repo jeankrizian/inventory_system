@@ -13,6 +13,10 @@ function closeAllInventoryActionsMenus() {
     sub.classList.remove('show', 'flip-left', 'is-fixed');
     sub.style.top = '';
     sub.style.left = '';
+    sub.style.right = '';
+  });
+  document.querySelectorAll('.inventory-actions-submenu-wrap.is-flipped').forEach(wrap => {
+    wrap.classList.remove('is-flipped');
   });
   document.querySelectorAll('.inventory-actions-overflow[aria-expanded="true"]').forEach(btn => {
     btn.setAttribute('aria-expanded', 'false');
@@ -24,12 +28,12 @@ function showBorrowInInventoryMenu(classification) {
 }
 
 function getInventoryDocumentOptions(item, classification) {
-  const options = [{ type: 'GRN', module: 'inventory', label: 'View GRN', icon: 'bi-file-earmark-text' }];
-  if (isFixedAssetClassification(classification) && item.custodian_id) {
+  const options = [];
+  if (
+    isFixedAssetClassification(classification)
+    || normalizeAssetClassification(classification) === 'Semi-Durable'
+  ) {
     options.push({ type: 'PAR', module: 'inventory', label: 'View PAR', icon: 'bi-file-earmark-check' });
-  }
-  if (normalizeAssetClassification(classification) === 'Semi-Durable' && item.department_id) {
-    options.push({ type: 'SAL', module: 'inventory', label: 'View SAL', icon: 'bi-journal-check' });
   }
   if (item.status === 'Disposed') {
     options.push({ type: 'RDF', module: 'disposal', label: 'View RDF', icon: 'bi-file-earmark-x', inventoryItemId: item.id });
@@ -56,7 +60,34 @@ async function openInventoryDocument(itemId, docType, module, inventoryItemId) {
     }
     return;
   }
-  await openDocumentForTransaction(docType, module, itemId);
+
+  try {
+    const res = await API.lookupDocument(docType, module, itemId);
+    if (res?.data?.id) {
+      API.openDocumentPreview(res.data.id);
+      return;
+    }
+  } catch {
+    // Fall through to inventory document history lookup
+  }
+
+  try {
+    const listRes = await API.getDocumentsByInventory(itemId);
+    const docs = listRes?.data || [];
+    const exact = docs.find((d) =>
+      d.document_type === docType
+      && Number(d.related_transaction_id) === Number(itemId)
+    );
+    const doc = exact || docs.find((d) => d.document_type === docType);
+    if (doc?.id) {
+      API.openDocumentPreview(doc.id);
+      return;
+    }
+  } catch {
+    // ignore and show not found
+  }
+
+  showToast(`${docType} document not found`, 'error');
 }
 
 function openBorrowForItem(itemId) {
@@ -97,18 +128,26 @@ function positionInventoryDocumentsSubmenu(wrap) {
   const trigger = submenuWrap?.querySelector('.inventory-actions-submenu-trigger');
   if (!submenu || !trigger) return;
 
-  submenu.classList.add('is-fixed');
-  const triggerRect = trigger.getBoundingClientRect();
-  const submenuWidth = submenu.offsetWidth || 180;
-  const submenuHeight = submenu.offsetHeight || 120;
-  const margin = 8;
+  submenu.classList.add('show', 'is-fixed');
+  submenu.style.visibility = 'hidden';
+  submenu.style.left = '0px';
+  submenu.style.top = '0px';
+  submenu.style.right = 'auto';
 
-  let left = triggerRect.right + 4;
-  let flipLeft = false;
-  if (left + submenuWidth > window.innerWidth - margin) {
-    left = triggerRect.left - submenuWidth - 4;
-    flipLeft = true;
-  }
+  const triggerRect = trigger.getBoundingClientRect();
+  const submenuWidth = Math.max(submenu.offsetWidth || 0, 150);
+  const submenuHeight = Math.max(submenu.offsetHeight || 0, 40);
+  const margin = 8;
+  const gap = 4;
+
+  const spaceRight = window.innerWidth - triggerRect.right - margin;
+  const spaceLeft = triggerRect.left - margin;
+  const needsFlip = spaceRight < submenuWidth + gap;
+  const flipLeft = needsFlip && spaceLeft >= Math.min(submenuWidth + gap, spaceRight);
+
+  let left = flipLeft
+    ? triggerRect.left - submenuWidth - gap
+    : triggerRect.right + gap;
   left = Math.max(margin, Math.min(left, window.innerWidth - submenuWidth - margin));
 
   let top = triggerRect.top;
@@ -117,8 +156,29 @@ function positionInventoryDocumentsSubmenu(wrap) {
   }
 
   submenu.classList.toggle('flip-left', flipLeft);
+  submenuWrap?.classList.toggle('is-flipped', flipLeft);
   submenu.style.left = `${left}px`;
   submenu.style.top = `${top}px`;
+  submenu.style.visibility = '';
+}
+
+function closeInventoryDocumentsSubmenu(wrap) {
+  const submenu = wrap?.querySelector('.inventory-actions-submenu');
+  const submenuWrap = wrap?.querySelector('.inventory-actions-submenu-wrap');
+  if (!submenu) return;
+  submenu.classList.remove('show', 'flip-left', 'is-fixed');
+  submenu.style.top = '';
+  submenu.style.left = '';
+  submenu.style.right = '';
+  submenu.style.visibility = '';
+  submenuWrap?.classList.remove('is-flipped');
+}
+
+function openInventoryDocumentsSubmenu(wrap) {
+  const menu = wrap?.querySelector('.inventory-actions-menu.show');
+  const submenu = wrap?.querySelector('.inventory-actions-submenu');
+  if (!menu || !submenu) return;
+  positionInventoryDocumentsSubmenu(wrap);
 }
 
 function toggleInventoryDocumentsSubmenu(itemId, event) {
@@ -129,18 +189,12 @@ function toggleInventoryDocumentsSubmenu(itemId, event) {
   const submenu = wrap?.querySelector('.inventory-actions-submenu');
   if (!submenu) return;
 
-  const wasOpen = submenu.classList.contains('show');
-  if (wasOpen) {
-    submenu.classList.remove('show', 'flip-left', 'is-fixed');
-    submenu.style.top = '';
-    submenu.style.left = '';
+  if (submenu.classList.contains('show')) {
+    closeInventoryDocumentsSubmenu(wrap);
     return;
   }
 
-  requestAnimationFrame(() => {
-    submenu.classList.add('show');
-    positionInventoryDocumentsSubmenu(wrap);
-  });
+  requestAnimationFrame(() => openInventoryDocumentsSubmenu(wrap));
 }
 
 function toggleInventoryActionsMenu(itemId, event) {
@@ -180,6 +234,8 @@ function bindInventoryActionsListeners() {
   if (inventoryActionsListenersBound) return;
   inventoryActionsListenersBound = true;
 
+  let documentsSubmenuCloseTimer = null;
+
   document.addEventListener('click', (event) => {
     if (event.target.closest('.inventory-actions-wrap')) return;
     closeAllInventoryActionsMenus();
@@ -189,6 +245,29 @@ function bindInventoryActionsListeners() {
   });
   window.addEventListener('resize', closeAllInventoryActionsMenus);
   document.getElementById('inventoryTable')?.addEventListener('scroll', closeAllInventoryActionsMenus, true);
+
+  document.addEventListener('mouseover', (event) => {
+    const submenuWrap = event.target.closest?.('.inventory-actions-submenu-wrap');
+    if (!submenuWrap) return;
+    const wrap = submenuWrap.closest('.inventory-actions-wrap');
+    if (!wrap?.querySelector('.inventory-actions-menu.show')) return;
+    clearTimeout(documentsSubmenuCloseTimer);
+    openInventoryDocumentsSubmenu(wrap);
+  });
+
+  document.addEventListener('mouseout', (event) => {
+    const submenuWrap = event.target.closest?.('.inventory-actions-submenu-wrap');
+    if (!submenuWrap) return;
+    const related = event.relatedTarget;
+    if (related && submenuWrap.contains(related)) return;
+    const wrap = submenuWrap.closest('.inventory-actions-wrap');
+    clearTimeout(documentsSubmenuCloseTimer);
+    documentsSubmenuCloseTimer = setTimeout(() => {
+      if (!wrap?.querySelector('.inventory-actions-menu.show')) return;
+      if (submenuWrap.matches(':hover')) return;
+      closeInventoryDocumentsSubmenu(wrap);
+    }, 120);
+  });
 }
 
 function renderInventoryActionsCell(item, classification, permissions) {
@@ -266,6 +345,7 @@ function renderInventoryActionsCell(item, classification, permissions) {
 function getInventoryPermissions(user) {
   return {
     canManageInventory: canManageInventory(user),
+    canImportInventory: canManageInventory(user),
     canSubmitBorrow: canSubmitBorrow(user),
     canSubmitTransfer: canSubmitTransfer(user),
     canSubmitMaintenance: canSubmitMaintenance(user),
@@ -353,6 +433,14 @@ async function initInventoryPage() {
   if (!currentUser) return;
 
   const permissions = getInventoryPermissions(currentUser);
+  const actionButtons = [];
+  if (permissions.canImportInventory) {
+    actionButtons.push(`<button type="button" class="btn-outline-custom" id="downloadImportTemplateBtn"><i class="bi bi-download"></i> Download Excel Template</button>`);
+    actionButtons.push(`<button type="button" class="btn-secondary-custom" id="importInventoryBtn"><i class="bi bi-file-earmark-excel"></i> Import Inventory</button>`);
+  }
+  if (permissions.canManageInventory) {
+    actionButtons.push(`<button type="button" class="btn-primary-custom" id="addItemBtn"><i class="bi bi-plus-lg"></i> Add Item</button>`);
+  }
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -362,7 +450,7 @@ async function initInventoryPage() {
     <div class="content-card">
       <div class="content-card-header">
         <h3>All Items</h3>
-        ${permissions.canManageInventory ? `<button type="button" class="btn-primary-custom" id="addItemBtn"><i class="bi bi-plus-lg"></i> Add Item</button>` : ''}
+        ${actionButtons.length ? `<div class="content-card-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${actionButtons.join('')}</div>` : ''}
       </div>
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search items...">
@@ -383,6 +471,12 @@ async function initInventoryPage() {
   `;
 
   document.getElementById('addItemBtn')?.addEventListener('click', openAddModal);
+  document.getElementById('downloadImportTemplateBtn')?.addEventListener('click', downloadInventoryImportTemplate);
+  document.getElementById('importInventoryBtn')?.addEventListener('click', openInventoryImportModal);
+  document.getElementById('inventoryImportValidateBtn')?.addEventListener('click', validateInventoryImportFile);
+  document.getElementById('componentShowAddBtn')?.addEventListener('click', () => showComponentForm('add'));
+  document.getElementById('componentShowListBtn')?.addEventListener('click', showComponentListPanel);
+  document.getElementById('componentCancelFormBtn')?.addEventListener('click', showComponentListPanel);
 
   await loadDropdowns();
   populateClassificationFilter();
@@ -476,34 +570,34 @@ function renderTable() {
   }
 
   el.innerHTML = `
-    <table class="data-table">
+    <table class="data-table inventory-list-table">
       <thead>
         <tr>
           ${inventoryTableSelection?.renderCheckboxHeader() || ''}
-          <th>Item Code</th>
-          <th>Property Tag</th>
-          <th>Item Name</th>
-          <th>Department</th>
-          <th>Location</th>
-          <th>Condition</th>
-          <th>Status</th>
-          <th>Acquisition Date</th>
-          <th>Actions</th>
+          <th class="inv-col-prop">Property No.</th>
+          <th class="inv-col-name">Item Name</th>
+          <th class="inv-col-dept">Department</th>
+          <th class="inv-col-class">Classification</th>
+          <th class="inv-col-loc">Location</th>
+          <th class="inv-col-qty">Qty</th>
+          <th class="inv-col-cond">Condition</th>
+          <th class="inv-col-status">Status</th>
+          <th class="inv-col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
         ${items.map(item => `
           <tr${inventoryTableSelection?.renderRowAttrs(item) || ''}>
             ${inventoryTableSelection?.renderCheckboxCell(item) || ''}
-            <td>${displayCell(item.item_code)}</td>
-            <td>${displayCell(item.property_tag)}</td>
-            <td>${displayCell(item.item_name)}</td>
-            <td>${displayCell(item.department_name || item.category_name)}</td>
-            <td>${displayCell(item.location_name)}</td>
-            <td>${displayCell(item.condition)}</td>
-            <td>${getStatusBadge(item.status)}</td>
-            <td>${displayCell(formatDetailDate(item.acquisition_date))}</td>
-            <td class="inventory-actions-td">${renderInventoryActionsCell(item, formatClassificationDisplay(item.asset_classification), permissions)}</td>
+            <td class="inv-col-prop">${displayCell(item.property_tag)}</td>
+            <td class="inv-col-name">${displayCell(item.item_name)}</td>
+            <td class="inv-col-dept">${displayCell(item.department_name || item.category_name)}</td>
+            <td class="inv-col-class">${displayCell(formatClassificationDisplay(item.asset_classification))}</td>
+            <td class="inv-col-loc">${displayCell(item.location_name)}</td>
+            <td class="inv-col-qty">1</td>
+            <td class="inv-col-cond">${displayCell(item.condition)}</td>
+            <td class="inv-col-status">${getStatusBadge(item.status)}</td>
+            <td class="inventory-actions-td inv-col-actions">${renderInventoryActionsCell(item, formatClassificationDisplay(item.asset_classification), permissions)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -685,30 +779,23 @@ async function saveItem(e) {
   }
 
   if (isFixedAssetClassification(classification) && !data.custodian_id) {
-    showToast('Assigned custodian is required for Non-Consumable (Fixed Asset) items', 'error');
+    showToast('Assigned custodian is required for Durable items', 'error');
     return;
   }
 
   try {
     if (id) {
-      const res = await API.updateInventoryItem(id, data);
+      await API.updateInventoryItem(id, data);
       showToast('Item updated successfully');
-      if (res?.data?.custodian_par) {
-        openGeneratedDocument(res.data.custodian_par, 'PAR');
-      }
-      if (res?.data?.semi_durable_sal) {
-        openGeneratedDocument(res.data.semi_durable_sal, 'SAL');
-      }
     } else {
       const res = await API.createInventoryItem(data);
       const createdCount = res?.data?.created_count || 1;
-      showToast(res?.message || (createdCount > 1 ? `${createdCount} assets created successfully` : 'Item created successfully'));
-      openGeneratedDocument(res?.data?.generated_document, 'GRN');
-      if (res?.data?.custodian_par) {
-        openGeneratedDocument(res.data.custodian_par, 'PAR');
-      }
-      if (res?.data?.semi_durable_sal) {
-        openGeneratedDocument(res.data.semi_durable_sal, 'SAL');
+      const parCount = res?.data?.generated_par_count || 0;
+      const baseMessage = res?.message || (createdCount > 1 ? `${createdCount} assets created successfully` : 'Item created successfully');
+      showToast(parCount > 1 ? `${baseMessage} (${parCount} PARs generated)` : baseMessage);
+      const generated = res?.data?.generated_document || res?.data?.custodian_par;
+      if (generated) {
+        openGeneratedDocument(generated, generated.document_type || 'PAR');
       }
     }
     closeModal('itemModal');
@@ -793,7 +880,6 @@ async function submitDisposal(e) {
       reason: document.getElementById('disposalReason').value
     });
     showToast('Disposal request submitted');
-    openGeneratedDocument(res?.data?.generated_document, 'RDF');
     closeModal('disposalModal');
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -802,7 +888,7 @@ function openMaintenanceModal(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   if (!canMaintainAsset(item.asset_classification)) {
-    showToast('Maintenance is only available for Non-Consumable (Fixed Asset) items', 'error');
+    showToast('Maintenance is only available for Durable items', 'error');
     return;
   }
   if (item.status !== 'Available') {
@@ -843,82 +929,222 @@ async function submitMaintenance(e) {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
-function getReplacementPartOptions(parentId) {
-  return items.filter(i =>
-    i.id !== parentId &&
-    i.status !== 'Disposed' &&
-    !isFixedAssetClassification(i.asset_classification) &&
-    !i.parent_asset_id
-  );
+let componentModalState = {
+  parentId: null,
+  mode: 'list',
+  replaceId: null,
+  components: [],
+  history: []
+};
+
+function resetComponentFormFields() {
+  document.getElementById('componentName').value = '';
+  document.getElementById('componentClassification').value = '';
+  document.getElementById('componentBrand').value = '';
+  document.getElementById('componentModel').value = '';
+  document.getElementById('componentSerial').value = '';
+  document.getElementById('componentNotes').value = '';
+  document.getElementById('componentCondition').value = 'Good';
+  document.getElementById('componentDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('componentReplaceId').value = '';
 }
 
-function populateReplacementPartSelect(parentId) {
-  const select = document.getElementById('componentNewItem');
-  if (!select) return;
-  const parts = getReplacementPartOptions(parentId);
-  select.innerHTML = '<option value="">Manual entry / not in stock</option>';
-  parts.forEach(part => {
-    const opt = document.createElement('option');
-    opt.value = part.id;
-    opt.textContent = `${part.item_name} (${part.item_code})`;
-    select.appendChild(opt);
-  });
-  if (typeof refreshSearchableSelects === 'function') {
-    refreshSearchableSelects(select);
+function showComponentListPanel() {
+  componentModalState.mode = 'list';
+  componentModalState.replaceId = null;
+  document.getElementById('componentListPanel').style.display = 'block';
+  document.getElementById('componentForm').style.display = 'none';
+  document.getElementById('componentShowAddBtn').style.display = '';
+  document.getElementById('componentShowListBtn').style.display = 'none';
+  document.getElementById('componentModalFooter').style.display = '';
+}
+
+function showComponentForm(mode, componentId = null) {
+  componentModalState.mode = mode;
+  componentModalState.replaceId = componentId;
+  resetComponentFormFields();
+
+  document.getElementById('componentListPanel').style.display = 'none';
+  document.getElementById('componentForm').style.display = 'block';
+  document.getElementById('componentShowAddBtn').style.display = 'none';
+  document.getElementById('componentShowListBtn').style.display = '';
+  document.getElementById('componentModalFooter').style.display = 'none';
+
+  if (mode === 'replace') {
+    document.getElementById('componentFormTitle').textContent = 'Replace Component';
+    document.getElementById('componentDateLabel').textContent = 'Replacement / Install Date';
+    document.getElementById('componentSubmitBtn').textContent = 'Save Replacement';
+    document.getElementById('componentReplaceId').value = String(componentId || '');
+    const existing = componentModalState.components.find((c) => Number(c.id) === Number(componentId));
+    if (existing) {
+      document.getElementById('componentName').value = existing.component_name || '';
+      document.getElementById('componentBrand').placeholder = existing.brand ? `Previous: ${existing.brand}` : 'Optional';
+      document.getElementById('componentModel').placeholder = existing.model ? `Previous: ${existing.model}` : 'Optional';
+    }
+  } else {
+    document.getElementById('componentFormTitle').textContent = 'Add Component';
+    document.getElementById('componentDateLabel').textContent = 'Date Installed';
+    document.getElementById('componentSubmitBtn').textContent = 'Save Component';
   }
 }
 
-function openComponentModal(id) {
-  const item = items.find(i => i.id === id);
-  if (!item) return;
-  if (!canReplaceComponent(item.asset_classification)) {
-    showToast('Component replacement is only available for Non-Consumable (Fixed Asset) items', 'error');
+function renderComponentActiveTable(components = []) {
+  const container = document.getElementById('componentActiveList');
+  if (!container) return;
+  if (!components.length) {
+    container.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin:0;">No components registered yet.</p>';
     return;
   }
+  container.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Component Name</th>
+          <th>Property Tag</th>
+          <th>Brand</th>
+          <th>Model</th>
+          <th>Status</th>
+          <th>Date Added</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${components.map((c) => `
+          <tr>
+            <td>${displayCell(c.component_name)}</td>
+            <td>${displayCell(c.component_property_tag)}</td>
+            <td>${displayCell(c.brand)}</td>
+            <td>${displayCell(c.model)}</td>
+            <td>${getStatusBadge(c.inventory_status || c.status || 'Active')}</td>
+            <td>${formatDetailDate(c.inventory_created_at || c.date_installed || c.created_at)}</td>
+            <td style="white-space:nowrap;">
+              <button type="button" class="btn-outline-custom btn-sm-custom" onclick="showComponentForm('replace', ${c.id})">
+                Replace
+              </button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderComponentHistoryTable(history = []) {
+  const container = document.getElementById('componentHistoryList');
+  if (!container) return;
+  if (!history.length) {
+    container.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin:0;">No component replacement history yet.</p>';
+    return;
+  }
+  container.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Previous Component</th>
+          <th>New Component</th>
+          <th>Replacement Date</th>
+          <th>Replaced By</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${history.map((h) => `
+          <tr>
+            <td>${displayCell(h.old_component_name)}</td>
+            <td>${displayCell(h.new_component_name)}</td>
+            <td>${formatDetailDate(h.replacement_date)}</td>
+            <td>${displayCell(h.replaced_by_name)}</td>
+            <td>${displayCell(h.notes)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function refreshComponentModalData() {
+  const parentId = componentModalState.parentId;
+  if (!parentId) return;
+  const res = await API.getComponents(parentId);
+  const data = res?.data || {};
+  componentModalState.components = Array.isArray(data.components) ? data.components : [];
+  componentModalState.history = Array.isArray(data.history) ? data.history : [];
+  renderComponentActiveTable(componentModalState.components);
+  renderComponentHistoryTable(componentModalState.history);
+}
+
+async function openComponentModal(id) {
+  const item = items.find((i) => i.id === id);
+  if (!item) return;
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  if (!canReplaceComponent(item.asset_classification)) {
+    showToast('Components management is only available for Durable assets', 'error');
+    return;
+  }
+
+  componentModalState.parentId = id;
   document.getElementById('componentParentId').value = id;
   document.getElementById('componentParentName').value = item.item_name || '';
   document.getElementById('componentPropertyTag').value = item.property_tag || '-';
-  document.getElementById('componentOldName').value = '';
-  document.getElementById('componentNewName').value = '';
-  document.getElementById('componentNotes').value = '';
-  document.getElementById('componentDate').value = new Date().toISOString().split('T')[0];
-  populateReplacementPartSelect(id);
+  showComponentListPanel();
   openModal('componentModal');
+
+  try {
+    await refreshComponentModalData();
+  } catch (err) {
+    showToast(err.message || 'Unable to load components', 'error');
+  }
 }
 
 async function submitComponent(e) {
   e.preventDefault();
   const parentId = parseInt(document.getElementById('componentParentId').value, 10);
-  const oldName = document.getElementById('componentOldName').value.trim();
-  const replacementDate = document.getElementById('componentDate').value;
-  const newItemId = document.getElementById('componentNewItem').value;
-  const newName = document.getElementById('componentNewName').value.trim();
+  const classification = document.getElementById('componentClassification').value;
+  const payload = {
+    component_name: document.getElementById('componentName').value.trim(),
+    asset_classification: classification,
+    brand: document.getElementById('componentBrand').value.trim() || null,
+    model: document.getElementById('componentModel').value.trim() || null,
+    serial_number: document.getElementById('componentSerial').value.trim() || null,
+    date_installed: document.getElementById('componentDate').value || null,
+    condition: document.getElementById('componentCondition').value || null,
+    remarks: document.getElementById('componentNotes').value.trim() || null
+  };
 
-  if (!oldName) {
-    showToast('Old component name is required', 'error');
+  if (!payload.component_name) {
+    showToast('Component name is required', 'error');
     return;
   }
-  if (!replacementDate) {
-    showToast('Replacement date is required', 'error');
-    return;
-  }
-  if (!newItemId && !newName) {
-    showToast('Select a replacement part from inventory or enter a new component name', 'error');
+  if (!payload.asset_classification) {
+    showToast('Classification is required', 'error');
     return;
   }
 
   try {
-    await API.createComponentReplacement({
-      parent_asset_id: parentId,
-      old_component_name: oldName,
-      new_inventory_item_id: newItemId ? parseInt(newItemId, 10) : null,
-      new_component_name: newName || null,
-      replacement_date: replacementDate,
-      notes: document.getElementById('componentNotes').value.trim() || null
-    });
-    showToast('Component replacement recorded');
-    closeModal('componentModal');
-    await loadItems();
+    if (componentModalState.mode === 'replace') {
+      const replaceId = parseInt(document.getElementById('componentReplaceId').value, 10);
+      if (!replaceId) {
+        showToast('Component to replace was not found', 'error');
+        return;
+      }
+      await API.replaceAssetComponent(replaceId, {
+        ...payload,
+        replacement_date: payload.date_installed,
+        notes: payload.remarks
+      });
+      showToast('Component replaced successfully');
+    } else {
+      await API.createAssetComponent({
+        parent_asset_id: parentId,
+        ...payload
+      });
+      showToast('Component added successfully');
+    }
+    await refreshComponentModalData();
+    showComponentListPanel();
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -1026,11 +1252,12 @@ const ASSET_DETAIL_TABS = [
   { key: 'disposals', panelId: 'assetDetailDisposal' }
 ];
 
-const ASSET_INVENTORY_DOCUMENT_TYPES = ['PAR', 'GRN', 'SAL'];
+const ASSET_INVENTORY_DOCUMENT_TYPES = ['PAR', 'GRN'];
 
-function renderAssetDetailOverview(item, replacements = [], linkedParts = []) {
-  const componentsHtml = canReplaceComponent(item.asset_classification)
-    ? renderComponentHistory(replacements, linkedParts)
+function renderAssetDetailOverview(item, replacements = [], linkedParts = [], activeComponents = []) {
+  const showComponents = canManageInventory(currentUser) && canReplaceComponent(item.asset_classification);
+  const componentsHtml = showComponents
+    ? renderComponentHistory(replacements, linkedParts, activeComponents)
     : '';
 
   const itemInformation = renderDetailSection('Item Information', [
@@ -1078,6 +1305,7 @@ function renderAssetDetailOverview(item, replacements = [], linkedParts = []) {
 
 const ASSET_WORKFLOW_DOCUMENT_TYPES = [
   { type: 'ABL', module: 'borrow', recordsKey: 'borrows' },
+  { type: 'RTF', module: 'transfer', recordsKey: 'transfers' },
   { type: 'TRF', module: 'transfer', recordsKey: 'transfers' },
   { type: 'RDF', module: 'disposal', recordsKey: 'disposals' }
 ];
@@ -1110,6 +1338,15 @@ function uniqueDocuments(documents = []) {
 }
 
 async function fetchAssetDocuments(itemId, borrows = [], transfers = [], disposals = []) {
+  try {
+    const res = await API.getDocumentsByInventory(itemId);
+    if (Array.isArray(res?.data)) {
+      return uniqueDocuments(res.data);
+    }
+  } catch {
+    // Fall back to per-type lookups if the aggregate endpoint is unavailable
+  }
+
   const lookups = ASSET_INVENTORY_DOCUMENT_TYPES.map((type) =>
     lookupDocumentSafe(type, 'inventory', itemId)
   );
@@ -1165,32 +1402,45 @@ function renderEmptyHistory(message) {
   return `<p style="font-size:13px;color:#666;margin:0;">${message}</p>`;
 }
 
-function renderComponentHistory(replacements, linkedParts) {
+function renderComponentHistory(replacements = [], _linkedParts = [], activeComponents = []) {
+  const activeHtml = activeComponents.length
+    ? `<div class="table-responsive"><table class="data-table"><thead><tr>
+        <th>Component Name</th><th>Brand</th><th>Model</th><th>Serial Number</th>
+        <th>Date Installed</th><th>Condition</th><th>Status</th><th>Remarks</th>
+      </tr></thead><tbody>
+        ${activeComponents.map((c) => `<tr>
+          <td>${displayCell(c.component_name)}</td>
+          <td>${displayCell(c.brand)}</td>
+          <td>${displayCell(c.model)}</td>
+          <td>${displayCell(c.serial_number)}</td>
+          <td>${formatDetailDate(c.date_installed)}</td>
+          <td>${displayCell(c.condition)}</td>
+          <td>${getStatusBadge(c.status || 'Active')}</td>
+          <td>${displayCell(c.remarks)}</td>
+        </tr>`).join('')}
+      </tbody></table></div>`
+    : '<p style="font-size:13px;color:#666;">No active components registered yet.</p>';
+
   const historyHtml = replacements.length
-    ? `<div class="table-responsive"><table class="data-table"><thead><tr><th>Date</th><th>Old Component</th><th>New Component</th><th>Replaced By</th><th>Notes</th></tr></thead><tbody>
-        ${replacements.map(c => `<tr>
-          <td>${formatDate(c.replacement_date)}</td>
-          <td>${c.old_component_name}</td>
-          <td>${c.new_item_name || c.new_component_name || '-'}</td>
-          <td>${c.replaced_by_name || '-'}</td>
-          <td>${c.notes || '-'}</td>
+    ? `<div class="table-responsive"><table class="data-table"><thead><tr>
+        <th>Previous Component</th><th>New Component</th><th>Replacement Date</th><th>Replaced By</th><th>Remarks</th>
+      </tr></thead><tbody>
+        ${replacements.map((c) => `<tr>
+          <td>${displayCell(c.old_component_name)}</td>
+          <td>${displayCell(c.new_component_name || c.new_item_name)}</td>
+          <td>${formatDetailDate(c.replacement_date)}</td>
+          <td>${displayCell(c.replaced_by_name)}</td>
+          <td>${displayCell(c.notes)}</td>
         </tr>`).join('')}
       </tbody></table></div>`
     : '<p style="font-size:13px;color:#666;">No component replacement history yet.</p>';
 
-  const linkedHtml = linkedParts.length
-    ? `<h4 style="font-size:14px;margin:16px 0 8px;">Installed Parts (Linked Inventory)</h4>
-      <div class="table-responsive"><table class="data-table"><thead><tr><th>Code</th><th>Part Name</th><th>Classification</th><th>Status</th></tr></thead><tbody>
-        ${linkedParts.map(p => `<tr>
-          <td>${p.item_code}</td>
-          <td>${p.item_name}</td>
-          <td>${formatClassificationDisplay(p.asset_classification)}</td>
-          <td>${getStatusBadge(p.status)}</td>
-        </tr>`).join('')}
-      </tbody></table></div>`
-    : '';
-
-  return `<h4 style="font-size:14px;margin-bottom:8px;">Replacement History</h4>${historyHtml}${linkedHtml}`;
+  return `
+    <h4 style="font-size:14px;margin:20px 0 8px;">Current Components</h4>
+    ${activeHtml}
+    <h4 style="font-size:14px;margin:16px 0 8px;">Replacement History</h4>
+    ${historyHtml}
+  `;
 }
 
 function renderAssetTimeline(events = []) {
@@ -1222,13 +1472,13 @@ async function viewAssetDetails(id) {
       return;
     }
 
-    const [maintRes, transferRes, borrowRes, disposalRes, compRes, partsRes, timelineRes] = await Promise.allSettled([
+    const canLoadComponents = canManageInventory(currentUser) && canReplaceComponent(item.asset_classification);
+    const [maintRes, transferRes, borrowRes, disposalRes, compRes, timelineRes] = await Promise.allSettled([
       API.getMaintenanceByAsset(id),
       API.getTransferHistory(id),
       API.getBorrowHistory(id),
       API.getDisposalsByAsset(id),
-      API.getComponents(id),
-      API.getInventory({ parent_asset_id: id }),
+      canLoadComponents ? API.getComponents(id) : Promise.resolve({ data: { components: [], history: [] } }),
       API.getInventoryTimeline(id)
     ]);
 
@@ -1236,14 +1486,15 @@ async function viewAssetDetails(id) {
     const transfers = transferRes.status === 'fulfilled' ? (transferRes.value?.data || []) : [];
     const borrows = borrowRes.status === 'fulfilled' ? (borrowRes.value?.data || []) : [];
     const disposals = disposalRes.status === 'fulfilled' ? (disposalRes.value?.data || []) : [];
-    const replacements = compRes.status === 'fulfilled' ? (compRes.value?.data || []) : [];
-    const linkedParts = partsRes.status === 'fulfilled' ? (partsRes.value?.data || []) : [];
+    const componentPayload = compRes.status === 'fulfilled' ? (compRes.value?.data || {}) : {};
+    const activeComponents = Array.isArray(componentPayload.components) ? componentPayload.components : [];
+    const replacements = Array.isArray(componentPayload.history) ? componentPayload.history : [];
     const timeline = timelineRes.status === 'fulfilled' ? (timelineRes.value?.data || []) : [];
     const documents = await fetchAssetDocuments(id, borrows, transfers, disposals);
 
     document.getElementById('assetDetailTitle').textContent = item.item_name;
     document.getElementById('assetDetailSummary').innerHTML = renderAssetDetailSummary(item);
-    document.getElementById('assetDetailOverview').innerHTML = renderAssetDetailOverview(item, replacements, linkedParts);
+    document.getElementById('assetDetailOverview').innerHTML = renderAssetDetailOverview(item, replacements, [], activeComponents);
     document.getElementById('assetDetailDocuments').innerHTML = renderAssetDocuments(documents);
     document.getElementById('assetDetailHistory').innerHTML = renderAssetTimeline(timeline);
 
@@ -1298,6 +1549,185 @@ function switchAssetDetailTab(tab) {
     const panel = document.getElementById(entry.panelId);
     if (panel) panel.style.display = entry.key === activeTab ? 'block' : 'none';
   });
+}
+
+let inventoryImportPreviewToken = null;
+let inventoryImportPreviewData = null;
+
+function resetInventoryImportModal() {
+  inventoryImportPreviewToken = null;
+  inventoryImportPreviewData = null;
+  const fileInput = document.getElementById('inventoryImportFile');
+  if (fileInput) fileInput.value = '';
+  const uploadStep = document.getElementById('inventoryImportUploadStep');
+  const previewStep = document.getElementById('inventoryImportPreviewStep');
+  const resultStep = document.getElementById('inventoryImportResultStep');
+  if (uploadStep) uploadStep.style.display = 'block';
+  if (previewStep) previewStep.style.display = 'none';
+  if (resultStep) resultStep.style.display = 'none';
+  const footer = document.getElementById('inventoryImportFooter');
+  if (footer) {
+    footer.innerHTML = `
+      <button type="button" class="btn-outline-custom" onclick="closeInventoryImportModal()">Cancel</button>
+      <button type="button" class="btn-primary-custom" id="inventoryImportValidateBtn">
+        <i class="bi bi-file-earmark-check"></i> Validate File
+      </button>
+    `;
+    document.getElementById('inventoryImportValidateBtn')?.addEventListener('click', validateInventoryImportFile);
+  }
+}
+
+function openInventoryImportModal() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  resetInventoryImportModal();
+  openModal('inventoryImportModal');
+}
+
+function closeInventoryImportModal() {
+  closeModal('inventoryImportModal');
+  resetInventoryImportModal();
+}
+
+async function downloadInventoryImportTemplate() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  try {
+    const blob = await API.downloadInventoryImportTemplate();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'inventory-import-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('Template downloaded');
+  } catch (err) {
+    showToast(err.message || 'Unable to download template', 'error');
+  }
+}
+
+function renderInventoryImportPreview(data) {
+  const summary = data.summary || {};
+  const reasons = summary.reason_summary || [];
+  const invalidRows = data.invalid_rows || [];
+
+  document.getElementById('inventoryImportUploadStep').style.display = 'none';
+  document.getElementById('inventoryImportResultStep').style.display = 'none';
+  document.getElementById('inventoryImportPreviewStep').style.display = 'block';
+
+  document.getElementById('inventoryImportSummary').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+      <div><strong>Total Records</strong><div>${summary.total_rows || 0}</div></div>
+      <div><strong>Valid Records</strong><div>${summary.valid_records || 0}</div></div>
+      <div><strong>Invalid Records</strong><div>${summary.invalid_records || 0}</div></div>
+    </div>
+  `;
+
+  document.getElementById('inventoryImportReasons').innerHTML = reasons.length
+    ? `<strong>Reasons</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+    : '<p style="margin:0;color:var(--text-secondary);font-size:13px;">All rows passed validation.</p>';
+
+  if (!(summary.valid_records > 0) && (summary.invalid_records > 0)) {
+    document.getElementById('inventoryImportReasons').insertAdjacentHTML(
+      'beforeend',
+      `<p style="margin:10px 0 0;color:var(--danger);font-size:13px;">
+        No valid rows to import. Fix the issues above (for Durable items, set a Custodian name or use Semi-Durable), then validate again.
+      </p>`
+    );
+  }
+
+  document.getElementById('inventoryImportInvalidTable').innerHTML = invalidRows.length
+    ? `<table class="data-table"><thead><tr><th>Row</th><th>Item Name</th><th>Reasons</th></tr></thead><tbody>
+        ${invalidRows.map((row) => `<tr><td>${row.row_number}</td><td>${row.item_name || '—'}</td><td>${(row.reasons || []).join('; ')}</td></tr>`).join('')}
+      </tbody></table>`
+    : '';
+
+  const footer = document.getElementById('inventoryImportFooter');
+  const canImport = (summary.valid_records || 0) > 0;
+  footer.innerHTML = `
+    <button type="button" class="btn-outline-custom" onclick="closeInventoryImportModal()">Cancel</button>
+    <button type="button" class="btn-primary-custom" id="inventoryImportConfirmBtn" ${canImport ? '' : 'disabled'}>
+      <i class="bi bi-cloud-upload"></i> Import Valid Records
+    </button>
+  `;
+  document.getElementById('inventoryImportConfirmBtn')?.addEventListener('click', confirmInventoryImport);
+}
+
+function renderInventoryImportResult(data) {
+  document.getElementById('inventoryImportUploadStep').style.display = 'none';
+  document.getElementById('inventoryImportPreviewStep').style.display = 'none';
+  document.getElementById('inventoryImportResultStep').style.display = 'block';
+
+  const reasons = data.reason_summary || [];
+  document.getElementById('inventoryImportResultSummary').innerHTML = `
+    <h4 style="margin:0 0 12px;">Import Completed</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
+      <div><strong>Total Rows</strong><div>${data.total_rows || 0}</div></div>
+      <div><strong>Successfully Imported</strong><div>${data.successfully_imported || 0}</div></div>
+      <div><strong>PAR Documents Generated</strong><div>${data.pars_generated || 0}</div></div>
+      <div><strong>Skipped</strong><div>${data.skipped || 0}</div></div>
+    </div>
+    ${reasons.length
+      ? `<strong>Reason Summary</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+      : ''}
+  `;
+
+  document.getElementById('inventoryImportFooter').innerHTML = `
+    <button type="button" class="btn-primary-custom" onclick="closeInventoryImportModal()">Done</button>
+  `;
+}
+
+async function validateInventoryImportFile() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+
+  const fileInput = document.getElementById('inventoryImportFile');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('Please choose an Excel file first', 'error');
+    return;
+  }
+
+  const name = String(file.name || '').toLowerCase();
+  if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+    showToast('Only .xlsx or .xls files are allowed', 'error');
+    return;
+  }
+
+  await guardAsyncAction(async () => {
+    const res = await API.previewInventoryImport(file);
+    inventoryImportPreviewToken = res.data.preview_token;
+    inventoryImportPreviewData = res.data;
+    renderInventoryImportPreview(res.data);
+  }, { loadingText: 'Validating...', lockKey: 'inventory-import-preview' });
+}
+
+async function confirmInventoryImport() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  if (!inventoryImportPreviewToken) {
+    showToast('Please validate a file first', 'error');
+    return;
+  }
+
+  await guardAsyncAction(async () => {
+    const res = await API.confirmInventoryImport(inventoryImportPreviewToken);
+    inventoryImportPreviewToken = null;
+    renderInventoryImportResult(res.data || {});
+    showToast(res.message || 'Import completed');
+    await loadItems();
+  }, { loadingText: 'Importing...', lockKey: 'inventory-import-confirm' });
 }
 
 document.addEventListener('DOMContentLoaded', initInventoryPage);

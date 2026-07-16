@@ -10,8 +10,7 @@ const DisposalModel = require('./DisposalModel');
 const MaintenanceModel = require('./MaintenanceModel');
 const {
   isAdministrator,
-  isPropertyManager,
-  isCustodian
+  isPropertyManager
 } = require('../utils/roleHelpers');
 
 const EMPTY_INVENTORY_STATS = {
@@ -112,74 +111,6 @@ function resolveScopes(scopes = {}) {
   };
 }
 
-const DEPARTMENT_OPERATIONAL_ACTIVITY_MATCH = `
-  (
-    al.entity_type = 'inventory_item'
-    AND EXISTS (
-      SELECT 1 FROM inventory_items i
-      WHERE i.id = al.entity_id AND i.department_id = ?
-    )
-  )
-  OR (
-    al.entity_type = 'maintenance_record'
-    AND EXISTS (
-      SELECT 1 FROM maintenance_records m
-      JOIN inventory_items i ON m.inventory_item_id = i.id
-      WHERE m.id = al.entity_id AND i.department_id = ?
-    )
-  )
-  OR (
-    al.entity_type = 'transfer_request'
-    AND EXISTS (
-      SELECT 1 FROM transfer_requests t
-      JOIN inventory_items i ON t.inventory_item_id = i.id
-      WHERE t.id = al.entity_id AND i.department_id = ?
-    )
-  )
-  OR (
-    al.entity_type = 'disposal_request'
-    AND EXISTS (
-      SELECT 1 FROM disposal_requests d
-      JOIN inventory_items i ON d.inventory_item_id = i.id
-      WHERE d.id = al.entity_id AND i.department_id = ?
-    )
-  )`;
-
-const BORROW_ACTIVITY_MATCH = `
-  EXISTS (
-    SELECT 1 FROM borrow_transactions bt
-    WHERE al.description LIKE CONCAT('%', bt.transaction_code, '%')
-      AND (
-        bt.borrower_id = ?
-        OR EXISTS (
-          SELECT 1 FROM borrow_items bi
-          JOIN inventory_items i ON bi.inventory_item_id = i.id
-          WHERE bi.borrow_transaction_id = bt.id
-            AND (
-              (? IS NOT NULL AND i.department_id = ?)
-              OR (? IS NOT NULL AND i.location_id = ?)
-            )
-        )
-      )
-  )
-  OR EXISTS (
-    SELECT 1 FROM return_transactions rt
-    JOIN borrow_transactions bt ON rt.borrow_transaction_id = bt.id
-    WHERE al.description LIKE CONCAT('%', rt.transaction_code, '%')
-      AND (
-        bt.borrower_id = ?
-        OR EXISTS (
-          SELECT 1 FROM borrow_items bi
-          JOIN inventory_items i ON bi.inventory_item_id = i.id
-          WHERE bi.borrow_transaction_id = bt.id
-            AND (
-              (? IS NOT NULL AND i.department_id = ?)
-              OR (? IS NOT NULL AND i.location_id = ?)
-            )
-        )
-      )
-  )`;
-
 const AUTH_SESSION_EXCLUSION = `
   UPPER(al.action) NOT IN ('LOGIN', 'LOGOUT')
   AND LOWER(IFNULL(al.module, '')) <> 'auth'
@@ -187,50 +118,18 @@ const AUTH_SESSION_EXCLUSION = `
   AND UPPER(al.action) NOT LIKE '%LOGOUT%'
   AND UPPER(al.action) NOT LIKE '%AUTH%'`;
 
+/**
+ * Recent Operations: Admin sees all users; Property Manager and Custodian
+ * see only activity performed by their own logged-in user_id.
+ */
 function buildActivityQuery(ctx) {
   const baseSelect = `SELECT al.*, u.full_name AS user_name FROM activity_logs al
     LEFT JOIN users u ON al.user_id = u.id`;
 
-  if (ctx.fullVisibility) {
+  if (isAdministrator(ctx.role)) {
     return {
       sql: `${baseSelect} WHERE ${AUTH_SESSION_EXCLUSION} ORDER BY al.created_at DESC LIMIT 8`,
       params: []
-    };
-  }
-
-  if (isCustodian(ctx.role)) {
-    const departmentId = ctx.inventoryScope?.departmentId ?? null;
-    if (!departmentId) {
-      return {
-        sql: `${baseSelect} WHERE al.user_id = ? AND (${AUTH_SESSION_EXCLUSION}) ORDER BY al.created_at DESC LIMIT 8`,
-        params: [ctx.userId]
-      };
-    }
-    return {
-      sql: `${baseSelect}
-        WHERE (${AUTH_SESSION_EXCLUSION})
-          AND (
-            al.user_id = ?
-            OR ${DEPARTMENT_OPERATIONAL_ACTIVITY_MATCH}
-            OR (
-              al.module IN ('Borrow', 'Process Return', 'Return')
-              AND ${BORROW_ACTIVITY_MATCH}
-            )
-          )
-        ORDER BY al.created_at DESC LIMIT 8`,
-      params: [
-        ctx.userId,
-        departmentId,
-        departmentId,
-        departmentId,
-        departmentId,
-        ctx.userId,
-        departmentId, departmentId,
-        null, null,
-        ctx.userId,
-        departmentId, departmentId,
-        null, null
-      ]
     };
   }
 
@@ -244,7 +143,8 @@ const EMPTY_CHARTS = {
   monthlyBorrowed: [],
   monthlyReturned: [],
   departmentDistribution: [],
-  categoryDistribution: []
+  categoryDistribution: [],
+  monthlyDepartmentCosts: []
 };
 
 const DashboardModel = {
@@ -329,10 +229,15 @@ const DashboardModel = {
       return { ...EMPTY_CHARTS };
     }
 
-    const [monthlyBorrowed, monthlyReturned, departmentDistribution] = await Promise.all([
+    const includeDepartmentCosts = isAdministrator(ctx.role) || isPropertyManager(ctx.role);
+
+    const [monthlyBorrowed, monthlyReturned, departmentDistribution, monthlyDepartmentCosts] = await Promise.all([
       BorrowModel.getMonthlyBorrowed(ctx.borrowScope),
       ReturnModel.getMonthlyReturned(ctx.borrowScope),
-      InventoryModel.getDepartmentDistribution(ctx.inventoryScope)
+      InventoryModel.getDepartmentDistribution(ctx.inventoryScope),
+      includeDepartmentCosts
+        ? InventoryModel.getMonthlyDepartmentCosts(ctx.inventoryScope)
+        : Promise.resolve([])
     ]);
 
     const safeDepartmentDistribution = Array.isArray(departmentDistribution) ? departmentDistribution : [];
@@ -341,7 +246,8 @@ const DashboardModel = {
       monthlyBorrowed: Array.isArray(monthlyBorrowed) ? monthlyBorrowed : [],
       monthlyReturned: Array.isArray(monthlyReturned) ? monthlyReturned : [],
       departmentDistribution: safeDepartmentDistribution,
-      categoryDistribution: safeDepartmentDistribution
+      categoryDistribution: safeDepartmentDistribution,
+      monthlyDepartmentCosts: Array.isArray(monthlyDepartmentCosts) ? monthlyDepartmentCosts : []
     };
   },
 

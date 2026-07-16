@@ -7,8 +7,9 @@ async function initDocumentsPage() {
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
-      <h1>Document History</h1>
-      <p>View, preview, print, and download previously generated official documents</p>
+      <h1>Official Documents</h1>
+      <p>Document history — preview, print, and download previously generated official documents</p>
+      <p style="margin:8px 0 0;"><a href="/pages/reports.html" style="font-size:13px;color:var(--primary);text-decoration:none;"><i class="bi bi-arrow-left"></i> Back to Reports</a></p>
     </div>
     <div class="content-card">
       <div class="filters-bar">
@@ -19,8 +20,8 @@ async function initDocumentsPage() {
           <option>GRN</option>
           <option>RDF</option>
           <option>ABL</option>
+          <option>RTF</option>
           <option>TRF</option>
-          <option>SAL</option>
         </select>
       </div>
       <div class="table-responsive" id="documentsTable">

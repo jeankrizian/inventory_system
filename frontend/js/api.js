@@ -5,14 +5,21 @@ const API = {
   baseURL: '/api',
 
   async request(endpoint, options = {}) {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const config = {
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options
+      ...options,
+      headers: isFormData
+        ? { ...(options.headers || {}) }
+        : { 'Content-Type': 'application/json', ...(options.headers || {}) }
     };
 
-    if (config.body && typeof config.body === 'object') {
+    if (config.body && typeof config.body === 'object' && !isFormData) {
       config.body = JSON.stringify(config.body);
+    }
+
+    if (isFormData && config.headers) {
+      delete config.headers['Content-Type'];
     }
 
     let response;
@@ -79,6 +86,8 @@ const API = {
   login: (username, password) => API.post('/auth/login', { username, password }),
   register: (data) => API.post('/auth/register', data),
   forgotPassword: (data) => API.post('/auth/forgot-password', data),
+  verifyResetOtp: (data) => API.post('/auth/verify-reset-otp', data),
+  resetPassword: (data) => API.post('/auth/reset-password', data),
   logout: () => API.post('/auth/logout'),
   getMe: () => API.get('/auth/me'),
 
@@ -94,6 +103,34 @@ const API = {
   createInventoryItem: (data) => API.post('/inventory', data),
   updateInventoryItem: (id, data) => API.put(`/inventory/${id}`, data),
   archiveInventoryItem: (id) => API.delete(`/inventory/${id}`),
+  downloadInventoryImportTemplate: async () => {
+    const response = await fetch('/api/inventory/import/template', { credentials: 'include' });
+    if (response.status === 401) {
+      if (typeof clearAuthCache === 'function') clearAuthCache();
+      window.location.href = '/index.html';
+      return null;
+    }
+    if (response.status === 403) {
+      throw new Error('Inventory management requires Administrator or Property Manager access');
+    }
+    if (!response.ok) {
+      let message = 'Unable to download template';
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
+    return response.blob();
+  },
+  previewInventoryImport: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return API.request('/inventory/import/preview', { method: 'POST', body: formData, headers: {} });
+  },
+  confirmInventoryImport: (previewToken) => API.post('/inventory/import/confirm', { preview_token: previewToken }),
 
   getCategories: () => API.get('/categories'),
   createCategory: (data) => API.post('/categories', data),
@@ -194,6 +231,8 @@ const API = {
   completeMaintenance: (id, data) => API.put(`/maintenance/${id}/complete`, data),
 
   getComponents: (parentId) => API.get(`/components/parent/${parentId}`),
+  createAssetComponent: (data) => API.post('/components', data),
+  replaceAssetComponent: (id, data) => API.post(`/components/${id}/replace`, data),
   createComponentReplacement: (data) => API.post('/components', data),
 
   getDepartments: () => API.get('/departments'),
@@ -209,6 +248,8 @@ const API = {
     return API.get(`/documents${query ? '?' + query : ''}`);
   },
   getDocument: (id) => API.get(`/documents/${id}`),
+  getDocumentsByInventory: (inventoryItemId) =>
+    API.get(`/documents/by-inventory/${inventoryItemId}`),
   lookupDocument: (type, module, transactionId) =>
     API.get(`/documents/lookup?type=${encodeURIComponent(type)}&module=${encodeURIComponent(module)}&transaction_id=${transactionId}`),
   openDocumentPreview: (id) => window.open(`/pages/document-preview.html?id=${id}`, '_blank'),

@@ -49,6 +49,25 @@ router.post('/forgot-password', [
   validate
 ], AuthController.forgotPassword);
 
+router.post('/verify-reset-otp', [
+  schoolEmailValidator,
+  body('otp')
+    .trim()
+    .notEmpty().withMessage('Verification code is required')
+    .matches(/^\d{6}$/).withMessage('Verification code must be a 6-digit number'),
+  validate
+], AuthController.verifyResetOtp);
+
+router.post('/reset-password', [
+  schoolEmailValidator,
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('confirm_password').custom((value, { req }) => {
+    if (value !== req.body.password) throw new Error('Passwords do not match');
+    return true;
+  }),
+  validate
+], AuthController.resetPassword);
+
 router.get('/registration-roles', AuthController.getRegistrationRoles);
 
 router.post('/logout', AuthController.logout);

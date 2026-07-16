@@ -1,6 +1,6 @@
 /**
- * Login page (index.html) background only.
- * Institutional photo with moss-green gradient at 15% opacity.
+ * Auth pages (login / forgot-password) institutional background.
+ * Photo with moss-green gradient overlay at 15% opacity.
  */
 
 .login-page--institutional-bg {
@@ -71,4 +71,50 @@
   margin: 4px auto 0;
   text-align: center;
   overflow-wrap: break-word;
+}
+
+/* Forgot Password panel — maroon at 30% opacity (more transparent) */
+.login-card--maroon {
+  background: rgba(128, 0, 0, 0.3) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.login-card--maroon .system-brand-name,
+.login-card--maroon .login-logo p,
+.login-card--maroon label,
+.login-card--maroon .field-hint,
+.login-card--maroon .login-links a {
+  color: #fff;
+}
+
+.login-card--maroon .login-links a:hover {
+  color: #f5e8e8;
+}
+
+.login-card--maroon .field-error,
+.login-card--maroon .login-error {
+  color: #ffd4d4;
+}
+
+.login-card--maroon .login-success {
+  color: #e8ffe8;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.login-card--maroon .form-control-custom {
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a1a1a;
+}
+
+.login-card--maroon .btn-login {
+  background: #fff;
+  color: #800000;
+  border-color: #fff;
+}
+
+.login-card--maroon .btn-login:hover {
+  background: #f5e8e8;
+  color: #660000;
 }

@@ -8,11 +8,13 @@ async function initTransferRequestsPage() {
   currentUser = await initLayout('transfer-requests');
   if (!currentUser) return;
 
+  setRequestApprovalReload(loadTransfers);
+
   const transferSubtitle = canOperateTransfers(currentUser)
     ? 'Review and manage asset transfer requests'
     : canSubmitTransfer(currentUser)
       ? 'Submit and track asset transfer requests'
-      : 'Track transfer requests';
+      : 'View and track asset transfer requests';
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -165,18 +167,17 @@ function renderTransferActions(t) {
 
   if (t.status === 'Approved') {
     items.push({
-      label: 'View TRF',
+      label: 'View RTF',
       icon: 'bi-file-earmark-arrow-up',
       handler: `openTransferDocument(${t.id})`
     });
   }
 
   if (canOperateTransferActions() && t.status === 'Pending') {
-    items.push({
-      label: 'Review in Pending Approvals',
-      icon: 'bi-clipboard-check',
-      href: '/pages/pending-approvals.html?tab=transfer'
-    });
+    items.push(
+      { label: 'Approve', icon: 'bi-check-circle', handler: `approveTransferRequest(${t.id})` },
+      { label: 'Reject', icon: 'bi-x-circle', danger: true, handler: `openTransferReject(${t.id})` }
+    );
   }
 
   return renderActionMenuCell(`transfer-actions-${t.id}`, items);

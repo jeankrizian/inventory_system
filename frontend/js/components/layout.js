@@ -10,27 +10,34 @@ const NAV_ROLES = {
 
 const NAV_ITEMS = [
   { href: '/pages/dashboard.html', icon: 'bi-grid-1x2-fill', label: 'Dashboard', page: 'dashboard', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/pending-approvals.html', icon: 'bi-clipboard-check', label: 'Pending Approvals', page: 'pending-approvals', roles: ['property_manager'] },
   { href: '/pages/inventory.html', icon: 'bi-box-seam', label: 'Inventory', page: 'inventory', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/orders.html', icon: 'bi-box-arrow-in-right', label: 'Borrow', page: 'orders', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/transfer-requests.html', icon: 'bi-arrow-left-right', label: 'Transfers', page: 'transfer-requests', roles: ['property_manager', 'custodian'] },
-  { href: '/pages/maintenance-requests.html', icon: 'bi-tools', label: 'Maintenance', page: 'maintenance-requests', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/disposal-requests.html', icon: 'bi-trash3', label: 'Disposals', page: 'disposal-requests', roles: ['administrator', 'property_manager', 'custodian'] },
-  { href: '/pages/suppliers.html', icon: 'bi-truck', label: 'Suppliers', page: 'suppliers', roles: ['property_manager'] },
   {
     type: 'group',
-    icon: 'bi-buildings',
-    label: 'Manage',
-    page: 'manage',
-    roles: ['administrator'],
+    icon: 'bi-clipboard2-check',
+    label: 'Requests',
+    page: 'requests',
+    roles: ['administrator', 'property_manager', 'custodian'],
     children: [
-      { href: '/pages/manage-departments.html', icon: 'bi-building', label: 'Departments', page: 'manage-departments', roles: ['administrator'] },
-      { href: '/pages/manage-locations.html', icon: 'bi-geo-alt', label: 'Locations', page: 'manage-locations', roles: ['administrator'] },
-      { href: '/pages/manage-users.html', icon: 'bi-people', label: 'Users', page: 'manage-users', roles: ['administrator'] },
-      { href: '/pages/suppliers.html', icon: 'bi-truck', label: 'Suppliers', page: 'suppliers', roles: ['administrator'] }
+      { href: '/pages/orders.html', icon: 'bi-box-arrow-in-right', label: 'Borrow', page: 'orders', roles: ['administrator', 'property_manager', 'custodian'] },
+      { href: '/pages/transfer-requests.html', icon: 'bi-arrow-left-right', label: 'Transfer', page: 'transfer-requests', roles: ['administrator', 'property_manager', 'custodian'] },
+      { href: '/pages/maintenance-requests.html', icon: 'bi-tools', label: 'Maintenance', page: 'maintenance-requests', roles: ['administrator', 'property_manager', 'custodian'] },
+      { href: '/pages/disposal-requests.html', icon: 'bi-trash3', label: 'Disposals', page: 'disposal-requests', roles: ['administrator', 'property_manager', 'custodian'] }
     ]
   },
   { href: '/pages/reports.html', icon: 'bi-bar-chart-line', label: 'Reports', page: 'reports', roles: ['administrator', 'property_manager', 'custodian'] },
+  {
+    type: 'group',
+    icon: 'bi-gear-wide-connected',
+    label: 'Manage',
+    page: 'manage',
+    roles: ['administrator', 'property_manager'],
+    children: [
+      { href: '/pages/manage-users.html', icon: 'bi-people', label: 'Users', page: 'manage-users', roles: ['administrator'] },
+      { href: '/pages/manage-departments.html', icon: 'bi-building', label: 'Departments', page: 'manage-departments', roles: ['administrator', 'property_manager'] },
+      { href: '/pages/manage-locations.html', icon: 'bi-geo-alt', label: 'Locations', page: 'manage-locations', roles: ['administrator', 'property_manager'] },
+      { href: '/pages/suppliers.html', icon: 'bi-truck', label: 'Suppliers', page: 'suppliers', roles: ['administrator', 'property_manager'] }
+    ]
+  },
   { href: '/pages/archive.html', icon: 'bi-archive', label: 'Archive', page: 'archive', roles: ['administrator', 'property_manager'] }
 ];
 
@@ -47,10 +54,10 @@ const PAGE_PERMISSIONS = {
   suppliers: ['administrator', 'property_manager'],
   orders: ['administrator', 'property_manager', 'custodian'],
   'maintenance-requests': ['administrator', 'property_manager', 'custodian'],
-  'transfer-requests': ['property_manager', 'custodian'],
+  'transfer-requests': ['administrator', 'property_manager', 'custodian'],
   'disposal-requests': ['administrator', 'property_manager', 'custodian'],
-  'manage-departments': ['administrator'],
-  'manage-locations': ['administrator'],
+  'manage-departments': ['administrator', 'property_manager'],
+  'manage-locations': ['administrator', 'property_manager'],
   'manage-users': ['administrator'],
   'manage-store': ['administrator'],
   archive: ['administrator', 'property_manager'],
@@ -60,9 +67,9 @@ const PAGE_PERMISSIONS = {
 };
 
 const MANAGE_PAGES = ['manage-departments', 'manage-locations', 'manage-users', 'suppliers', 'manage-store'];
+const REQUEST_PAGES = ['orders', 'transfer-requests', 'maintenance-requests', 'disposal-requests'];
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
-const SIDEBAR_AUTO_COLLAPSE_KEY = 'sidebarAutoCollapse';
 
 let layoutClickHandler = null;
 let searchHandler = null;
@@ -100,6 +107,11 @@ function canAccessPage(pageName, user) {
 }
 
 function isSidebarCollapsed() {
+  // One-time reset: older builds auto-collapsed on every navigation and polluted this flag
+  if (!localStorage.getItem('sidebarManualPreferenceV2')) {
+    localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
+    localStorage.setItem('sidebarManualPreferenceV2', '1');
+  }
   return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
 }
 
@@ -112,49 +124,38 @@ function setSidebarCollapsedState(collapsed, { persist = true } = {}) {
   if (!isMobileView()) updateToggleIcon(collapsed);
 }
 
-function scheduleSidebarAutoCollapse() {
-  sessionStorage.setItem(SIDEBAR_AUTO_COLLAPSE_KEY, '1');
-  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
-}
-
-function applyAutoCollapseOnLoad() {
-  if (sessionStorage.getItem(SIDEBAR_AUTO_COLLAPSE_KEY) !== '1') return;
-  sessionStorage.removeItem(SIDEBAR_AUTO_COLLAPSE_KEY);
-  if (isMobileView()) return;
-  setSidebarCollapsedState(true);
-}
-
 function handleNavLinkClick(e) {
+  // Mobile overlay: close after navigating. Desktop: keep sidebar state as the user left it.
   if (isMobileView()) {
     closeMobileSidebar();
-    return;
   }
-  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-
-  const sidebar = document.getElementById('sidebar');
-  if (!sidebar || sidebar.classList.contains('collapsed')) return;
-
-  const href = e.currentTarget.getAttribute('href');
-  if (!href || href === '#') return;
-
-  scheduleSidebarAutoCollapse();
 }
 
 function isMobileView() {
   return window.innerWidth <= 768;
 }
 
-function isManageGroupExpanded() {
-  if (localStorage.getItem('manageNavExpanded') === 'false') return false;
-  return localStorage.getItem('manageNavExpanded') !== 'false';
+function isNavGroupExpanded(groupPage) {
+  const key = `navGroupExpanded:${groupPage}`;
+  if (groupPage === 'manage' && localStorage.getItem('manageNavExpanded') != null && localStorage.getItem(key) == null) {
+    return localStorage.getItem('manageNavExpanded') !== 'false';
+  }
+  return localStorage.getItem(key) === 'true';
 }
 
-function setManageGroupExpanded(expanded) {
-  localStorage.setItem('manageNavExpanded', expanded ? 'true' : 'false');
+function setNavGroupExpanded(groupPage, expanded) {
+  localStorage.setItem(`navGroupExpanded:${groupPage}`, expanded ? 'true' : 'false');
+  if (groupPage === 'manage') {
+    localStorage.setItem('manageNavExpanded', expanded ? 'true' : 'false');
+  }
 }
 
 function isManagePage(page) {
   return MANAGE_PAGES.includes(page);
+}
+
+function isRequestPage(page) {
+  return REQUEST_PAGES.includes(page);
 }
 
 function renderNavItem(item, activePage, isLogout = false) {
@@ -180,7 +181,7 @@ function renderNavItem(item, activePage, isLogout = false) {
 
 function renderNavGroup(group, activePage) {
   const childActive = group.children.some(child => child.page === activePage);
-  const expanded = childActive || (isManageGroupExpanded() && !isSidebarCollapsed());
+  const expanded = childActive || (isNavGroupExpanded(group.page) && !isSidebarCollapsed());
   const groupActive = childActive ? ' active' : '';
 
   return `
@@ -219,8 +220,14 @@ function renderLayout(activePage, user) {
   const footerItems = filterNavByRole(FOOTER_NAV, role);
 
   if (isManagePage(activePage)) {
-    setManageGroupExpanded(true);
+    setNavGroupExpanded('manage', true);
   }
+  if (isRequestPage(activePage)) {
+    setNavGroupExpanded('requests', true);
+  }
+
+  // Official Documents lives under Reports — keep Reports highlighted when viewing it
+  const navHighlightPage = activePage === 'documents' ? 'reports' : activePage;
 
   return `
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -236,7 +243,7 @@ function renderLayout(activePage, user) {
         </div>
       </div>
       <nav class="sidebar-nav">
-        ${navItems.map(item => renderNavEntry(item, activePage)).join('')}
+        ${navItems.map(item => renderNavEntry(item, navHighlightPage)).join('')}
       </nav>
       <div class="sidebar-footer">
         ${footerItems.map(item => item.action === 'logout'
@@ -289,6 +296,10 @@ function renderLayout(activePage, user) {
         </div>
       </header>
       <div class="page-content" id="pageContent"></div>
+      <footer class="app-page-footer" role="contentinfo">
+        <p>© 2026 Cavite Institute Property Management System. All Rights Reserved.</p>
+        <p>Developed by Jean Krizia Naval &amp; Jasmine De Jesus.</p>
+      </footer>
     </div>
   `;
 }
@@ -333,17 +344,19 @@ function initNavGroups() {
       e.stopPropagation();
       const group = toggle.closest('.nav-group');
       if (!group) return;
+      const groupPage = group.dataset.navGroup || 'manage';
 
       if (isSidebarCollapsed() && !isMobileView()) {
         toggleSidebar();
         group.classList.add('expanded');
-        setManageGroupExpanded(true);
+        toggle.setAttribute('aria-expanded', 'true');
+        setNavGroupExpanded(groupPage, true);
         return;
       }
 
       const expanded = group.classList.toggle('expanded');
       toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-      setManageGroupExpanded(expanded);
+      setNavGroupExpanded(groupPage, expanded);
     });
   });
 }
@@ -364,7 +377,8 @@ async function initLayout(activePage) {
   appEl.innerHTML = renderLayout(activePage, user);
   initLayoutEvents();
   initNavGroups();
-  applyAutoCollapseOnLoad();
+  // Clear legacy auto-collapse flag from older builds
+  sessionStorage.removeItem('sidebarAutoCollapse');
   updateToggleIcon(isSidebarCollapsed() && !isMobileView());
   initActionIconTooltips();
   return user;

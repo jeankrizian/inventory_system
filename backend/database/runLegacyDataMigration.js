@@ -6,7 +6,7 @@ const pool = require('../config/database');
 const { generateAutoPropertyTags } = require('../utils/propertyTagGenerator');
 const { generateNextBatchId } = require('../utils/batchIdGenerator');
 
-const FIXED_ASSET_CLASSIFICATIONS = ['Non-Consumable (Fixed Asset)', 'Fixed Asset'];
+const FIXED_ASSET_CLASSIFICATIONS = ['Durable', 'Non-Consumable (Fixed Asset)', 'Fixed Asset', 'Non-Consumable'];
 
 const TRANSACTION_TABLES = [
   { table: 'borrow_items', column: 'inventory_item_id' },

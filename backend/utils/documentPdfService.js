@@ -229,6 +229,65 @@ function drawAcknowledgement(doc, text) {
   doc.moveDown(0.5);
 }
 
+function drawPropertyTagAttachment(doc, payload, documentLabel) {
+  const tags = Array.isArray(payload.propertyTags)
+    ? payload.propertyTags
+    : (payload.items?.[0]?.propertyTags || []);
+  if (!payload.attachPropertyTagList && tags.length <= 5) return;
+
+  doc.addPage();
+  doc.fontSize(14).font('Helvetica-Bold').text('PROPERTY TAG LIST', { align: 'center' });
+  doc.fontSize(11).font('Helvetica-Bold').text(OFFICE, { align: 'center' });
+  doc.fontSize(10).font('Helvetica').text(INSTITUTION, { align: 'center' });
+  doc.moveDown(0.8);
+
+  const description = payload.itemDescription || payload.items?.[0]?.description || '';
+  const quantity = payload.items?.[0]?.quantity ?? tags.length;
+
+  drawMetaPair(
+    doc,
+    { label: documentLabel.replace(/:$/, ''), value: payload.documentNumber },
+    { label: 'Quantity', value: quantity }
+  );
+  drawMetaPair(
+    doc,
+    { label: 'Item Description', value: description },
+    { label: 'Department', value: payload.department }
+  );
+  drawFullWidthField(doc, 'Classification', payload.classification || '');
+  doc.moveDown(0.3);
+
+  doc.fontSize(11).font('Helvetica-Bold').text('Property Tags', LEFT_COL_X, doc.y, { width: CONTENT_WIDTH });
+  doc.moveDown(0.3);
+
+  const colWidth = CONTENT_WIDTH / 3;
+  let col = 0;
+  let y = doc.y;
+  const startY = y;
+
+  tags.forEach((tag) => {
+    if (y + 14 > pageBottomLimit(doc)) {
+      doc.addPage();
+      y = doc.page.margins.top;
+      col = 0;
+    }
+    const x = LEFT_COL_X + (col * colWidth);
+    doc.fontSize(9).font('Helvetica').text(String(tag || ''), x, y, { width: colWidth - 8 });
+    col += 1;
+    if (col >= 3) {
+      col = 0;
+      y += 14;
+    }
+  });
+
+  if (col !== 0) {
+    doc.y = y + 18;
+  } else if (tags.length) {
+    doc.y = Math.max(doc.y, startY + Math.ceil(tags.length / 3) * 14 + 8);
+  }
+  doc.x = LEFT_COL_X;
+}
+
 function renderPAR(doc, payload) {
   drawHeader(doc, 'Property Acknowledgement Receipt', 'PAR #:', payload.documentNumber);
 
@@ -237,6 +296,21 @@ function renderPAR(doc, payload) {
     doc,
     { label: 'Department', value: payload.department },
     { label: 'Delivery Date', value: payload.deliveryDate }
+  );
+  drawMetaPair(
+    doc,
+    { label: 'Classification', value: payload.classification },
+    { label: 'Location', value: payload.location }
+  );
+  drawMetaPair(
+    doc,
+    { label: 'Assigned Custodian', value: payload.custodian || payload.receivedBy },
+    { label: 'Asset Condition', value: payload.condition }
+  );
+  drawMetaPair(
+    doc,
+    { label: 'Serial Number', value: payload.serialNumber },
+    { label: 'Brand / Model', value: [payload.brand, payload.model].filter(Boolean).join(' / ') }
   );
   doc.moveDown(0.3);
 
@@ -249,6 +323,10 @@ function renderPAR(doc, payload) {
     [90, 220, 55, 55, 70]
   );
 
+  if (payload.attachPropertyTagList) {
+    drawFullWidthField(doc, 'Property Tags', 'See Attached Property Tag List');
+  }
+
   drawAcknowledgement(doc, payload.acknowledgement);
 
   drawSignatureBlock(doc, [
@@ -259,6 +337,7 @@ function renderPAR(doc, payload) {
   ]);
 
   drawFooter(doc, 'Copies for: Property Office, Receiving Department');
+  drawPropertyTagAttachment(doc, payload, 'PAR No.');
 }
 
 function renderGRN(doc, payload) {
@@ -333,78 +412,67 @@ function renderABL(doc, payload) {
 }
 
 function renderTRF(doc, payload) {
-  drawHeader(doc, 'Transfer Request Form', 'TRF No.:', payload.documentNumber);
+  drawHeader(doc, 'REQUEST FOR TRANSFER FORM', 'RTF No.:', payload.documentNumber);
 
   drawMetaPair(
     doc,
-    { label: 'Transfer Code', value: payload.transferCode },
-    { label: 'Request Date', value: payload.requestDate }
+    { label: 'Requesting Department', value: payload.requestingDepartment || payload.fromDepartment },
+    { label: 'Date of Request', value: payload.dateOfRequest || payload.requestDate }
   );
-  drawMetaPair(
-    doc,
-    { label: 'From Department', value: payload.fromDepartment },
-    { label: 'To Department', value: payload.toDepartment }
-  );
-  drawMetaPair(
-    doc,
-    { label: 'From Location', value: payload.fromLocation },
-    { label: 'To Location', value: payload.toLocation }
-  );
-  drawFullWidthField(doc, 'Reason for Transfer', payload.reason);
   doc.moveDown(0.3);
+
+  const itemRows = (payload.items || []).map((item) => [
+    item.description || '',
+    item.qtyUnit || (item.quantity != null ? `${item.quantity} ${item.unit || 'pcs'}` : ''),
+    item.propertyTag || '',
+    item.parNo || ''
+  ]);
+  while (itemRows.length < 5) {
+    itemRows.push(['', '', '', '']);
+  }
 
   drawTable(
     doc,
-    ['Property Tag', 'Item Description', 'Quantity', 'Unit'],
-    (payload.items || []).map(item => [
-      item.propertyTag, item.description, item.quantity, item.unit
-    ]),
-    [90, 260, 60, 60]
+    ['Item Description', 'Qty/Unit', 'Property Tag', 'PAR No.'],
+    itemRows,
+    [200, 70, 110, 120]
   );
 
-  drawAcknowledgement(doc, payload.acknowledgement);
+  drawFullWidthField(doc, 'Reason for transfer', payload.reason);
+  doc.moveDown(0.3);
 
   drawSignatureBlock(doc, [
     { label: 'Requested by:', value: payload.requestedBy },
-    { label: 'Approved by:', value: payload.approvedBy, caption: 'Property Office' },
-    { label: 'Transferring Dept:', value: payload.fromDepartmentHead, caption: 'Department Head' },
-    { label: 'Receiving Dept:', value: payload.toDepartmentHead, caption: 'Department Head' },
-    { label: 'Received by:', value: payload.receivingSignatory, caption: 'Receiving Custodian' },
-    { label: 'Noted by:', value: payload.propertyOfficer, caption: 'Head, Property Management Office' }
+    { label: 'Request Noted by:', value: payload.departmentHead || payload.fromDepartmentHead, caption: 'Department Head' },
+    { label: 'Received by (new custodian):', value: payload.receivingSignatory },
+    { label: 'Date Processed:', value: payload.dateProcessed || payload.approvedDate },
+    { label: 'Request for Transfer Approved by:', value: payload.approvedBy, caption: 'Head, PPMO' },
+    { label: 'Date Approved:', value: payload.dateApproved || payload.approvedDate }
   ]);
-
-  drawFooter(doc, 'Copies for: Property Office, Transferring Department, Receiving Department');
-}
-
-function renderSAL(doc, payload) {
-  drawHeader(doc, 'Semi-Durable Acknowledgment Log', 'SAL No.:', payload.documentNumber);
-
-  drawMetaPair(
-    doc,
-    { label: 'Department', value: payload.department },
-    { label: 'Issue Date', value: payload.issueDate }
-  );
-  doc.moveDown(0.3);
-
-  drawTable(
-    doc,
-    ['Item Code', 'Item Description', 'Quantity', 'Unit', 'Condition'],
-    (payload.items || []).map(item => [
-      item.itemCode, item.description, item.quantity, item.unit, item.condition || ''
-    ]),
-    [80, 220, 55, 55, 70]
-  );
 
   drawAcknowledgement(doc, payload.acknowledgement);
+  drawFooter(doc, payload.footerNote || 'Copies for: Property Office, Requesting Department, Accounting Office');
+}
 
-  drawSignatureBlock(doc, [
-    { label: 'Issued by:', value: payload.issuedBy, caption: 'Property Manager' },
-    { label: 'Received by:', value: payload.receivedBy, caption: 'Custodian' },
-    { label: 'Noted by:', value: payload.departmentHead, caption: 'Department Head' },
-    { label: 'Noted by:', value: payload.propertyOfficer, caption: 'Head, Property Management Office' }
-  ]);
+function drawSignatureTrio(doc, left, mid, right) {
+  const gap = 12;
+  const colWidth = (CONTENT_WIDTH - gap * 2) / 3;
+  const xs = [LEFT_COL_X, LEFT_COL_X + colWidth + gap, LEFT_COL_X + (colWidth + gap) * 2];
+  const blocks = [left, mid, right];
+  const heights = blocks.map((block) => measureSignatureBlock(doc, block, colWidth));
+  const rowHeight = Math.max(...heights, 40);
 
-  drawFooter(doc, 'Copies for: Property Office, Receiving Department');
+  ensureSpace(doc, rowHeight + 8);
+  const y = doc.y;
+  blocks.forEach((block, i) => {
+    if (block) drawSingleSignature(doc, block, xs[i], y, colWidth);
+  });
+  doc.y = y + rowHeight + 6;
+  doc.x = LEFT_COL_X;
+}
+
+function resolveRdfSourceDocLabel() {
+  return 'PAR No.';
 }
 
 function renderRDF(doc, payload) {
@@ -417,22 +485,42 @@ function renderRDF(doc, payload) {
   );
   doc.moveDown(0.3);
 
+  const sourceDocLabel = resolveRdfSourceDocLabel(payload);
+  const itemRows = (payload.items || []).map((item) => [
+    item.description || '',
+    item.qtyUnit || '',
+    item.propertyTag || '',
+    item.sourceDocNumber || item.parNo || '',
+    item.recommendation || ''
+  ]);
+  while (itemRows.length < 7) {
+    itemRows.push(['', '', '', '', '']);
+  }
+
   drawTable(
     doc,
-    ['Item Description', 'Qty/Unit', 'Property Tag', 'PAR No.', 'ICT/FCU Evaluation/Recommendation'],
-    (payload.items || []).map(item => [
-      item.description, item.qtyUnit, item.propertyTag, item.parNo, item.recommendation
-    ]),
-    [120, 60, 70, 70, 160]
+    [
+      'Item Description',
+      'Qty/Unit',
+      'Property Tag',
+      sourceDocLabel,
+      'ICT/FCU Evaluation/Recommendation\n(safekeeping, dispose, salvageable for parts)'
+    ],
+    itemRows,
+    [130, 50, 75, 75, 170]
   );
 
   drawFullWidthField(doc, 'Reason for disposal', payload.reason);
   doc.moveDown(0.3);
 
-  drawSignatureBlock(doc, [
+  drawSignatureTrio(
+    doc,
     { label: 'Requested by:', value: payload.requestedBy },
     { label: 'Request Noted by:', value: payload.departmentHead, caption: 'Department Head' },
-    { label: 'Evaluated by:', value: payload.evaluatedBy, caption: 'ICT/FCU' },
+    { label: 'Evaluated by:', value: payload.evaluatedBy, caption: 'ICT/FCU' }
+  );
+
+  drawSignatureBlock(doc, [
     { label: 'Disposal Processed and Received by:', value: payload.disposalProcessedBy },
     { label: 'Date Processed:', value: payload.dateProcessed },
     { label: 'Request for Disposal Approved by:', value: payload.approvedBy, caption: 'Head, PPMO' },
@@ -451,8 +539,9 @@ function generateDocumentPdf(documentRecord, res) {
   doc.pipe(res);
 
   const payload = documentRecord.payload || {};
+  const type = String(documentRecord.document_type || '').trim().toUpperCase();
 
-  switch (documentRecord.document_type) {
+  switch (type) {
     case 'PAR':
       renderPAR(doc, payload);
       break;
@@ -466,13 +555,11 @@ function generateDocumentPdf(documentRecord, res) {
       renderABL(doc, payload);
       break;
     case 'TRF':
+    case 'RTF':
       renderTRF(doc, payload);
       break;
-    case 'SAL':
-      renderSAL(doc, payload);
-      break;
     default:
-      doc.text('Unsupported document type');
+      doc.text(`Unsupported document type${type ? `: ${type}` : ''}`);
   }
 
   doc.end();

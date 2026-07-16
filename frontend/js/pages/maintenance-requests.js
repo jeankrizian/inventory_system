@@ -7,6 +7,8 @@ async function initMaintenanceRequestsPage() {
   currentUser = await initLayout('maintenance-requests');
   if (!currentUser) return;
 
+  setRequestApprovalReload(loadRecords);
+
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <h1>Maintenance Requests</h1>
@@ -33,7 +35,12 @@ async function initMaintenanceRequestsPage() {
 
   document.getElementById('searchInput').addEventListener('input', debounce(loadRecords, 300));
   document.getElementById('filterStatus').addEventListener('change', loadRecords);
-  bindGuardedFormSubmit(document.getElementById('actionForm'), submitAction, { loadingText: 'Processing...' });
+  bindGuardedFormSubmit(document.getElementById('actionForm'), async (e) => {
+    if (typeof requestApprovalPending !== 'undefined' && requestApprovalPending?.module) {
+      return submitRequestApprovalAction(e);
+    }
+    return submitAction(e);
+  }, { loadingText: 'Processing...' });
   bindGuardedFormSubmit(document.getElementById('submitForm'), submitCreate, { loadingText: 'Submitting...' });
   document.getElementById('submitAssetId')?.addEventListener('change', onSubmitAssetChange);
   initActionMenus();
@@ -173,11 +180,10 @@ function renderMaintenanceActions(r) {
   }
 
   if (r.status === 'Pending' && canOperateMaintenance(currentUser)) {
-    items.push({
-      label: 'Review in Pending Approvals',
-      icon: 'bi-clipboard-check',
-      href: '/pages/pending-approvals.html?tab=maintenance'
-    });
+    items.push(
+      { label: 'Approve', icon: 'bi-check-circle', handler: `openMaintenanceApprove(${r.id})` },
+      { label: 'Reject', icon: 'bi-x-circle', danger: true, handler: `openMaintenanceReject(${r.id})` }
+    );
   }
 
   return renderActionMenuCell(`maintenance-actions-${r.id}`, items);
@@ -252,6 +258,7 @@ async function viewRecord(id) {
 }
 
 function openAction(id, action) {
+  if (typeof requestApprovalPending !== 'undefined') requestApprovalPending = null;
   pendingAction = { id, action };
   const titles = {
     reschedule: 'Reschedule Maintenance',

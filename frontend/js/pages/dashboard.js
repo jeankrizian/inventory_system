@@ -66,17 +66,17 @@ function getDashboardSectionOrder(user) {
 }
 
 const CHART_DEFINITIONS = {
-  borrowReturn: {
-    id: 'borrowReturnCard',
-    canvasId: 'borrowReturnChart',
-    module: 'borrowTrendsChart',
-    title: 'Borrowing Trends'
-  },
   departmentDist: {
     id: 'departmentDistCard',
     canvasId: 'departmentChart',
     module: 'departmentChart',
     title: 'Assets by Department'
+  },
+  departmentCost: {
+    id: 'departmentCostCard',
+    canvasId: 'departmentCostChart',
+    module: 'departmentCostChart',
+    title: 'Monthly Department Cost'
   },
   statusPie: {
     id: 'statusPieCard',
@@ -355,6 +355,16 @@ function hasChartData(data) {
   return Array.isArray(data) && data.some((d) => statValue(d.count) > 0);
 }
 
+function hasCostChartData(data) {
+  return Array.isArray(data) && data.some((d) => statValue(d.total_cost) > 0);
+}
+
+function formatChartCurrency(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '0.00';
+  return num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function getMonthLabels(dataSets) {
   const monthEntries = new Map();
   dataSets.forEach((data) => {
@@ -378,13 +388,19 @@ function getMonthLabels(dataSets) {
   return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
 }
 
-function baseChartOptions({ legend = true, horizontal = false } = {}) {
+function baseChartOptions({ legend = true, horizontal = false, currency = false } = {}) {
+  const currencyTicks = currency
+    ? {
+        callback: (value) => formatChartCurrency(value)
+      }
+    : { stepSize: 1 };
+
   const scales = horizontal
     ? {
         x: {
           beginAtZero: true,
           grid: { color: 'var(--border-color)' },
-          ticks: { stepSize: 1, font: { size: 10 } }
+          ticks: { ...currencyTicks, font: { size: 10 } }
         },
         y: {
           grid: { display: false },
@@ -395,84 +411,42 @@ function baseChartOptions({ legend = true, horizontal = false } = {}) {
         y: {
           beginAtZero: true,
           grid: { color: 'var(--border-color)' },
-          ticks: { stepSize: 1, font: { size: 10 } }
+          ticks: { ...currencyTicks, font: { size: 10 } },
+          ...(currency ? { stacked: true } : {})
         },
         x: {
           grid: { display: false },
-          ticks: { font: { size: 10 } }
+          ticks: { font: { size: 10 } },
+          ...(currency ? { stacked: true } : {})
         }
       };
+
+  const plugins = {
+    legend: legend ? {
+      position: 'bottom',
+      labels: { usePointStyle: true, padding: 10, font: { size: 11 }, boxWidth: 8 }
+    } : { display: false }
+  };
+
+  if (currency) {
+    plugins.tooltip = {
+      callbacks: {
+        label: (context) => {
+          const label = context.dataset.label || '';
+          const value = formatChartCurrency(context.parsed.y ?? context.parsed);
+          return `${label}: ${value}`;
+        }
+      }
+    };
+  }
 
   return {
     responsive: true,
     maintainAspectRatio: false,
     indexAxis: horizontal ? 'y' : 'x',
-    plugins: {
-      legend: legend ? {
-        position: 'bottom',
-        labels: { usePointStyle: true, padding: 10, font: { size: 11 }, boxWidth: 8 }
-      } : { display: false }
-    },
+    plugins,
     scales
   };
-}
-
-function renderBorrowReturnChart(charts) {
-  const borrowed = charts.monthlyBorrowed || [];
-  const returned = charts.monthlyReturned || [];
-  const hasBorrow = hasChartData(borrowed);
-  const hasReturn = hasChartData(returned);
-  const chartCard = document.getElementById('borrowReturnCard');
-
-  destroyChart('borrowReturn');
-
-  if (!hasBorrow && !hasReturn) {
-    removeDashboardNode('borrowReturnCard');
-    return false;
-  }
-
-  const labels = getMonthLabels([borrowed, returned]);
-  const borrowedMap = {};
-  const returnedMap = {};
-  borrowed.forEach((d) => { borrowedMap[d.month] = statValue(d.count); });
-  returned.forEach((d) => { returnedMap[d.month] = statValue(d.count); });
-
-  const ctx = document.getElementById('borrowReturnChart');
-  if (!ctx) return Boolean(chartCard);
-
-  chartInstances.borrowReturn = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Borrowed',
-          data: labels.map((l) => borrowedMap[l] || 0),
-          borderColor: '#800000',
-          backgroundColor: 'rgba(128, 0, 0, 0.06)',
-          fill: false,
-          tension: 0.3,
-          pointRadius: 3,
-          pointBackgroundColor: '#800000',
-          borderWidth: 2
-        },
-        {
-          label: 'Returned',
-          data: labels.map((l) => returnedMap[l] || 0),
-          borderColor: '#556B2F',
-          backgroundColor: 'rgba(85, 107, 47, 0.06)',
-          fill: false,
-          tension: 0.3,
-          pointRadius: 3,
-          pointBackgroundColor: '#556B2F',
-          borderWidth: 2
-        }
-      ]
-    },
-    options: baseChartOptions()
-  });
-
-  return true;
 }
 
 function renderDistributionCharts(charts, stats) {
@@ -591,6 +565,63 @@ function renderMaintenanceTrendChart(stats, user) {
   return true;
 }
 
+function renderDepartmentCostChart(charts, user) {
+  if (!canViewDashboardModule(user, 'departmentCostChart')) return false;
+
+  const costData = charts.monthlyDepartmentCosts || [];
+  const chartCard = document.getElementById('departmentCostCard');
+
+  destroyChart('departmentCost');
+
+  if (!hasCostChartData(costData)) {
+    if (!chartCard) return false;
+    const container = chartCard.querySelector('.chart-container');
+    if (container) {
+      container.innerHTML = renderDashboardEmpty();
+    }
+    return true;
+  }
+
+  const labels = getMonthLabels([costData]);
+  const departments = [...new Set(costData.map((d) => d.department).filter(Boolean))];
+
+  const datasets = departments.map((department, index) => {
+    const byMonth = {};
+    costData
+      .filter((d) => d.department === department)
+      .forEach((d) => {
+        byMonth[d.month] = statValue(d.total_cost);
+      });
+
+    return {
+      label: department,
+      data: labels.map((month) => byMonth[month] || 0),
+      backgroundColor: CHART_COLORS[index % CHART_COLORS.length],
+      borderRadius: 3,
+      barPercentage: 0.7,
+      stack: 'departmentCost'
+    };
+  });
+
+  let ctx = document.getElementById('departmentCostChart');
+  if (!ctx && chartCard) {
+    const container = chartCard.querySelector('.chart-container');
+    if (container) {
+      container.innerHTML = '<canvas id="departmentCostChart"></canvas>';
+      ctx = document.getElementById('departmentCostChart');
+    }
+  }
+  if (!ctx) return Boolean(chartCard);
+
+  chartInstances.departmentCost = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: baseChartOptions({ legend: true, currency: true })
+  });
+
+  return true;
+}
+
 function finalizeAnalyticsSection() {
   const grid = document.getElementById('analyticsChartsGrid');
   if (!grid) return;
@@ -607,21 +638,21 @@ function renderAnalyticsCharts(charts, stats, user) {
     return;
   }
 
-  let hasBorrowReturn = false;
   let hasDistribution = false;
+  let hasDepartmentCost = false;
   let hasMaintenance = false;
 
-  if (canViewDashboardModule(user, 'borrowTrendsChart')) {
-    hasBorrowReturn = renderBorrowReturnChart(charts || {});
-  }
   if (canViewDashboardModule(user, 'departmentChart') || canViewDashboardModule(user, 'assetStatusChart')) {
     hasDistribution = renderDistributionCharts(charts || {}, stats);
+  }
+  if (canViewDashboardModule(user, 'departmentCostChart')) {
+    hasDepartmentCost = renderDepartmentCostChart(charts || {}, user);
   }
   if (canViewDashboardModule(user, 'maintenanceTrendChart')) {
     hasMaintenance = renderMaintenanceTrendChart(stats, user);
   }
 
-  if (!hasBorrowReturn && !hasDistribution && !hasMaintenance) {
+  if (!hasDistribution && !hasDepartmentCost && !hasMaintenance) {
     finalizeAnalyticsSection();
     return;
   }

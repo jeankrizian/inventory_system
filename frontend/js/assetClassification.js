@@ -1,14 +1,14 @@
 const ASSET_CLASSIFICATIONS = [
   'Consumable',
   'Semi-Durable',
-  'Non-Consumable (Fixed Asset)'
+  'Durable'
 ];
 
 /** Temporarily disable new Consumable items while keeping existing records compatible */
 const CONSUMABLE_TEMPORARILY_DISABLED = true;
 const CONSUMABLE_DISABLED_MESSAGE = 'Consumable items are currently disabled.';
 
-const FIXED_ASSET_CLASS = 'Non-Consumable (Fixed Asset)';
+const FIXED_ASSET_CLASS = 'Durable';
 const PROPERTY_TAG_MAX_LENGTH = 50;
 const PROPERTY_TAG_PATTERN = /^[\w][\w\-/.]*$/;
 
@@ -28,8 +28,16 @@ function normalizeAssetClassification(value) {
   if (!value || String(value).trim() === '') {
     return CONSUMABLE_TEMPORARILY_DISABLED ? '' : 'Consumable';
   }
-  if (value === 'Fixed Asset') return FIXED_ASSET_CLASS;
-  return value;
+  const trimmed = String(value).trim();
+  if (
+    trimmed === 'Fixed Asset'
+    || trimmed === 'Non-Consumable'
+    || trimmed === 'Non-Consumable (Fixed Asset)'
+    || trimmed === 'Durable (Fixed Asset)'
+  ) {
+    return FIXED_ASSET_CLASS;
+  }
+  return trimmed;
 }
 
 function isConsumableClassification(value) {
@@ -75,9 +83,11 @@ function canMaintainAsset(value) {
 }
 
 function canBorrowAsset(value) {
-  return isFixedAssetClassification(value);
+  const normalized = normalizeAssetClassification(value);
+  return normalized === FIXED_ASSET_CLASS || normalized === 'Semi-Durable';
 }
 
+/** Components action is available only for Durable parent assets */
 function canReplaceComponent(value) {
   return isFixedAssetClassification(value);
 }

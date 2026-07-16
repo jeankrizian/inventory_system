@@ -9,7 +9,7 @@ const REPORTS = [
   { type: 'departments', title: 'Department Report', desc: 'Departments with custodians and asset counts', icon: 'bi-building', hasFilters: true },
   { type: 'custodians', title: 'Custodian Report', desc: 'Custodian assignments and asset responsibilities', icon: 'bi-person-badge', hasFilters: true },
   { type: 'asset-status', title: 'Asset Status Report', desc: 'Full asset status overview with classifications', icon: 'bi-clipboard-data', hasFilters: true },
-  { type: 'documents', title: 'Official Documents', desc: 'PAR, GRN, and RDF document history with preview and PDF export', icon: 'bi-file-earmark-text', link: '/pages/documents.html' }
+  { type: 'documents', title: 'Official Documents', desc: 'Document history for PAR, GRN, RDF, and other generated forms — preview, print, and download PDF', icon: 'bi-file-earmark-text', link: '/pages/documents.html' }
 ];
 
 const REPORT_FILTER_FIELD_IDS = [
@@ -45,12 +45,7 @@ const REPORT_STATUS_LABELS = {
 };
 
 function getVisibleReports(user) {
-  return REPORTS.filter((report) => {
-    if (report.link) {
-      return isAdministrator(user) || isPropertyManager(user);
-    }
-    return canAccessReportType(user, report.type);
-  });
+  return REPORTS.filter((report) => canAccessReportType(user, report.type));
 }
 
 function denyReportAccess(type) {
@@ -238,7 +233,7 @@ async function initReportsPage() {
           <p>${r.desc}</p>
           <div class="report-actions">
             ${r.link
-    ? `<a class="btn-outline-custom btn-sm-custom" href="${r.link}"><i class="bi bi-eye"></i> Open</a>`
+    ? `<a class="btn-outline-custom btn-sm-custom" href="${r.link}"><i class="bi bi-folder2-open"></i> Document History</a>`
     : `<button class="btn-outline-custom btn-sm-custom" onclick="viewReport('${r.type}')"><i class="bi bi-eye"></i> View</button>
             <button class="btn-outline-custom btn-sm-custom" onclick="exportReportPDF('${r.type}')"><i class="bi bi-file-pdf"></i> PDF</button>
             <button class="btn-outline-custom btn-sm-custom" onclick="exportReportExcel('${r.type}')"><i class="bi bi-file-excel"></i> Excel</button>

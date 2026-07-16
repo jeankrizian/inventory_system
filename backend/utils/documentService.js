@@ -16,5 +16,9 @@ module.exports = {
 
   async findByTransaction(documentType, relatedModule, relatedTransactionId) {
     return DocumentModel.findByTransaction(documentType, relatedModule, relatedTransactionId);
+  },
+
+  async findAllForInventoryItem(inventoryItemId) {
+    return DocumentModel.findAllForInventoryItem(inventoryItemId);
   }
 };

@@ -7,6 +7,8 @@ async function initDisposalRequestsPage() {
   currentUser = await initLayout('disposal-requests');
   if (!currentUser) return;
 
+  setRequestApprovalReload(loadDisposals);
+
   const canOperate = canOperateDisposal(currentUser);
   const canSubmit = canSubmitDisposal(currentUser);
   const subtitle = canOperate
@@ -129,7 +131,6 @@ async function submitCreate(e) {
       reason
     });
     showToast('Disposal request submitted');
-    openGeneratedDocument(res?.data?.generated_document, 'RDF');
     closeModal('submitModal');
     loadDisposals();
   } catch (err) {
@@ -170,12 +171,24 @@ function renderDisposalActions(d) {
     { label: 'View Details', icon: 'bi-eye', handler: `viewDisposal(${d.id})` }
   ];
 
-  if (canOperateDisposalActions() && ['Pending', 'Inspected'].includes(d.status)) {
+  if (d.status === 'Completed') {
     items.push({
-      label: 'Review in Pending Approvals',
-      icon: 'bi-clipboard-check',
-      href: '/pages/pending-approvals.html?tab=disposal'
+      label: 'View RDF',
+      icon: 'bi-file-earmark-x',
+      handler: `openDocumentForTransaction('RDF','disposal',${d.id})`
     });
+  }
+
+  if (canOperateDisposalActions() && d.status === 'Pending') {
+    items.push(
+      { label: 'Inspect', icon: 'bi-search', handler: `openDisposalInspect(${d.id})` },
+      { label: 'Reject', icon: 'bi-x-circle', danger: true, handler: `openDisposalReject(${d.id})` }
+    );
+  } else if (canOperateDisposalActions() && d.status === 'Inspected') {
+    items.push(
+      { label: 'Approve', icon: 'bi-check-circle', handler: `openDisposalApprove(${d.id})` },
+      { label: 'Reject', icon: 'bi-x-circle', danger: true, handler: `openDisposalReject(${d.id})` }
+    );
   }
 
   return renderActionMenuCell(`disposal-actions-${d.id}`, items);

@@ -9,7 +9,7 @@ async function runClassificationMigration() {
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory_items' AND COLUMN_NAME = 'asset_classification'`
     );
     const columnType = cols[0]?.COLUMN_TYPE || '';
-    if (columnType.includes('Non-Consumable (Fixed Asset)')) {
+    if (columnType.includes('Non-Consumable (Fixed Asset)') || columnType.includes("'Durable'")) {
       console.log('Asset classification migration already applied.');
       return;
     }

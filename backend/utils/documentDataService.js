@@ -11,6 +11,17 @@ function isSemiDurable(classification) {
   return normalizeClassification(classification) === 'Semi-Durable';
 }
 
+function canGenerateAcquisitionPar(classification) {
+  return isFixedAsset(classification) || isSemiDurable(classification);
+}
+
+function formatParClassification(classification) {
+  const normalized = normalizeClassification(classification);
+  if (normalized === 'Semi-Durable') return 'Semi-Durable';
+  if (isFixedAsset(classification)) return 'Durable';
+  return normalized || '';
+}
+
 function formatDate(value) {
   if (!value) return '';
   const d = new Date(value);
@@ -36,6 +47,18 @@ async function getDepartmentHead(departmentId) {
     [departmentId]
   );
   return rows[0]?.department_head || '';
+}
+
+async function getDepartmentCustodianName(departmentId) {
+  if (!departmentId) return '';
+  const [rows] = await pool.query(
+    `SELECT u.full_name
+     FROM departments d
+     LEFT JOIN users u ON d.custodian_id = u.id
+     WHERE d.id = ?`,
+    [departmentId]
+  );
+  return rows[0]?.full_name || '';
 }
 
 async function getPropertyOfficerName() {
@@ -93,67 +116,52 @@ async function buildTRFPayloadFromTransfer(transferId) {
   const item = await InventoryModel.findById(transfer.inventory_item_id);
   if (!item) throw new Error('Inventory item not found');
 
+  const parDoc = await DocumentModel.findByTransaction('PAR', 'inventory', transfer.inventory_item_id);
+  const qty = transfer.quantity || 1;
+  const description = [item.item_name, item.brand, item.model].filter(Boolean).join(' / ');
+  const newCustodian = await getDepartmentCustodianName(transfer.to_department_id);
+
   return {
-    transferCode: transfer.transaction_code,
-    requestDate: formatDate(transfer.request_date || transfer.created_at),
-    approvedDate: formatDate(transfer.approved_at || new Date()),
-    fromDepartment: transfer.from_department_name || '-',
-    toDepartment: transfer.to_department_name || '-',
-    fromLocation: transfer.from_location_name || '-',
-    toLocation: transfer.to_location_name || '-',
+    requestingDepartment: transfer.from_department_name || '',
+    dateOfRequest: formatDate(transfer.request_date || transfer.created_at),
+    transferCode: transfer.transaction_code || '',
+    fromDepartment: transfer.from_department_name || '',
+    toDepartment: transfer.to_department_name || '',
+    fromLocation: transfer.from_location_name || '',
+    toLocation: transfer.to_location_name || '',
     reason: transfer.reason || '',
     items: [{
-      propertyTag: item.property_tag || '-',
-      description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: transfer.quantity || 1,
+      description,
+      qtyUnit: `${qty} pcs`,
+      propertyTag: item.property_tag || '',
+      parNo: parDoc?.document_number || '',
+      quantity: qty,
       unit: 'pcs'
     }],
     requestedBy: transfer.requested_by_name || '',
-    approvedBy: transfer.approved_by_name || await getPropertyOfficerName(),
-    transferringSignatory: transfer.requested_by_name || '',
-    receivingSignatory: item.custodian_name || '',
-    fromDepartmentHead: await getDepartmentHead(transfer.from_department_id),
-    toDepartmentHead: await getDepartmentHead(transfer.to_department_id),
+    departmentHead: await getDepartmentHead(transfer.from_department_id),
+    receivingSignatory: newCustodian || item.custodian_name || '',
+    dateProcessed: formatDate(transfer.approved_at),
+    approvedBy: transfer.approved_by_name || '',
+    dateApproved: formatDate(transfer.approved_at),
     propertyOfficer: await getPropertyOfficerName(),
-    acknowledgement: 'The transferring and receiving departments acknowledge the movement of the asset(s) listed above. The Property Office confirms that inventory records have been updated accordingly.'
+    acknowledgement: 'I acknowledge receipt of the listed property/items and accept full responsibility for their care and custody. I agree to use them only for official purposes and report any damage, loss, or theft to the Property Office immediately. I understand I may be liable for replacement costs if they are lost, damaged through negligence, or misused.',
+    footerNote: 'Copies for: Property Office, Requesting Department, Accounting Office'
   };
 }
 
-async function buildSALPayloadFromInventory(inventoryId, generatedBy) {
-  const item = await InventoryModel.findById(inventoryId);
-  if (!item) throw new Error('Inventory item not found');
-  if (!isSemiDurable(item.asset_classification)) throw new Error('SAL is only for semi-durable items');
-  if (!item.department_id) throw new Error('Department assignment is required for SAL generation');
-
-  let issuedBy = '';
-  if (generatedBy) {
-    const [rows] = await pool.query('SELECT full_name FROM users WHERE id = ?', [generatedBy]);
-    issuedBy = rows[0]?.full_name || '';
-  }
-
-  return {
-    department: item.department_name || '',
-    issueDate: formatDate(resolveAcquisitionDate(item)),
-    items: [{
-      itemCode: item.item_code || '-',
-      description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: 1,
-      unit: 'pcs',
-      condition: item.condition || 'Good'
-    }],
-    issuedBy: issuedBy || await getPropertyOfficerName(),
-    receivedBy: item.custodian_name || '',
-    departmentHead: await getDepartmentHead(item.department_id),
-    propertyOfficer: await getPropertyOfficerName(),
-    acknowledgement: 'The assigned custodian acknowledges receipt of the semi-durable item(s) listed above and accepts responsibility for monitoring usage, safekeeping, and reporting any loss or damage to the Property Office.'
-  };
+function resolveDocumentUnit(item) {
+  const unit = item?.unit || item?.unit_of_measure || item?.uom;
+  if (unit != null && String(unit).trim()) return String(unit).trim();
+  return 'pcs';
 }
 
 async function buildPARPayloadFromInventory(inventoryId, generatedBy) {
   const item = await InventoryModel.findById(inventoryId);
   if (!item) throw new Error('Inventory item not found');
-  if (!isFixedAsset(item.asset_classification)) throw new Error('PAR is only for fixed assets');
-  if (!item.custodian_id) throw new Error('Custodian assignment is required for PAR generation');
+  if (!canGenerateAcquisitionPar(item.asset_classification)) {
+    throw new Error('PAR is only for Durable and Semi-Durable items');
+  }
 
   let preparedBy = '';
   if (generatedBy) {
@@ -161,19 +169,46 @@ async function buildPARPayloadFromInventory(inventoryId, generatedBy) {
     preparedBy = rows[0]?.full_name || '';
   }
 
+  // 1 asset = 1 PAR: property tag on PAR must match inventory table exactly
+  const propertyTag = String(item.property_tag || '').trim();
+  if (!propertyTag) {
+    throw new Error(`Cannot generate PAR: inventory #${inventoryId} has no property tag`);
+  }
+  const propertyTags = [propertyTag];
+  const quantity = 1;
   const unitCost = item.unit_cost != null ? parseFloat(item.unit_cost) : null;
   const amountValue = unitCost != null && !Number.isNaN(unitCost) ? unitCost : null;
+  const description = [item.item_name, item.brand, item.model].filter(Boolean).join(' / ');
 
   return {
     supplier: item.supplier_name || '',
     department: item.department_name || '',
+    location: item.location_name || '',
+    classification: formatParClassification(item.asset_classification),
     deliveryDate: formatDate(resolveAcquisitionDate(item)),
+    custodian: item.custodian_name || '',
+    brand: item.brand || '',
+    model: item.model || '',
+    serialNumber: item.serial_number || '',
+    condition: item.condition || '',
+    unitCost: unitCost != null && !Number.isNaN(unitCost) ? formatMoney(unitCost) : '',
+    totalCost: amountValue != null ? formatMoney(amountValue) : '',
+    purchaseRequestNumber: item.purchase_request_number || '',
+    purchaseOrderNumber: item.purchase_order_number || '',
+    invoiceNumber: item.invoice_number || '',
+    propertyTags,
+    attachPropertyTagList: false,
+    propertyTagNote: '',
+    itemDescription: description,
     items: [{
-      propertyTag: item.property_tag || '-',
-      description: [item.item_name, item.brand, item.model].filter(Boolean).join(' / '),
-      quantity: 1,
-      unit: 'pcs',
-      amount: amountValue != null ? formatMoney(amountValue) : ''
+      propertyTag,
+      propertyTags,
+      description,
+      quantity,
+      unit: resolveDocumentUnit(item),
+      amount: amountValue != null ? formatMoney(amountValue) : '',
+      classification: formatParClassification(item.asset_classification),
+      serialNumber: item.serial_number || ''
     }],
     preparedBy: preparedBy || await getPropertyOfficerName(),
     receivedBy: item.custodian_name || '',
@@ -219,7 +254,7 @@ async function buildGRNPayload(inventoryId, generatedBy) {
 async function buildRDFPayload(disposalId) {
   const [rows] = await pool.query(
     `SELECT d.*, i.item_code, i.item_name, i.property_tag, i.brand, i.model,
-            i.department_id, dept.name AS department_name,
+            i.department_id, i.asset_classification, dept.name AS department_name,
             req.full_name AS requested_by_name,
             ins.full_name AS inspected_by_name,
             app.full_name AS approved_by_name
@@ -235,24 +270,35 @@ async function buildRDFPayload(disposalId) {
   const disposal = rows[0];
   if (!disposal) throw new Error('Disposal request not found');
 
-  const parDoc = await DocumentModel.findByTransaction('PAR', 'inventory', disposal.inventory_item_id);
+  // Acquisition docs are PAR-only
+  const sourceDoc = await DocumentModel.findByTransaction('PAR', 'inventory', disposal.inventory_item_id);
+  const sourceDocLabel = 'PAR No.';
+  const sourceDocType = 'PAR';
+  const sourceDocNumber = sourceDoc?.document_number || '';
+  const qty = disposal.quantity || 1;
+  const recommendation = disposal.inspection_notes || disposal.disposal_method || '';
 
   return {
     requestingDepartment: disposal.department_name || '',
     dateOfRequest: formatDate(disposal.created_at),
+    assetClassification: disposal.asset_classification || '',
+    sourceDocLabel,
+    sourceDocType,
     items: [{
       description: [disposal.item_name, disposal.brand, disposal.model].filter(Boolean).join(' / '),
-      qtyUnit: `${disposal.quantity || 1} unit`,
-      propertyTag: disposal.property_tag || '-',
-      parNo: parDoc?.document_number || '-',
-      recommendation: disposal.inspection_notes || disposal.disposal_method || 'For evaluation'
+      qtyUnit: `${qty} pcs`,
+      propertyTag: disposal.property_tag || '',
+      sourceDocNumber,
+      // Keep legacy key for older RDF previews
+      parNo: sourceDocNumber,
+      recommendation
     }],
     reason: disposal.reason || '',
     requestedBy: disposal.requested_by_name || '',
     departmentHead: await getDepartmentHead(disposal.department_id),
     evaluatedBy: disposal.inspected_by_name || '',
     disposalProcessedBy: disposal.approved_by_name || '',
-    dateProcessed: formatDate(disposal.disposal_date),
+    dateProcessed: formatDate(disposal.disposal_date || disposal.updated_at),
     approvedBy: disposal.approved_by_name || '',
     dateApproved: formatDate(disposal.disposal_date || disposal.updated_at),
     footerNote: 'Copies for: Property Office, Requesting Department, Accounting Office'
@@ -294,8 +340,14 @@ const DocumentDataService = {
   },
 
   async generateTRFForTransfer(transferId, generatedBy) {
+    // Prefer RTF (Request for Transfer Form); fall back to legacy TRF if already generated
+    const existingRtf = await DocumentModel.findByTransaction('RTF', 'transfer', transferId);
+    if (existingRtf) return existingRtf;
+    const existingTrf = await DocumentModel.findByTransaction('TRF', 'transfer', transferId);
+    if (existingTrf) return existingTrf;
+
     return generateDocument({
-      documentType: 'TRF',
+      documentType: 'RTF',
       relatedModule: 'transfer',
       relatedTransactionId: transferId,
       generatedBy,
@@ -303,43 +355,9 @@ const DocumentDataService = {
     });
   },
 
-  async generateSALForSemiDurableIssuance(inventoryId, generatedBy) {
-    const item = await InventoryModel.findById(inventoryId);
-    if (!item || !isSemiDurable(item.asset_classification) || !item.department_id) return null;
-
-    return generateDocument({
-      documentType: 'SAL',
-      relatedModule: 'inventory',
-      relatedTransactionId: inventoryId,
-      generatedBy,
-      payloadBuilder: () => buildSALPayloadFromInventory(inventoryId, generatedBy)
-    });
-  },
-
-  async refreshSALForSemiDurableIssuance(inventoryId, generatedBy) {
-    const item = await InventoryModel.findById(inventoryId);
-    if (!item || !isSemiDurable(item.asset_classification) || !item.department_id) return null;
-
-    const existing = await DocumentModel.findByTransaction('SAL', 'inventory', inventoryId);
-    const payload = await buildSALPayloadFromInventory(inventoryId, generatedBy);
-    if (existing) {
-      payload.documentNumber = existing.payload?.documentNumber || existing.document_number;
-      await DocumentModel.updatePayload(existing.id, payload, 'Updated');
-      return DocumentModel.findById(existing.id);
-    }
-
-    return generateDocument({
-      documentType: 'SAL',
-      relatedModule: 'inventory',
-      relatedTransactionId: inventoryId,
-      generatedBy,
-      payloadBuilder: () => buildSALPayloadFromInventory(inventoryId, generatedBy)
-    });
-  },
-
   async generatePARForCustodianAssignment(inventoryId, generatedBy) {
     const item = await InventoryModel.findById(inventoryId);
-    if (!item || !isFixedAsset(item.asset_classification) || !item.custodian_id) return null;
+    if (!item || !canGenerateAcquisitionPar(item.asset_classification)) return null;
 
     return generateDocument({
       documentType: 'PAR',
@@ -350,25 +368,58 @@ const DocumentDataService = {
     });
   },
 
-  async refreshPARForCustodianAssignment(inventoryId, generatedBy) {
-    const item = await InventoryModel.findById(inventoryId);
-    if (!item || !isFixedAsset(item.asset_classification) || !item.custodian_id) return null;
+  /**
+   * Generate one PAR per inventory asset (1 asset = 1 PAR).
+   * Returns { documents, first, created_count, failed_count }.
+   */
+  async generatePARsForInventoryAssets(inventoryIds, generatedBy) {
+    const ids = [...new Set((inventoryIds || []).map((id) => parseInt(id, 10)).filter(Boolean))];
+    const documents = [];
+    let failedCount = 0;
 
-    const existing = await DocumentModel.findByTransaction('PAR', 'inventory', inventoryId);
-    const payload = await buildPARPayloadFromInventory(inventoryId, generatedBy);
-    if (existing) {
-      payload.documentNumber = existing.payload?.documentNumber || existing.document_number;
-      await DocumentModel.updatePayload(existing.id, payload, 'Updated');
-      return DocumentModel.findById(existing.id);
+    for (const assetId of ids) {
+      try {
+        const item = await InventoryModel.findById(assetId);
+        if (!item || !canGenerateAcquisitionPar(item.asset_classification)) continue;
+        if (!String(item.property_tag || '').trim()) {
+          throw new Error(`Inventory #${assetId} has no property tag`);
+        }
+
+        const par = await generateDocument({
+          documentType: 'PAR',
+          relatedModule: 'inventory',
+          relatedTransactionId: assetId,
+          generatedBy,
+          payloadBuilder: () => buildPARPayloadFromInventory(assetId, generatedBy)
+        });
+
+        // Guard: generated PAR property tag must match inventory table value
+        const generatedTag = String(par?.payload?.items?.[0]?.propertyTag || '').trim();
+        const inventoryTag = String(item.property_tag || '').trim();
+        if (!par || generatedTag !== inventoryTag) {
+          throw new Error(
+            `PAR property tag mismatch for inventory #${assetId}: expected "${inventoryTag}", got "${generatedTag}"`
+          );
+        }
+
+        documents.push(par);
+      } catch (err) {
+        failedCount += 1;
+        console.error(`PAR generation failed for inventory ${assetId}:`, err.message);
+      }
     }
 
-    return generateDocument({
-      documentType: 'PAR',
-      relatedModule: 'inventory',
-      relatedTransactionId: inventoryId,
-      generatedBy,
-      payloadBuilder: () => buildPARPayloadFromInventory(inventoryId, generatedBy)
-    });
+    return {
+      documents,
+      first: documents[0] || null,
+      created_count: documents.length,
+      failed_count: failedCount
+    };
+  },
+
+  async refreshPARForCustodianAssignment(inventoryId) {
+    // Acquisition PAR is immutable after Add Item — never create or overwrite on refresh
+    return DocumentModel.findByTransaction('PAR', 'inventory', inventoryId);
   },
 
   async generateGRN(inventoryId, generatedBy) {

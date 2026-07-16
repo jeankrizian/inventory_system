@@ -5,7 +5,7 @@ async function runExtendedDocumentMigration() {
 
   await pool.query(`
     ALTER TABLE document_history
-    MODIFY COLUMN document_type ENUM('PAR', 'GRN', 'RDF', 'ABL', 'TRF', 'SAL') NOT NULL
+    MODIFY COLUMN document_type ENUM('PAR', 'GRN', 'RDF', 'ABL', 'TRF', 'RTF') NOT NULL
   `);
 
   console.log('Extended document migration completed.');

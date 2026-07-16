@@ -8,7 +8,7 @@ const { logActivity } = require('../utils/activityLogger');
 const { generateCode } = require('../utils/helpers');
 const { notifyPropertyManagers, notifyUser, notifyCustodiansForBorrowTransaction, actorExcludeOptions } = require('../utils/notificationService');
 const { borrowLink } = require('../utils/notificationLinks');
-const { getBorrowListScope, borrowTransactionMatchesScope, getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
+const { getBorrowListScope, borrowTransactionMatchesScope, getAccessScope, itemMatchesScope, getBorrowCatalogScope } = require('../utils/roleHelpers');
 const {
   expandBorrowRequestItems,
   previewBorrowAllocation
@@ -90,6 +90,12 @@ const BorrowController = {
 
   async getBorrowableItems(req, res) {
     try {
+      // Cross-department catalog — intentionally ignores custodian department scope
+      const catalogScope = getBorrowCatalogScope();
+      if (catalogScope.type !== 'all') {
+        return sendError(res, 'Borrow catalog is unavailable', 403);
+      }
+
       const search = req.query.search || '';
       const items = await InventoryModel.getBorrowableItems(search);
       sendSuccess(res, items);
@@ -148,6 +154,7 @@ const BorrowController = {
         return sendError(res, 'Authenticated user name is required', 400);
       }
 
+      // Borrow is cross-department: do not restrict requested assets by borrower department
       const borrowerContext = await resolveBorrowerContext(req.session.user);
       const { purpose, borrow_date, expected_return_date, notes, items } = req.body;
 

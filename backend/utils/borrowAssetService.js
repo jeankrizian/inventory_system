@@ -10,11 +10,17 @@ const NON_BORROWABLE_ASSET_STATUSES = new Set([
   'Disposed'
 ]);
 
-const FIXED_ASSET_CLASSIFICATIONS = ['Non-Consumable (Fixed Asset)', 'Fixed Asset'];
+const BORROWABLE_CLASSIFICATIONS = [
+  'Durable',
+  'Semi-Durable',
+  'Non-Consumable (Fixed Asset)',
+  'Fixed Asset',
+  'Non-Consumable'
+];
 
 function isAssetBorrowable(item) {
   if (!item || item.is_archived) return false;
-  if (!FIXED_ASSET_CLASSIFICATIONS.includes(item.asset_classification)) return false;
+  if (!BORROWABLE_CLASSIFICATIONS.includes(item.asset_classification)) return false;
   if (item.status !== BORROWABLE_ASSET_STATUS) return false;
   return true;
 }
@@ -27,14 +33,15 @@ function fifoOrderSql(alias = 'i') {
 }
 
 async function getAvailableAssetsByItemCode(itemCode, conn = pool, limit = null) {
+  const placeholders = BORROWABLE_CLASSIFICATIONS.map(() => '?').join(', ');
   let sql = `
     SELECT id, item_code, item_name, property_tag, status, acquisition_date, created_at
     FROM inventory_items
     WHERE is_archived = 0
       AND item_code = ?
       AND status = ?
-      AND asset_classification IN (?, ?)`;
-  const params = [itemCode, BORROWABLE_ASSET_STATUS, ...FIXED_ASSET_CLASSIFICATIONS];
+      AND asset_classification IN (${placeholders})`;
+  const params = [itemCode, BORROWABLE_ASSET_STATUS, ...BORROWABLE_CLASSIFICATIONS];
 
   sql += ` ${fifoOrderSql('inventory_items')}`;
   if (limit) {

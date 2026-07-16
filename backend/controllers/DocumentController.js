@@ -48,6 +48,17 @@ const DocumentController = {
     } catch (err) {
       sendError(res, err.message, 500);
     }
+  },
+
+  async findByInventoryItem(req, res) {
+    try {
+      const inventoryItemId = parseInt(req.params.inventoryItemId, 10);
+      if (!inventoryItemId) return sendError(res, 'Valid inventory item id is required', 400);
+      const documents = await DocumentService.findAllForInventoryItem(inventoryItemId);
+      sendSuccess(res, documents);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
   }
 };
 

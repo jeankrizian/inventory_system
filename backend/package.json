@@ -10,11 +10,13 @@
     "seed:test-accounts": "node database/seed-test-accounts.js",
     "verify:demo-accounts": "node database/verify-demo-accounts.js",
     "seed:sample-data": "node database/seed-sample-data.js",
+    "seed:monthly-cost-demo": "node database/seed-monthly-cost-demo.js",
     "cleanup:sample-data": "node database/cleanup-sample-data.js",
     "reset:system-data": "node database/reset-system-data.js",
     "setup": "node database/setup.js",
     "migrate:sop": "node database/runSopMigration.js",
-    "migrate:archive": "node database/runArchiveMigration.js"
+    "migrate:archive": "node database/runArchiveMigration.js",
+    "migrate:sal-to-par": "node database/runSalToParMigration.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -24,7 +26,9 @@
     "express": "^4.21.0",
     "express-session": "^1.18.0",
     "express-validator": "^7.2.0",
+    "multer": "^2.2.0",
     "mysql2": "^3.11.0",
+    "nodemailer": "^6.9.16",
     "pdfkit": "^0.15.0"
   },
   "devDependencies": {

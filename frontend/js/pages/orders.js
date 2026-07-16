@@ -9,6 +9,8 @@ async function initOrdersPage() {
   currentUser = await initLayout('orders');
   if (!currentUser) return;
 
+  setRequestApprovalReload(loadBorrows);
+
   const params = new URLSearchParams(window.location.search);
   if (params.get('tab') === 'returns') activeTab = 'returns';
 
@@ -64,6 +66,7 @@ async function initOrdersPage() {
   });
 
   if (showBorrowBtn) {
+    // School-wide catalog (all departments) — not limited by custodian inventory scope
     const invRes = await API.getBorrowableItems();
     inventoryItems = (invRes?.data || []).filter((i) => canBorrowAsset(i.asset_classification));
   }
@@ -144,11 +147,10 @@ function renderBorrowActions(b) {
   }
 
   if (b.status === 'Pending' && canApprove) {
-    items.push({
-      label: 'Review in Pending Approvals',
-      icon: 'bi-clipboard-check',
-      href: '/pages/pending-approvals.html?tab=borrow'
-    });
+    items.push(
+      { label: 'Approve', icon: 'bi-check-circle', handler: `approveBorrowRequest(${b.id})` },
+      { label: 'Reject', icon: 'bi-x-circle', danger: true, handler: `rejectBorrowRequest(${b.id})` }
+    );
   }
 
   return renderActionMenuCell(`borrow-actions-${b.id}`, items);
@@ -213,7 +215,8 @@ function renderReturns() {
 }
 
 function getBorrowItemLabel(item) {
-  return item.item_name;
+  const dept = item.department_name ? ` · ${item.department_name}` : '';
+  return `${item.item_name}${dept}`;
 }
 
 function updateBorrowItemAvailable(row, item) {
@@ -228,14 +231,17 @@ function updateBorrowItemAvailable(row, item) {
     return;
   }
   const count = item.available_count ?? item.available_quantity ?? 0;
-  el.textContent = `Available: ${count}`;
+  const dept = item.department_name ? ` · ${item.department_name}` : '';
+  el.textContent = `Available: ${count}${dept}`;
 }
 
 function filterBorrowItems(term) {
   const t = term.trim().toLowerCase();
   if (!t) return inventoryItems;
   return inventoryItems.filter(i =>
-    i.item_name.toLowerCase().includes(t) || String(i.item_code || '').toLowerCase().includes(t)
+    i.item_name.toLowerCase().includes(t)
+    || String(i.item_code || '').toLowerCase().includes(t)
+    || String(i.department_name || '').toLowerCase().includes(t)
   );
 }
 
@@ -267,7 +273,7 @@ function renderBorrowItemDropdown(dropdown, items, onSelect) {
   }
   dropdown.innerHTML = items.map(item => `
     <div class="borrow-item-option ${item.is_borrowable === false ? 'borrow-item-unavailable' : ''}" data-code="${item.item_code}" data-borrowable="${item.is_borrowable !== false}">
-      ${item.item_name}
+      ${item.item_name}${item.department_name ? ` <span style="color:#666;">(${item.department_name})</span>` : ''}
       <small>${item.is_borrowable === false ? (item.unavailable_reason || 'Unavailable') : `${item.available_count ?? item.available_quantity ?? 0} available`}</small>
     </div>
   `).join('');

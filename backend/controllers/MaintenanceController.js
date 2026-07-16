@@ -71,7 +71,7 @@ const MaintenanceController = {
       }
 
       if (!canMaintain(item.asset_classification)) {
-        return sendError(res, 'Maintenance is only available for Non-Consumable (Fixed Asset) items', 400);
+        return sendError(res, 'Maintenance is only available for Durable items', 400);
       }
       if (item.status !== 'Available') {
         return sendError(res, `Maintenance can only be requested for available assets (current status: ${item.status})`, 400);

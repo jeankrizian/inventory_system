@@ -77,6 +77,23 @@ const DisposalController = {
         return sendError(res, `Disposal can only be requested for available assets (current status: ${item.status})`, 400);
       }
 
+      const ComponentModel = require('../models/ComponentModel');
+      const linkedComponents = await ComponentModel.countActiveByParent(item.id);
+      const [childRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM inventory_items
+         WHERE parent_asset_id = ? AND (is_archived = 0) AND status != 'Disposed'`,
+        [item.id]
+      );
+      const linkedInventoryChildren = Number(childRows[0]?.cnt || 0);
+      if (linkedComponents > 0 || linkedInventoryChildren > 0) {
+        const total = Math.max(linkedComponents, linkedInventoryChildren) || linkedComponents + linkedInventoryChildren;
+        return sendError(
+          res,
+          `This Durable asset has ${total} linked component(s). Resolve them first by disposing them together, detaching them, or transferring them to another parent asset before requesting disposal.`,
+          400
+        );
+      }
+
       const reason = String(req.body.reason || '').trim();
       if (!reason) {
         return sendError(res, 'Disposal reason is required', 400);
@@ -121,15 +138,7 @@ const DisposalController = {
         link_url: disposalLink(result.id)
       }, actorExcludeOptions(req));
 
-      let generatedDocument = null;
-      try {
-        const doc = await DocumentService.generateRDF(result.id, req.session.user.id);
-        generatedDocument = { id: doc.id, document_number: doc.document_number, document_type: 'RDF' };
-      } catch (docErr) {
-        console.error('RDF generation failed:', docErr.message);
-      }
-
-      sendSuccess(res, { ...result, generated_document: generatedDocument }, 'Disposal request created', 201);
+      sendSuccess(res, result, 'Disposal request created', 201);
     } catch (err) { sendError(res, err.message, 500); }
   },
 
@@ -172,6 +181,24 @@ const DisposalController = {
         return sendError(res, 'Disposal method is required', 400);
       }
 
+      const ComponentModel = require('../models/ComponentModel');
+      const linkedComponents = await ComponentModel.countActiveByParent(disposal.inventory_item_id);
+      const [childRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM inventory_items
+         WHERE parent_asset_id = ? AND (is_archived = 0) AND status != 'Disposed'`,
+        [disposal.inventory_item_id]
+      );
+      const linkedInventoryChildren = Number(childRows[0]?.cnt || 0);
+      if (linkedComponents > 0 || linkedInventoryChildren > 0) {
+        connection.release();
+        const total = Math.max(linkedComponents, linkedInventoryChildren) || linkedComponents + linkedInventoryChildren;
+        return sendError(
+          res,
+          `Cannot complete disposal: this asset still has ${total} linked component(s). Dispose, detach, or reassign the components first.`,
+          400
+        );
+      }
+
       await connection.beginTransaction();
       try {
         const marked = await InventoryModel.markDisposed(disposal.inventory_item_id, connection);
@@ -204,9 +231,15 @@ const DisposalController = {
       let generatedDocument = null;
       try {
         const doc = await DocumentService.refreshRDF(disposal.id, req.session.user.id);
-        generatedDocument = { id: doc.id, document_number: doc.document_number, document_type: 'RDF' };
+        if (doc) {
+          generatedDocument = {
+            id: doc.id,
+            document_number: doc.document_number,
+            document_type: 'RDF'
+          };
+        }
       } catch (docErr) {
-        console.error('RDF refresh failed:', docErr.message);
+        console.error('RDF generation failed:', docErr.message);
       }
 
       await notifyUser(disposal.requested_by, {
