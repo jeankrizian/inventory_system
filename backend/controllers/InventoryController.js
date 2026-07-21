@@ -4,7 +4,7 @@ const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity, logActivityWithChanges, collectChanges } = require('../utils/activityLogger');
 const { notifyPropertyManagers, actorExcludeOptions } = require('../utils/notificationService');
 const { buildAssetNotificationMessage } = require('../utils/assetNotificationHelper');
-const { getAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
+const { getInventoryAccessScope, itemMatchesScope } = require('../utils/roleHelpers');
 const {
   sanitizeInventoryByClassification,
   validateInventoryClassification,
@@ -115,27 +115,17 @@ const InventoryController = {
       const filterError = validateConsumableFilter(classificationFilter);
       if (filterError) return sendError(res, filterError, 400);
 
-      const scope = getAccessScope(req.session.user);
-      const requestedDepartmentId = parseInt(req.query.department_id || req.query.category_id, 10) || null;
-      let department_scope_mismatch = false;
-      if (
-        scope.type === 'department'
-        && scope.departmentId
-        && requestedDepartmentId
-        && requestedDepartmentId !== scope.departmentId
-      ) {
-        department_scope_mismatch = true;
-      }
+      // Inventory visibility: custodians by Assigned Custodian; admin/PM see all
+      const scope = getInventoryAccessScope(req.session.user);
 
       const filters = {
         search: req.query.search,
-        department_id: department_scope_mismatch ? undefined : (req.query.department_id || req.query.category_id),
+        department_id: req.query.department_id || req.query.category_id,
         asset_classification: classificationFilter,
         status: req.query.status,
         location_id: req.query.location_id,
         parent_asset_id: req.query.parent_asset_id,
         exclude_consumable: shouldExcludeConsumableFromLists(),
-        department_scope_mismatch,
         scope
       };
 
@@ -151,7 +141,7 @@ const InventoryController = {
       const item = await InventoryModel.findById(req.params.id);
       if (!item) return sendError(res, 'Item not found', 404);
 
-      const scope = getAccessScope(req.session.user);
+      const scope = getInventoryAccessScope(req.session.user);
       if (!itemMatchesScope(item, scope)) {
         return sendError(res, 'Access denied', 403);
       }
@@ -397,7 +387,7 @@ const InventoryController = {
       const item = await InventoryModel.findById(req.params.id);
       if (!item) return sendError(res, 'Item not found', 404);
 
-      const scope = getAccessScope(req.session.user);
+      const scope = getInventoryAccessScope(req.session.user);
       if (!itemMatchesScope(item, scope)) {
         return sendError(res, 'Access denied', 403);
       }

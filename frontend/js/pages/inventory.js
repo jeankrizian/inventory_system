@@ -455,6 +455,7 @@ async function initInventoryPage() {
       <div class="filters-bar">
         <input type="text" class="form-control-custom" id="searchInput" placeholder="Search items...">
         <select class="form-control-custom" id="filterCategory"><option value="">All Departments</option></select>
+        <select class="form-control-custom" id="filterLocation"><option value="">All Locations</option></select>
         <select class="form-control-custom" id="filterClassification">
           <option value="">All Classifications</option>
         </select>
@@ -488,6 +489,7 @@ async function initInventoryPage() {
 
   document.getElementById('searchInput').addEventListener('input', debounce(loadItems, 300));
   document.getElementById('filterCategory').addEventListener('change', loadItems);
+  document.getElementById('filterLocation').addEventListener('change', loadItems);
   document.getElementById('filterClassification').addEventListener('change', loadItems);
   document.getElementById('filterStatus').addEventListener('change', loadItems);
   document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
@@ -524,6 +526,7 @@ async function loadDropdowns() {
   users = canManageInventory(currentUser) ? (results[3]?.data || []) : [];
 
   populateSelect(document.getElementById('filterCategory'), categories);
+  populateSelect(document.getElementById('filterLocation'), locations, 'id', 'name', 'All Locations');
   populateSelect(document.getElementById('itemCategory'), categories);
   if (canManageInventory(currentUser)) {
     populateSelect(document.getElementById('itemSupplier'), suppliers);
@@ -539,11 +542,13 @@ async function loadItems() {
   const params = {};
   const search = document.getElementById('searchInput')?.value;
   const category = document.getElementById('filterCategory')?.value;
+  const location = document.getElementById('filterLocation')?.value;
   const classification = document.getElementById('filterClassification')?.value;
   const status = document.getElementById('filterStatus')?.value;
 
   if (search) params.search = search;
   if (category) params.category_id = category;
+  if (location) params.location_id = location;
   if (classification) params.asset_classification = classification;
   if (status) params.status = status;
 

@@ -62,6 +62,7 @@ const { startArchiveCleanupScheduler } = require('./utils/archiveCleanup');
 const { requireAuth } = require('./middleware/auth');
 const {
   getAccessScope,
+  getInventoryAccessScope,
   getBorrowListScope,
   canViewInventory,
   canManageSuppliers
@@ -142,7 +143,7 @@ app.get('/api/search', requireAuth, async (req, res) => {
       return res.json({ success: true, data: { inventory: [], suppliers: [], orders: [] } });
     }
 
-    const inventoryScope = getAccessScope(req.session.user);
+    const inventoryScope = getInventoryAccessScope(req.session.user);
     const inventoryPromise = canViewInventory(role)
       ? InventoryModel.getAll({ search: q, limit: 10, scope: inventoryScope })
       : Promise.resolve([]);

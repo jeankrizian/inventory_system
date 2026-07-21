@@ -211,6 +211,28 @@ function getAccessScope(user) {
   return { type: 'denied', userId };
 }
 
+/**
+ * Inventory page visibility scope.
+ * Custodians see items where Assigned Custodian = logged-in user,
+ * regardless of department or location. Admin / Property Manager see all.
+ * Other modules keep using getAccessScope (department-based).
+ */
+function getInventoryAccessScope(user) {
+  const role = user?.role;
+  const userId = user?.id;
+
+  if (isAdministrator(role) || isPropertyManager(role)) {
+    return { type: 'all', userId };
+  }
+
+  if (isCustodian(role)) {
+    if (!userId) return { type: 'denied', userId };
+    return { type: 'custodian', userId };
+  }
+
+  return { type: 'denied', userId };
+}
+
 /** Borrow list scope — school-wide for admin/PM; custodians see own requests */
 function getBorrowListScope(user) {
   const role = user?.role;
@@ -248,6 +270,10 @@ function appendInventoryScopeSql(scope, tableAlias = 'i') {
   }
   if (isInventoryScopeDenied(scope)) {
     return { clause: '', params: [], denied: true };
+  }
+  if (scope.type === 'custodian') {
+    if (!scope.userId) return { clause: '', params: [], denied: true };
+    return { clause: ` AND ${tableAlias}.custodian_id = ?`, params: [scope.userId] };
   }
   if (scope.type === 'department') {
     if (!scope.departmentId) return { clause: '', params: [], denied: true };
@@ -289,6 +315,9 @@ function appendTransferRequestScopeSql(scope, inventoryAlias = 'i', transferAlia
 
 function itemMatchesScope(item, scope) {
   if (!item || !scope || scope.type === 'all') return true;
+  if (scope.type === 'custodian') {
+    return scope.userId != null && item.custodian_id == scope.userId;
+  }
   if (scope.type === 'department') {
     return scope.departmentId != null && item.department_id == scope.departmentId;
   }
@@ -410,6 +439,7 @@ module.exports = {
   canViewDisposal,
   canSubmitDisposal,
   getAccessScope,
+  getInventoryAccessScope,
   getBorrowListScope,
   getBorrowCatalogScope,
   isInventoryScopeDenied,

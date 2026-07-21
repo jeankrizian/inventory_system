@@ -95,7 +95,7 @@ function resolveScopes(scopes = {}) {
   } else {
     inventoryScope = scopes.inventoryScope ?? { type: 'none', userId };
     borrowScope = scopes.borrowScope ?? { type: 'none', userId };
-    operationalScope = scopes.inventoryScope ?? { type: 'none', userId };
+    operationalScope = scopes.operationalScope ?? scopes.inventoryScope ?? { type: 'none', userId };
   }
 
   return {

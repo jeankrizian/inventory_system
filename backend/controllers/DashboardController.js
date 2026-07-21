@@ -1,10 +1,13 @@
 const DashboardModel = require('../models/DashboardModel');
 const { sendSuccess, sendError } = require('../utils/response');
-const { getAccessScope, getBorrowListScope } = require('../utils/roleHelpers');
+const { getAccessScope, getInventoryAccessScope, getBorrowListScope } = require('../utils/roleHelpers');
 
 function getDashboardScopes(user) {
   return {
-    inventoryScope: getAccessScope(user),
+    // Assigned assets / inventory cards — match Inventory page (custodian_id)
+    inventoryScope: getInventoryAccessScope(user),
+    // Pending transfer/maintenance/disposal — keep department operational scope
+    operationalScope: getAccessScope(user),
     borrowScope: getBorrowListScope(user),
     user
   };
