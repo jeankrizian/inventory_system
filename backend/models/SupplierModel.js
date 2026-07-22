@@ -1,18 +1,43 @@
 const pool = require('../config/database');
 const { archiveRecord } = require('../utils/archiveService');
+const {
+  queryWithOptionalPagination
+} = require('../utils/listPagination');
+
+function buildSupplierListParts(filters = {}) {
+  let whereSql = ' WHERE is_archived = 0';
+  const params = [];
+  if (filters.name) { whereSql += ' AND name LIKE ?'; params.push(`%${filters.name}%`); }
+  if (filters.contact_person) { whereSql += ' AND contact_person LIKE ?'; params.push(`%${filters.contact_person}%`); }
+  if (filters.phone) { whereSql += ' AND phone LIKE ?'; params.push(`%${filters.phone}%`); }
+  if (filters.email) { whereSql += ' AND email LIKE ?'; params.push(`%${filters.email}%`); }
+  if (filters.address) { whereSql += ' AND address LIKE ?'; params.push(`%${filters.address}%`); }
+  const joins = ' FROM suppliers';
+  return { joins, whereSql, params };
+}
 
 const SupplierModel = {
   async getAll(filters = {}) {
-    let sql = 'SELECT * FROM suppliers WHERE is_archived = 0';
-    const params = [];
-    if (filters.name) { sql += ' AND name LIKE ?'; params.push(`%${filters.name}%`); }
-    if (filters.contact_person) { sql += ' AND contact_person LIKE ?'; params.push(`%${filters.contact_person}%`); }
-    if (filters.phone) { sql += ' AND phone LIKE ?'; params.push(`%${filters.phone}%`); }
-    if (filters.email) { sql += ' AND email LIKE ?'; params.push(`%${filters.email}%`); }
-    if (filters.address) { sql += ' AND address LIKE ?'; params.push(`%${filters.address}%`); }
-    sql += ' ORDER BY name';
-    const [rows] = await pool.query(sql, params);
-    return rows;
+    const { joins, whereSql, params } = buildSupplierListParts(filters);
+    const selectSql = `SELECT * ${joins}${whereSql}`;
+    const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+    return queryWithOptionalPagination(pool, {
+      selectSql,
+      countSql,
+      params,
+      orderBy: 'ORDER BY name',
+      filters
+    });
+  },
+
+  async getReportAggregates(filters = {}) {
+    const { joins, whereSql, params } = buildSupplierListParts(filters);
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown: {},
+      department_breakdown: {}
+    };
   },
 
   async search(term, limit = 10) {

@@ -4,6 +4,48 @@ const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
+const {
+  emptyListResult,
+  breakdownFromRows,
+  queryWithOptionalPagination
+} = require('../utils/listPagination');
+
+function buildMaintenanceListParts(filters = {}) {
+  let whereSql = ' WHERE 1=1';
+  const params = [];
+  if (filters.inventory_item_id) { whereSql += ' AND m.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
+  if (filters.status) { whereSql += ' AND m.status = ?'; params.push(filters.status); }
+  whereSql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
+  if (filters.transaction_code) { whereSql += ' AND m.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+  if (filters.maintenance_type) { whereSql += ' AND m.maintenance_type LIKE ?'; params.push(`%${filters.maintenance_type}%`); }
+  if (filters.service_provider) { whereSql += ' AND m.service_provider LIKE ?'; params.push(`%${filters.service_provider}%`); }
+  if (filters.scheduled_date) { whereSql += ' AND DATE(m.scheduled_date) = ?'; params.push(filters.scheduled_date); }
+  if (filters.priority) { whereSql += ' AND m.priority LIKE ?'; params.push(`%${filters.priority}%`); }
+  if (filters.search) {
+    whereSql += ' AND (m.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR i.property_tag LIKE ?)';
+    const term = `%${filters.search}%`;
+    params.push(term, term, term, term);
+  }
+  whereSql += appendDateRangeSql(filters, 'm.scheduled_date', params);
+  const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+  if (scopeFilter.denied) {
+    return { denied: true, joins: '', whereSql: '', params: [] };
+  }
+  whereSql += scopeFilter.clause;
+  params.push(...scopeFilter.params);
+
+  const joins = `
+    FROM maintenance_records m
+    JOIN inventory_items i ON m.inventory_item_id = i.id
+    LEFT JOIN departments d ON i.department_id = d.id
+    LEFT JOIN locations l ON i.location_id = l.id
+    LEFT JOIN suppliers s ON i.supplier_id = s.id
+    LEFT JOIN users ru ON m.requested_by = ru.id
+    LEFT JOIN users au ON m.approved_by = au.id
+    LEFT JOIN users pu ON m.performed_by = pu.id`;
+
+  return { denied: false, joins, whereSql, params };
+}
 
 const MaintenanceModel = {
   _baseSelect() {
@@ -23,31 +65,49 @@ const MaintenanceModel = {
   },
 
   async getAll(filters = {}) {
-    let sql = `${this._baseSelect()} WHERE 1=1`;
-    const params = [];
-    if (filters.inventory_item_id) { sql += ' AND m.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.status) { sql += ' AND m.status = ?'; params.push(filters.status); }
-    sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'd' });
-    if (filters.transaction_code) { sql += ' AND m.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
-    if (filters.maintenance_type) { sql += ' AND m.maintenance_type LIKE ?'; params.push(`%${filters.maintenance_type}%`); }
-    if (filters.service_provider) { sql += ' AND m.service_provider LIKE ?'; params.push(`%${filters.service_provider}%`); }
-    if (filters.scheduled_date) { sql += ' AND DATE(m.scheduled_date) = ?'; params.push(filters.scheduled_date); }
-    if (filters.priority) { sql += ' AND m.priority LIKE ?'; params.push(`%${filters.priority}%`); }
-    if (filters.search) {
-      sql += ' AND (m.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR i.property_tag LIKE ?)';
-      const term = `%${filters.search}%`;
-      params.push(term, term, term, term);
+    const parts = buildMaintenanceListParts(filters);
+    if (parts.denied) return emptyListResult(filters);
+    const { joins, whereSql, params } = parts;
+    const selectSql = `
+      SELECT m.*, i.item_code, i.item_name, i.property_tag, i.location_id,
+             d.name AS department_name, l.name AS location_name,
+             ru.full_name AS requested_by_name, au.full_name AS approved_by_name,
+             pu.full_name AS performed_by_name
+      ${joins}${whereSql}`;
+    const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+    return queryWithOptionalPagination(pool, {
+      selectSql,
+      countSql,
+      params,
+      orderBy: 'ORDER BY m.created_at DESC',
+      filters
+    });
+  },
+
+  async getReportAggregates(filters = {}) {
+    const parts = buildMaintenanceListParts(filters);
+    if (parts.denied) {
+      return { total: 0, status_breakdown: {}, department_breakdown: {} };
     }
-    sql += appendDateRangeSql(filters, 'm.scheduled_date', params);
-    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
-    if (scopeFilter.denied) {
-      return [];
-    }
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-    sql += ' ORDER BY m.created_at DESC';
-    const [rows] = await pool.query(sql, params);
-    return rows;
+    const { joins, whereSql, params } = parts;
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    const [statusRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(m.status), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(m.status), ''), 'Unspecified')`,
+      params
+    );
+    const [deptRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(d.name), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(d.name), ''), 'Unspecified')`,
+      params
+    );
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown: breakdownFromRows(statusRows),
+      department_breakdown: breakdownFromRows(deptRows)
+    };
   },
 
   async findById(id) {

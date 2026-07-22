@@ -61,206 +61,247 @@ function mapItem(row) {
 
 }
 
+const INVENTORY_LIST_SORT_COLUMNS = {
+  item_name: 'i.item_name',
+  property_tag: 'i.property_tag',
+  status: 'i.status',
+  condition: 'i.`condition`',
+  asset_classification: 'i.asset_classification',
+  department_name: 'd.name',
+  location_name: 'l.name',
+  custodian_name: 'c.full_name',
+  updated_at: 'i.updated_at'
+};
 
+const INVENTORY_LIST_SELECT = `
+  i.id, i.item_code, i.property_tag, i.item_name,
+  i.department_id, i.location_id, i.custodian_id,
+  i.asset_classification, i.status, i.\`condition\`, i.acquisition_date,
+  d.name AS department_name, l.name AS location_name, c.full_name AS custodian_name
+`;
+
+const INVENTORY_FULL_SELECT = `
+  i.*, d.name AS department_name, s.name AS supplier_name, l.name AS location_name,
+  c.full_name AS custodian_name, p.item_name AS parent_asset_name
+`;
+
+function buildInventoryListQuery(filters = {}) {
+  const joins = `
+    FROM inventory_items i
+    LEFT JOIN departments d ON i.department_id = d.id
+    LEFT JOIN suppliers s ON i.supplier_id = s.id
+    LEFT JOIN locations l ON i.location_id = l.id
+    LEFT JOIN users c ON i.custodian_id = c.id
+    LEFT JOIN inventory_items p ON i.parent_asset_id = p.id
+    WHERE 1=1 AND (i.is_archived = 0)`;
+
+  let whereSql = '';
+  const params = [];
+
+  if (filters.search) {
+    whereSql += ` AND (i.item_code LIKE ? OR i.item_name LIKE ? OR i.brand LIKE ? OR i.model LIKE ?
+      OR i.property_tag LIKE ? OR i.batch_id LIKE ? OR i.serial_number LIKE ?
+      OR d.name LIKE ? OR l.name LIKE ?)`;
+    const term = `%${filters.search}%`;
+    params.push(term, term, term, term, term, term, term, term, term);
+  }
+
+  if (filters.item_code) {
+    whereSql += ' AND i.item_code LIKE ?';
+    params.push(`%${filters.item_code}%`);
+  }
+
+  if (filters.item_name) {
+    whereSql += ' AND i.item_name LIKE ?';
+    params.push(`%${filters.item_name}%`);
+  }
+
+  if (filters.property_tag) {
+    whereSql += ' AND i.property_tag LIKE ?';
+    params.push(`%${filters.property_tag}%`);
+  }
+
+  if (filters.batch_id) {
+    whereSql += ' AND i.batch_id LIKE ?';
+    params.push(`%${filters.batch_id}%`);
+  }
+
+  if (filters.brand) {
+    whereSql += ' AND i.brand LIKE ?';
+    params.push(`%${filters.brand}%`);
+  }
+
+  if (filters.model) {
+    whereSql += ' AND i.model LIKE ?';
+    params.push(`%${filters.model}%`);
+  }
+
+  if (filters.condition) {
+    whereSql += ' AND i.`condition` LIKE ?';
+    params.push(`%${filters.condition}%`);
+  }
+
+  if (filters.material) {
+    whereSql += ' AND i.material = ?';
+    params.push(filters.material);
+  }
+
+  if (filters.custodian_id) {
+    whereSql += ' AND i.custodian_id = ?';
+    params.push(filters.custodian_id);
+  }
+
+  if (filters.custodian_name) {
+    whereSql += ' AND c.full_name LIKE ?';
+    params.push(`%${filters.custodian_name}%`);
+  }
+
+  if (filters.supplier_id) {
+    whereSql += ' AND i.supplier_id = ?';
+    params.push(filters.supplier_id);
+  }
+
+  if (filters.supplier_name) {
+    whereSql += ' AND s.name LIKE ?';
+    params.push(`%${filters.supplier_name}%`);
+  }
+
+  if (filters.unit_cost != null && filters.unit_cost !== '') {
+    const cost = parseFloat(filters.unit_cost);
+    if (!Number.isNaN(cost)) {
+      whereSql += ' AND i.unit_cost = ?';
+      params.push(cost);
+    }
+  }
+
+  if (filters.acquisition_date) {
+    whereSql += ' AND DATE(i.acquisition_date) = ?';
+    params.push(filters.acquisition_date);
+  }
+
+  if (filters.department_id) {
+    whereSql += ' AND i.department_id = ?';
+    params.push(filters.department_id);
+  }
+
+  if (filters.asset_classification) {
+    whereSql += ' AND i.asset_classification = ?';
+    params.push(filters.asset_classification);
+  }
+
+  if (filters.exclude_consumable) {
+    whereSql += " AND i.asset_classification != 'Consumable'";
+  }
+
+  if (filters.status) {
+    whereSql += ' AND i.status LIKE ?';
+    params.push(`%${filters.status}%`);
+  }
+
+  if (filters.department_name) {
+    whereSql += ' AND d.name LIKE ?';
+    params.push(`%${filters.department_name}%`);
+  }
+
+  if (filters.location_name) {
+    whereSql += ' AND l.name LIKE ?';
+    params.push(`%${filters.location_name}%`);
+  }
+
+  if (filters.location_id) {
+    whereSql += ' AND i.location_id = ?';
+    params.push(filters.location_id);
+  }
+
+  if (filters.parent_asset_id) {
+    whereSql += ' AND i.parent_asset_id = ?';
+    params.push(filters.parent_asset_id);
+  }
+
+  whereSql += appendDateRangeSql(
+    filters,
+    filters.date_column || 'COALESCE(i.acquisition_date, DATE(i.created_at))',
+    params
+  );
+
+  const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+  if (scopeFilter.denied) {
+    return { denied: true, joins, whereSql: '', params: [] };
+  }
+  whereSql += scopeFilter.clause;
+  params.push(...scopeFilter.params);
+
+  return { denied: false, joins, whereSql, params };
+}
+
+function buildInventoryOrderBy(filters = {}) {
+  const sortKey = String(filters.sort || filters.sort_by || '').trim();
+  const sortColumn = INVENTORY_LIST_SORT_COLUMNS[sortKey];
+  if (sortColumn) {
+    const direction = String(filters.order || filters.sort_order || 'asc').toLowerCase() === 'desc'
+      ? 'DESC'
+      : 'ASC';
+    return ` ORDER BY ${sortColumn} ${direction}, i.item_name ASC`;
+  }
+
+  return filters.search
+    ? ' ORDER BY i.updated_at DESC, i.item_name ASC'
+    : ' ORDER BY i.item_name ASC';
+}
+
+function emptyInventoryListResult(filters = {}) {
+  if (!filters.paginated) return [];
+  const page = Math.max(1, parseInt(filters.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 50));
+  return { data: [], total: 0, page, limit };
+}
 
 const InventoryModel = {
 
   async getAll(filters = {}) {
-
-    let sql = `
-
-      SELECT i.*, d.name AS department_name, s.name AS supplier_name, l.name AS location_name,
-
-             c.full_name AS custodian_name, p.item_name AS parent_asset_name
-
-      FROM inventory_items i
-
-      LEFT JOIN departments d ON i.department_id = d.id
-
-      LEFT JOIN suppliers s ON i.supplier_id = s.id
-
-      LEFT JOIN locations l ON i.location_id = l.id
-
-      LEFT JOIN users c ON i.custodian_id = c.id
-
-      LEFT JOIN inventory_items p ON i.parent_asset_id = p.id
-
-      WHERE 1=1 AND (i.is_archived = 0)`;
-
-    const params = [];
-
     if (filters.department_scope_mismatch) {
-      return [];
+      return emptyInventoryListResult(filters);
     }
 
-    if (filters.search) {
-
-      sql += ` AND (i.item_code LIKE ? OR i.item_name LIKE ? OR i.brand LIKE ? OR i.model LIKE ?
-        OR i.property_tag LIKE ? OR i.batch_id LIKE ? OR i.serial_number LIKE ?
-        OR d.name LIKE ? OR l.name LIKE ?)`;
-
-      const term = `%${filters.search}%`;
-
-      params.push(term, term, term, term, term, term, term, term, term);
-
+    const queryParts = buildInventoryListQuery(filters);
+    if (queryParts.denied) {
+      return emptyInventoryListResult(filters);
     }
 
-    if (filters.item_code) {
-      sql += ' AND i.item_code LIKE ?';
-      params.push(`%${filters.item_code}%`);
+    const { joins, whereSql, params } = queryParts;
+    const selectColumns = filters.listFields ? INVENTORY_LIST_SELECT : INVENTORY_FULL_SELECT;
+    const orderBy = buildInventoryOrderBy(filters);
+
+    if (filters.paginated) {
+      const page = Math.max(1, parseInt(filters.page, 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 50));
+      const offset = (page - 1) * limit;
+
+      const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+      const [countRows] = await pool.query(countSql, params);
+      const total = Number(countRows[0]?.total || 0);
+
+      const dataSql = `SELECT ${selectColumns} ${joins}${whereSql}${orderBy} LIMIT ? OFFSET ?`;
+      const [rows] = await pool.query(dataSql, [...params, limit, offset]);
+
+      return {
+        data: rows.map(mapItem),
+        total,
+        page,
+        limit
+      };
     }
 
-    if (filters.item_name) {
-      sql += ' AND i.item_name LIKE ?';
-      params.push(`%${filters.item_name}%`);
-    }
-
-    if (filters.property_tag) {
-      sql += ' AND i.property_tag LIKE ?';
-      params.push(`%${filters.property_tag}%`);
-    }
-
-    if (filters.batch_id) {
-      sql += ' AND i.batch_id LIKE ?';
-      params.push(`%${filters.batch_id}%`);
-    }
-
-    if (filters.brand) {
-      sql += ' AND i.brand LIKE ?';
-      params.push(`%${filters.brand}%`);
-    }
-
-    if (filters.model) {
-      sql += ' AND i.model LIKE ?';
-      params.push(`%${filters.model}%`);
-    }
-
-    if (filters.condition) {
-      sql += ' AND i.`condition` LIKE ?';
-      params.push(`%${filters.condition}%`);
-    }
-
-    if (filters.material) {
-      sql += ' AND i.material = ?';
-      params.push(filters.material);
-    }
-
-    if (filters.custodian_id) {
-      sql += ' AND i.custodian_id = ?';
-      params.push(filters.custodian_id);
-    }
-
-    if (filters.custodian_name) {
-      sql += ' AND c.full_name LIKE ?';
-      params.push(`%${filters.custodian_name}%`);
-    }
-
-    if (filters.supplier_id) {
-      sql += ' AND i.supplier_id = ?';
-      params.push(filters.supplier_id);
-    }
-
-    if (filters.supplier_name) {
-      sql += ' AND s.name LIKE ?';
-      params.push(`%${filters.supplier_name}%`);
-    }
-
-    if (filters.unit_cost != null && filters.unit_cost !== '') {
-      const cost = parseFloat(filters.unit_cost);
-      if (!Number.isNaN(cost)) {
-        sql += ' AND i.unit_cost = ?';
-        params.push(cost);
-      }
-    }
-
-    if (filters.acquisition_date) {
-      sql += ' AND DATE(i.acquisition_date) = ?';
-      params.push(filters.acquisition_date);
-    }
-
-    if (filters.department_id) {
-
-      sql += ' AND i.department_id = ?';
-
-      params.push(filters.department_id);
-
-    }
-
-    if (filters.asset_classification) {
-
-      sql += ' AND i.asset_classification = ?';
-
-      params.push(filters.asset_classification);
-
-    }
-
-    if (filters.exclude_consumable) {
-      sql += " AND i.asset_classification != 'Consumable'";
-    }
-
-    if (filters.status) {
-
-      sql += ' AND i.status LIKE ?';
-
-      params.push(`%${filters.status}%`);
-
-    }
-
-    if (filters.department_name) {
-      sql += ' AND d.name LIKE ?';
-      params.push(`%${filters.department_name}%`);
-    }
-
-    if (filters.location_name) {
-      sql += ' AND l.name LIKE ?';
-      params.push(`%${filters.location_name}%`);
-    }
-
-    if (filters.location_id) {
-
-      sql += ' AND i.location_id = ?';
-
-      params.push(filters.location_id);
-
-    }
-
-    if (filters.parent_asset_id) {
-
-      sql += ' AND i.parent_asset_id = ?';
-
-      params.push(filters.parent_asset_id);
-
-    }
-
-    sql += appendDateRangeSql(
-      filters,
-      filters.date_column || 'COALESCE(i.acquisition_date, DATE(i.created_at))',
-      params
-    );
-
-    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
-    if (scopeFilter.denied) {
-      return [];
-    }
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-
-    sql += filters.search
-      ? ' ORDER BY i.updated_at DESC, i.item_name ASC'
-      : ' ORDER BY i.item_name ASC';
+    let sql = `SELECT ${selectColumns} ${joins}${whereSql}${orderBy}`;
+    const dataParams = [...params];
 
     if (filters.limit) {
-
       sql += ' LIMIT ?';
-
-      params.push(parseInt(filters.limit, 10));
-
+      dataParams.push(parseInt(filters.limit, 10));
     }
 
-    const [rows] = await pool.query(sql, params);
-
+    const [rows] = await pool.query(sql, dataParams);
     return rows.map(mapItem);
-
   },
 
 
@@ -353,7 +394,7 @@ const InventoryModel = {
     return result.insertId;
   },
 
-  async createBulkAssets(data) {
+  async createBulkAssets(data, options = {}) {
     const count = Math.max(1, parseInt(data.asset_count ?? data.quantity, 10) || 1);
     if (count > 500) {
       throw new Error('Cannot create more than 500 assets at once');
@@ -371,7 +412,14 @@ const InventoryModel = {
         if (classification === 'Consumable') {
           propertyTags = Array(count).fill(null);
         } else {
-          propertyTags = await generateAutoPropertyTags(count, connection);
+          const tagOptions = {};
+          if (options.propertyTagStartSequence != null) {
+            tagOptions.startSequence = options.propertyTagStartSequence;
+          }
+          if (typeof options.onPropertyTagsAllocated === 'function') {
+            tagOptions.onAllocated = options.onPropertyTagsAllocated;
+          }
+          propertyTags = await generateAutoPropertyTags(count, connection, tagOptions);
         }
       }
 
@@ -416,8 +464,8 @@ const InventoryModel = {
     }
   },
 
-  async create(data) {
-    return this.createBulkAssets(data);
+  async create(data, options = {}) {
+    return this.createBulkAssets(data, options);
   },
 
 
@@ -814,6 +862,56 @@ const InventoryModel = {
        ORDER BY material`
     );
     return rows.map((row) => row.material);
+  },
+
+  /**
+   * Aggregate counts for report summaries (same filters/scope as getAll).
+   * Avoids loading every matching row into memory when preview is paginated.
+   */
+  async getFilterAggregates(filters = {}) {
+    if (filters.department_scope_mismatch) {
+      return { total: 0, status_breakdown: {}, department_breakdown: {} };
+    }
+
+    const queryParts = buildInventoryListQuery({
+      ...filters,
+      paginated: false,
+      page: undefined,
+      limit: undefined
+    });
+    if (queryParts.denied) {
+      return { total: 0, status_breakdown: {}, department_breakdown: {} };
+    }
+
+    const { joins, whereSql, params } = queryParts;
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    const [statusRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(i.status), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(i.status), ''), 'Unspecified')`,
+      params
+    );
+    const [deptRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(d.name), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY d.id, COALESCE(NULLIF(TRIM(d.name), ''), 'Unspecified')`,
+      params
+    );
+
+    const status_breakdown = {};
+    statusRows.forEach((row) => {
+      status_breakdown[row.label] = Number(row.cnt);
+    });
+    const department_breakdown = {};
+    deptRows.forEach((row) => {
+      department_breakdown[row.label] = Number(row.cnt);
+    });
+
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown,
+      department_breakdown
+    };
   }
 
 };

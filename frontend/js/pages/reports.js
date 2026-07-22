@@ -33,12 +33,28 @@ let activeReportType = null;
 let currentUser = null;
 let departments = [];
 let lastReportFilterParams = {};
+let reportPage = 1;
+let reportPagination = { total: 0, page: 1, limit: 25, totalPages: 1 };
 let filterOptions = {
   materials: ['Metal', 'Plastic', 'Wood', 'Paper', 'Glass', 'Fabric', 'Rubber', 'Electronic', 'Composite', 'Other'],
   statuses: ['Available', 'Borrowed', 'Under Maintenance', 'Disposed'],
   conditions: ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'For Repair', 'Damaged', 'Unserviceable'],
   custodians: []
 };
+
+const REPORT_PAGE_SIZE = 25;
+const PAGINATED_REPORT_TYPES = new Set([
+  'inventory',
+  'asset-status',
+  'borrow',
+  'return',
+  'supplier',
+  'transfers',
+  'maintenance',
+  'disposals',
+  'departments',
+  'custodians'
+]);
 
 const REPORT_STATUS_LABELS = {
   'Under Maintenance': 'For Maintenance'
@@ -196,17 +212,17 @@ async function renderReportFilters(type) {
     </div>
   `;
 
-  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type));
+  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type, { resetPage: true }));
   document.getElementById('reportClearFilters')?.addEventListener('click', () => {
     clearReportFilters();
-    loadReportData(type);
+    loadReportData(type, { resetPage: true });
   });
 
   bar.querySelectorAll('input').forEach((input) => {
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        loadReportData(type);
+        loadReportData(type, { resetPage: true });
       }
     });
   });
@@ -257,8 +273,26 @@ async function initReportsPage() {
       <div class="filters-bar" id="reportFiltersBar"></div>
       <div id="reportSummary"></div>
       <div class="table-responsive" id="reportTable"></div>
+      <div id="reportPaginationBar" class="filters-bar" style="display:none;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:0;">
+        <span id="reportPageInfo" style="font-size:13px;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="reportPrevPage">Previous</button>
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="reportNextPage">Next</button>
+        </div>
+      </div>
     </div>
   `;
+
+  document.getElementById('reportPrevPage')?.addEventListener('click', () => {
+    if (reportPage <= 1 || !activeReportType) return;
+    reportPage -= 1;
+    loadReportData(activeReportType);
+  });
+  document.getElementById('reportNextPage')?.addEventListener('click', () => {
+    if (!activeReportType || reportPage >= reportPagination.totalPages) return;
+    reportPage += 1;
+    loadReportData(activeReportType);
+  });
 }
 
 function ensureReportAccess(type) {
@@ -335,23 +369,73 @@ function renderReportSummary(summary) {
   `;
 }
 
-async function loadReportData(type) {
+async function loadReportData(type, options = {}) {
   if (!ensureReportAccess(type)) return;
+
+  if (options.resetPage) reportPage = 1;
 
   document.getElementById('reportTable').innerHTML = '<div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>';
   document.getElementById('reportSummary').innerHTML = '';
 
   try {
     const params = getReportFilterParams();
-    lastReportFilterParams[type] = params;
+    lastReportFilterParams[type] = { ...params };
+    if (PAGINATED_REPORT_TYPES.has(type)) {
+      params.page = reportPage;
+      params.limit = REPORT_PAGE_SIZE;
+    }
+
     const res = await API.getReport(type, params);
     const { rows, summary } = normalizeReportPayload(res?.data);
+
+    if (PAGINATED_REPORT_TYPES.has(type)) {
+      const pagination = res?.pagination || {};
+      reportPagination = {
+        total: Number(pagination.total ?? summary?.total_records ?? rows.length),
+        page: Number(pagination.page ?? reportPage),
+        limit: Number(pagination.limit ?? REPORT_PAGE_SIZE),
+        totalPages: Number(pagination.totalPages ?? 1)
+      };
+      reportPage = reportPagination.page;
+
+      if (!rows.length && reportPagination.total > 0 && reportPage > reportPagination.totalPages) {
+        reportPage = reportPagination.totalPages;
+        return loadReportData(type);
+      }
+    } else {
+      reportPagination = { total: 0, page: 1, limit: REPORT_PAGE_SIZE, totalPages: 1 };
+    }
+
     renderReportSummary(summary);
     renderReportTable(type, rows);
+    renderReportPagination(type);
   } catch (err) {
     document.getElementById('reportSummary').innerHTML = '';
     document.getElementById('reportTable').innerHTML = `<div class="empty-state">${err.message}</div>`;
+    const bar = document.getElementById('reportPaginationBar');
+    if (bar) bar.style.display = 'none';
   }
+}
+
+function renderReportPagination(type) {
+  const bar = document.getElementById('reportPaginationBar');
+  const info = document.getElementById('reportPageInfo');
+  const prevBtn = document.getElementById('reportPrevPage');
+  const nextBtn = document.getElementById('reportNextPage');
+  if (!bar || !info || !prevBtn || !nextBtn) return;
+
+  if (!PAGINATED_REPORT_TYPES.has(type) || !reportPagination.total) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  const { total, page, limit, totalPages } = reportPagination;
+  const start = (page - 1) * limit + 1;
+  const end = Math.min(page * limit, total);
+  info.textContent = `Showing ${start}–${end} of ${total}`;
+  prevBtn.disabled = page <= 1;
+  nextBtn.disabled = page >= totalPages;
+  bar.style.display = 'flex';
 }
 
 async function viewReport(type) {
@@ -359,10 +443,11 @@ async function viewReport(type) {
 
   const report = getReportConfig(type);
   activeReportType = type;
+  reportPage = 1;
   document.getElementById('reportPreviewTitle').textContent = report.title;
   document.getElementById('reportPreview').style.display = 'block';
   await renderReportFilters(type);
-  await loadReportData(type);
+  await loadReportData(type, { resetPage: true });
   document.getElementById('reportPreview').scrollIntoView({ behavior: 'smooth' });
 }
 

@@ -26,6 +26,7 @@ const API = {
     try {
       response = await fetch(`${this.baseURL}${endpoint}`, config);
     } catch (error) {
+      if (error?.name === 'AbortError') throw error;
       throw new Error('Unable to connect to server. Please ensure the backend is running.');
     }
 
@@ -125,10 +126,15 @@ const API = {
     }
     return response.blob();
   },
-  previewInventoryImport: (file) => {
+  previewInventoryImport: (file, options = {}) => {
     const formData = new FormData();
     formData.append('file', file);
-    return API.request('/inventory/import/preview', { method: 'POST', body: formData, headers: {} });
+    return API.request('/inventory/import/preview', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+      signal: options.signal
+    });
   },
   confirmInventoryImport: (previewToken) => API.post('/inventory/import/confirm', { preview_token: previewToken }),
 

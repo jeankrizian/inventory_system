@@ -3,52 +3,100 @@ const { generateCode } = require('../utils/helpers');
 const { appendTransferRequestScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
+const {
+  emptyListResult,
+  breakdownFromRows,
+  queryWithOptionalPagination
+} = require('../utils/listPagination');
+
+function buildTransferListParts(filters = {}) {
+  let whereSql = ' WHERE 1=1';
+  const params = [];
+  if (filters.status) { whereSql += ' AND t.status = ?'; params.push(filters.status); }
+  whereSql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'idpt' });
+  if (filters.transaction_code) { whereSql += ' AND t.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+  if (filters.from_department_name) { whereSql += ' AND fd.name LIKE ?'; params.push(`%${filters.from_department_name}%`); }
+  if (filters.to_department_name) { whereSql += ' AND td.name LIKE ?'; params.push(`%${filters.to_department_name}%`); }
+  if (filters.requested_by_name) { whereSql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
+  if (filters.request_date) {
+    whereSql += ' AND DATE(COALESCE(t.request_date, t.created_at)) = ?';
+    params.push(filters.request_date);
+  }
+  if (filters.inventory_item_id) { whereSql += ' AND t.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
+  if (filters.search) {
+    whereSql += ' AND (t.transaction_code LIKE ? OR i.item_name LIKE ? OR i.property_tag LIKE ?)';
+    const term = `%${filters.search}%`;
+    params.push(term, term, term);
+  }
+  whereSql += appendDateRangeSql(filters, 'COALESCE(t.request_date, DATE(t.created_at))', params);
+
+  const scopeFilter = appendTransferRequestScopeSql(filters.scope, 'i', 't');
+  if (scopeFilter.denied) {
+    return { denied: true, joins: '', whereSql: '', params: [] };
+  }
+  whereSql += scopeFilter.clause;
+  params.push(...scopeFilter.params);
+
+  const joins = `
+    FROM transfer_requests t
+    JOIN inventory_items i ON t.inventory_item_id = i.id
+    JOIN users u ON t.requested_by = u.id
+    LEFT JOIN users a ON t.approved_by = a.id
+    LEFT JOIN locations fl ON t.from_location_id = fl.id
+    LEFT JOIN locations tl ON t.to_location_id = tl.id
+    LEFT JOIN departments fd ON t.from_department_id = fd.id
+    LEFT JOIN departments td ON t.to_department_id = td.id
+    LEFT JOIN departments idpt ON i.department_id = idpt.id
+    LEFT JOIN suppliers s ON i.supplier_id = s.id`;
+
+  return { denied: false, joins, whereSql, params };
+}
 
 const TransferModel = {
   async getAll(filters = {}) {
-    let sql = `
+    const parts = buildTransferListParts(filters);
+    if (parts.denied) return emptyListResult(filters);
+    const { joins, whereSql, params } = parts;
+    const selectSql = `
       SELECT t.*, i.item_code, i.item_name, i.property_tag,
              u.full_name AS requested_by_name, a.full_name AS approved_by_name,
              fl.name AS from_location_name, tl.name AS to_location_name,
              fd.name AS from_department_name, td.name AS to_department_name
-      FROM transfer_requests t
-      JOIN inventory_items i ON t.inventory_item_id = i.id
-      JOIN users u ON t.requested_by = u.id
-      LEFT JOIN users a ON t.approved_by = a.id
-      LEFT JOIN locations fl ON t.from_location_id = fl.id
-      LEFT JOIN locations tl ON t.to_location_id = tl.id
-      LEFT JOIN departments fd ON t.from_department_id = fd.id
-      LEFT JOIN departments td ON t.to_department_id = td.id
-      LEFT JOIN departments idpt ON i.department_id = idpt.id
-      LEFT JOIN suppliers s ON i.supplier_id = s.id
-      WHERE 1=1`;
-    const params = [];
-    if (filters.status) { sql += ' AND t.status = ?'; params.push(filters.status); }
-    sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'idpt' });
-    if (filters.transaction_code) { sql += ' AND t.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
-    if (filters.from_department_name) { sql += ' AND fd.name LIKE ?'; params.push(`%${filters.from_department_name}%`); }
-    if (filters.to_department_name) { sql += ' AND td.name LIKE ?'; params.push(`%${filters.to_department_name}%`); }
-    if (filters.requested_by_name) { sql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
-    if (filters.request_date) {
-      sql += ' AND DATE(COALESCE(t.request_date, t.created_at)) = ?';
-      params.push(filters.request_date);
+      ${joins}${whereSql}`;
+    const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+    return queryWithOptionalPagination(pool, {
+      selectSql,
+      countSql,
+      params,
+      orderBy: 'ORDER BY t.created_at DESC',
+      filters
+    });
+  },
+
+  async getReportAggregates(filters = {}) {
+    const parts = buildTransferListParts(filters);
+    if (parts.denied) {
+      return { total: 0, status_breakdown: {}, department_breakdown: {} };
     }
-    if (filters.inventory_item_id) { sql += ' AND t.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.search) {
-      sql += ' AND (t.transaction_code LIKE ? OR i.item_name LIKE ? OR i.property_tag LIKE ?)';
-      const term = `%${filters.search}%`;
-      params.push(term, term, term);
-    }
-    sql += appendDateRangeSql(filters, 'COALESCE(t.request_date, DATE(t.created_at))', params);
-    const scopeFilter = appendTransferRequestScopeSql(filters.scope, 'i', 't');
-    if (scopeFilter.denied) {
-      return [];
-    }
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-    sql += ' ORDER BY t.created_at DESC';
-    const [rows] = await pool.query(sql, params);
-    return rows;
+    const { joins, whereSql, params } = parts;
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    const [statusRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(t.status), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(t.status), ''), 'Unspecified')`,
+      params
+    );
+    const [deptRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(td.name), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(td.name), ''), 'Unspecified')`,
+      params
+    );
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown: breakdownFromRows(statusRows),
+      department_breakdown: breakdownFromRows(deptRows)
+    };
   },
 
   async findById(id) {

@@ -1,0 +1,2 @@
+MySQL database connected successfully
+Cavite Institute Property Management System running on http://localhost:3000

@@ -118,19 +118,51 @@ const InventoryController = {
       // Inventory visibility: custodians by Assigned Custodian; admin/PM see all
       const scope = getInventoryAccessScope(req.session.user);
 
+      // True server-side pagination when page is provided (Inventory page).
+      // Other modules may still call without page for asset pickers.
+      const paginated = req.query.page !== undefined && req.query.page !== null && req.query.page !== '';
+
       const filters = {
         search: req.query.search,
         department_id: req.query.department_id || req.query.category_id,
         asset_classification: classificationFilter,
         status: req.query.status,
         location_id: req.query.location_id,
+        custodian_id: req.query.custodian_id,
         parent_asset_id: req.query.parent_asset_id,
         exclude_consumable: shouldExcludeConsumableFromLists(),
+        sort: req.query.sort || req.query.sort_by,
+        order: req.query.order || req.query.sort_order,
+        listFields: true,
         scope
       };
 
-      const items = await InventoryModel.getAll(filters);
-      sendSuccess(res, items);
+      if (paginated) {
+        filters.paginated = true;
+        filters.page = req.query.page;
+        filters.limit = req.query.limit;
+      } else if (req.query.limit) {
+        filters.limit = req.query.limit;
+      }
+
+      const result = await InventoryModel.getAll(filters);
+
+      if (paginated && result && !Array.isArray(result)) {
+        const totalPages = Math.max(1, Math.ceil(result.total / result.limit) || 1);
+        return res.status(200).json({
+          success: true,
+          message: 'Success',
+          data: result.data,
+          pagination: {
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages
+          }
+        });
+      }
+
+      sendSuccess(res, result);
     } catch (err) {
       sendError(res, err.message, 500);
     }

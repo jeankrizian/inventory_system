@@ -2,6 +2,9 @@ let categories = [], suppliers = [], locations = [], items = [], users = [];
 let currentUser = null;
 let inventoryActionsListenersBound = false;
 let inventoryTableSelection = null;
+let inventoryPage = 1;
+const INVENTORY_PAGE_SIZE = 50;
+let inventoryPagination = { total: 0, page: 1, limit: INVENTORY_PAGE_SIZE, totalPages: 1 };
 
 function closeAllInventoryActionsMenus() {
   document.querySelectorAll('.inventory-actions-menu.show').forEach(menu => {
@@ -468,6 +471,13 @@ async function initInventoryPage() {
       <div class="table-responsive" id="inventoryTable">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
       </div>
+      <div id="inventoryPaginationBar" class="filters-bar" style="display:none;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:0;">
+        <span id="inventoryPageInfo" style="font-size:13px;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="inventoryPrevPage">Previous</button>
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="inventoryNextPage">Next</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -487,11 +497,21 @@ async function initInventoryPage() {
   await loadItems();
   bindInventoryActionsListeners();
 
-  document.getElementById('searchInput').addEventListener('input', debounce(loadItems, 300));
-  document.getElementById('filterCategory').addEventListener('change', loadItems);
-  document.getElementById('filterLocation').addEventListener('change', loadItems);
-  document.getElementById('filterClassification').addEventListener('change', loadItems);
-  document.getElementById('filterStatus').addEventListener('change', loadItems);
+  document.getElementById('searchInput').addEventListener('input', debounce(() => loadItems({ resetPage: true }), 300));
+  document.getElementById('filterCategory').addEventListener('change', () => loadItems({ resetPage: true }));
+  document.getElementById('filterLocation').addEventListener('change', () => loadItems({ resetPage: true }));
+  document.getElementById('filterClassification').addEventListener('change', () => loadItems({ resetPage: true }));
+  document.getElementById('filterStatus').addEventListener('change', () => loadItems({ resetPage: true }));
+  document.getElementById('inventoryPrevPage')?.addEventListener('click', () => {
+    if (inventoryPage <= 1) return;
+    inventoryPage -= 1;
+    loadItems();
+  });
+  document.getElementById('inventoryNextPage')?.addEventListener('click', () => {
+    if (inventoryPage >= inventoryPagination.totalPages) return;
+    inventoryPage += 1;
+    loadItems();
+  });
   document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
   document.getElementById('itemQuantity').addEventListener('input', syncCreatePreviewDisplay);
   bindGuardedFormSubmit(document.getElementById('itemForm'), saveItem, { loadingText: 'Saving...' });
@@ -538,8 +558,13 @@ async function loadDropdowns() {
   syncItemFormSearchableSelects();
 }
 
-async function loadItems() {
-  const params = {};
+async function loadItems(options = {}) {
+  if (options.resetPage) inventoryPage = 1;
+
+  const params = {
+    page: inventoryPage,
+    limit: INVENTORY_PAGE_SIZE
+  };
   const search = document.getElementById('searchInput')?.value;
   const category = document.getElementById('filterCategory')?.value;
   const location = document.getElementById('filterLocation')?.value;
@@ -555,11 +580,48 @@ async function loadItems() {
   try {
     const res = await API.getInventory(params);
     items = res?.data || [];
+    const pagination = res?.pagination || {};
+    inventoryPagination = {
+      total: Number(pagination.total ?? items.length),
+      page: Number(pagination.page ?? inventoryPage),
+      limit: Number(pagination.limit ?? INVENTORY_PAGE_SIZE),
+      totalPages: Number(pagination.totalPages ?? 1)
+    };
+    inventoryPage = inventoryPagination.page;
+
+    // If filters/archives shrunk results past the current page, load the last valid page.
+    if (!items.length && inventoryPagination.total > 0 && inventoryPage > inventoryPagination.totalPages) {
+      inventoryPage = inventoryPagination.totalPages;
+      return loadItems();
+    }
+
     renderTable();
+    renderInventoryPagination();
     closeAllInventoryActionsMenus();
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+function renderInventoryPagination() {
+  const bar = document.getElementById('inventoryPaginationBar');
+  const info = document.getElementById('inventoryPageInfo');
+  const prevBtn = document.getElementById('inventoryPrevPage');
+  const nextBtn = document.getElementById('inventoryNextPage');
+  if (!bar || !info || !prevBtn || !nextBtn) return;
+
+  const { total, page, limit, totalPages } = inventoryPagination;
+  if (!total) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  const start = (page - 1) * limit + 1;
+  const end = Math.min(page * limit, total);
+  info.textContent = `Showing ${start}–${end} of ${total}`;
+  prevBtn.disabled = page <= 1;
+  nextBtn.disabled = page >= totalPages;
+  bar.style.display = 'flex';
 }
 
 function renderTable() {
@@ -1562,6 +1624,10 @@ let inventoryImportPreviewData = null;
 function resetInventoryImportModal() {
   inventoryImportPreviewToken = null;
   inventoryImportPreviewData = null;
+  // Recover from a stuck Validate lock (e.g. hung prior request never released guardLocks).
+  if (typeof clearGuardLock === 'function') {
+    clearGuardLock('inventory-import-preview');
+  }
   const fileInput = document.getElementById('inventoryImportFile');
   if (fileInput) fileInput.value = '';
   const uploadStep = document.getElementById('inventoryImportUploadStep');
@@ -1708,12 +1774,39 @@ async function validateInventoryImportFile() {
     return;
   }
 
-  await guardAsyncAction(async () => {
-    const res = await API.previewInventoryImport(file);
-    inventoryImportPreviewToken = res.data.preview_token;
-    inventoryImportPreviewData = res.data;
-    renderInventoryImportPreview(res.data);
-  }, { loadingText: 'Validating...', lockKey: 'inventory-import-preview' });
+  const button = document.getElementById('inventoryImportValidateBtn');
+  // Use button guard (not lockKey Map) so Validate cannot stay permanently locked after a hung request.
+  // Duplicate clicks while running are ignored by withSubmitGuard; button is restored in finally.
+  await withSubmitGuard(button, async () => {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), 120000)
+      : null;
+    try {
+      const res = await API.previewInventoryImport(
+        file,
+        controller ? { signal: controller.signal } : {}
+      );
+      if (!res?.data) {
+        showToast('Unable to validate file. Please try again.', 'error');
+        return;
+      }
+      inventoryImportPreviewToken = res.data.preview_token;
+      inventoryImportPreviewData = res.data;
+      renderInventoryImportPreview(res.data);
+    } catch (err) {
+      const aborted = err?.name === 'AbortError'
+        || (typeof err?.message === 'string' && /abort/i.test(err.message));
+      showToast(
+        aborted
+          ? 'Validation timed out. Please try again.'
+          : (err.message || 'Unable to validate file. Please try again.'),
+        'error'
+      );
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, { loadingText: 'Validating...' });
 }
 
 async function confirmInventoryImport() {

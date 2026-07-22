@@ -2,10 +2,66 @@ const pool = require('../config/database');
 const { appendBorrowTransactionScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const { appendBorrowInventoryExistsFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
+const {
+  breakdownFromRows,
+  queryWithOptionalPagination
+} = require('../utils/listPagination');
+
+function buildBorrowListParts(filters = {}) {
+  let whereSql = ' WHERE 1=1';
+  const params = [];
+
+  if (filters.borrower_id) {
+    whereSql += ' AND bt.borrower_id = ?';
+    params.push(filters.borrower_id);
+  }
+  if (filters.status) {
+    whereSql += ' AND bt.status LIKE ?';
+    params.push(`%${filters.status}%`);
+  }
+  if (filters.transaction_code) {
+    whereSql += ' AND bt.transaction_code LIKE ?';
+    params.push(`%${filters.transaction_code}%`);
+  }
+  if (filters.borrower_name) {
+    whereSql += ' AND bt.borrower_name LIKE ?';
+    params.push(`%${filters.borrower_name}%`);
+  }
+  if (filters.borrower_department) {
+    whereSql += ' AND bt.borrower_department LIKE ?';
+    params.push(`%${filters.borrower_department}%`);
+  }
+  if (filters.purpose) {
+    whereSql += ' AND bt.purpose LIKE ?';
+    params.push(`%${filters.purpose}%`);
+  }
+  if (filters.borrow_date) {
+    whereSql += ' AND DATE(bt.borrow_date) = ?';
+    params.push(filters.borrow_date);
+  }
+  whereSql += appendBorrowInventoryExistsFilters(inventoryFieldFilters(filters), 'bt', params);
+  if (filters.search) {
+    whereSql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ? OR bt.purpose LIKE ?)';
+    const term = `%${filters.search}%`;
+    params.push(term, term, term);
+  }
+  whereSql += appendDateRangeSql(filters, 'bt.borrow_date', params);
+
+  const scopeFilter = appendBorrowTransactionScopeSql(filters.scope, 'bt');
+  whereSql += scopeFilter.clause;
+  params.push(...scopeFilter.params);
+
+  const joins = `
+    FROM borrow_transactions bt
+    LEFT JOIN users u ON bt.approved_by = u.id`;
+
+  return { joins, whereSql, params };
+}
 
 const BorrowModel = {
   async getAll(filters = {}) {
-    let sql = `
+    const { joins, whereSql, params } = buildBorrowListParts(filters);
+    const selectSql = `
       SELECT bt.*, u.full_name AS approver_name,
         (
           SELECT GROUP_CONCAT(DISTINCT i.item_name ORDER BY i.item_name SEPARATOR ', ')
@@ -21,60 +77,37 @@ const BorrowModel = {
             AND i.property_tag IS NOT NULL
             AND i.property_tag != ''
         ) AS property_tags
-      FROM borrow_transactions bt
-      LEFT JOIN users u ON bt.approved_by = u.id
-      WHERE 1=1`;
-    const params = [];
+      ${joins}${whereSql}`;
+    const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+    return queryWithOptionalPagination(pool, {
+      selectSql,
+      countSql,
+      params,
+      orderBy: 'ORDER BY bt.created_at DESC',
+      filters
+    });
+  },
 
-    if (filters.borrower_id) {
-      sql += ' AND bt.borrower_id = ?';
-      params.push(filters.borrower_id);
-    }
-
-    if (filters.status) {
-      sql += ' AND bt.status LIKE ?';
-      params.push(`%${filters.status}%`);
-    }
-    if (filters.transaction_code) {
-      sql += ' AND bt.transaction_code LIKE ?';
-      params.push(`%${filters.transaction_code}%`);
-    }
-    if (filters.borrower_name) {
-      sql += ' AND bt.borrower_name LIKE ?';
-      params.push(`%${filters.borrower_name}%`);
-    }
-    if (filters.borrower_department) {
-      sql += ' AND bt.borrower_department LIKE ?';
-      params.push(`%${filters.borrower_department}%`);
-    }
-    if (filters.purpose) {
-      sql += ' AND bt.purpose LIKE ?';
-      params.push(`%${filters.purpose}%`);
-    }
-    if (filters.borrow_date) {
-      sql += ' AND DATE(bt.borrow_date) = ?';
-      params.push(filters.borrow_date);
-    }
-    sql += appendBorrowInventoryExistsFilters(inventoryFieldFilters(filters), 'bt', params);
-    if (filters.search) {
-      sql += ' AND (bt.transaction_code LIKE ? OR bt.borrower_name LIKE ? OR bt.purpose LIKE ?)';
-      const term = `%${filters.search}%`;
-      params.push(term, term, term);
-    }
-
-    sql += appendDateRangeSql(filters, 'bt.borrow_date', params);
-
-    const scopeFilter = appendBorrowTransactionScopeSql(filters.scope, 'bt');
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-
-    sql += ' ORDER BY bt.created_at DESC';
-    if (filters.limit) {
-      sql += ' LIMIT ?';
-      params.push(parseInt(filters.limit, 10));
-    }
-    const [rows] = await pool.query(sql, params);
-    return rows;
+  async getReportAggregates(filters = {}) {
+    const { joins, whereSql, params } = buildBorrowListParts(filters);
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    const [statusRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(bt.status), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(bt.status), ''), 'Unspecified')`,
+      params
+    );
+    const [deptRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(bt.borrower_department), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(bt.borrower_department), ''), 'Unspecified')`,
+      params
+    );
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown: breakdownFromRows(statusRows),
+      department_breakdown: breakdownFromRows(deptRows)
+    };
   },
 
   async findById(id) {

@@ -104,11 +104,23 @@ async function validatePropertyTagsUnique(tags, conn = pool, excludeIds = []) {
 /**
  * Generate globally sequential property tags: YYYYMMDD-000001
  * The date prefix is the creation date; the numeric suffix never resets.
+ *
+ * options.startSequence — when provided, skip the max scan and continue from this
+ *   sequence (used by Excel Import to scan once per import). Same format/padding.
+ * options.onAllocated(nextSequence) — called with the next unused sequence after
+ *   these tags (startSequence + count).
  */
-async function generateAutoPropertyTags(count, conn = pool) {
+async function generateAutoPropertyTags(count, conn = pool, options = {}) {
   const total = Math.max(1, Number(count) || 1);
   const datePrefix = getDatePrefix();
-  const startSeq = (await getMaxGlobalPropertyTagSequence(conn)) + 1;
+  const startSeq = options.startSequence != null
+    ? Number(options.startSequence)
+    : (await getMaxGlobalPropertyTagSequence(conn)) + 1;
+
+  if (!Number.isFinite(startSeq) || startSeq < 1) {
+    throw new Error('Invalid property tag start sequence');
+  }
+
   const tags = [];
 
   for (let i = 0; i < total; i += 1) {
@@ -116,6 +128,11 @@ async function generateAutoPropertyTags(count, conn = pool) {
   }
 
   await validatePropertyTagsUnique(tags, conn);
+
+  if (typeof options.onAllocated === 'function') {
+    options.onAllocated(startSeq + total);
+  }
+
   return tags;
 }
 

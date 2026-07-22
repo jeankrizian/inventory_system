@@ -96,7 +96,7 @@ function buildReportSummary(reportType, rows = [], filters = {}, options = {}) {
     report_type: reportType,
     title: meta.title,
     generated_at: new Date().toISOString(),
-    total_records: rows.length,
+    total_records: options.total_records != null ? Number(options.total_records) : rows.length,
     department: options.departmentLabel || 'All Departments',
     date_range: formatDateRange(filters),
     status_filter: filters.status || null,
@@ -104,11 +104,15 @@ function buildReportSummary(reportType, rows = [], filters = {}, options = {}) {
     department_breakdown: {}
   };
 
-  if (meta.statusField) {
+  if (options.status_breakdown) {
+    summary.status_breakdown = options.status_breakdown;
+  } else if (meta.statusField) {
     summary.status_breakdown = countByField(rows, meta.statusField);
   }
 
-  if (meta.departmentFields.length) {
+  if (options.department_breakdown) {
+    summary.department_breakdown = options.department_breakdown;
+  } else if (meta.departmentFields.length) {
     summary.department_breakdown = countByField(rows, meta.departmentFields[0], meta.departmentFields.slice(1));
   }
 

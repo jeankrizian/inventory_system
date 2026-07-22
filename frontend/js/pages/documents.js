@@ -1,5 +1,8 @@
 let documents = [];
 let documentsTableSelection = null;
+let documentsPage = 1;
+const DOCUMENTS_PAGE_SIZE = 25;
+let documentsPagination = { total: 0, page: 1, limit: DOCUMENTS_PAGE_SIZE, totalPages: 1 };
 
 async function initDocumentsPage() {
   const user = await initLayout('documents');
@@ -27,11 +30,34 @@ async function initDocumentsPage() {
       <div class="table-responsive" id="documentsTable">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
       </div>
+      <div id="documentsPaginationBar" class="filters-bar" style="display:none;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:0;">
+        <span id="documentsPageInfo" style="font-size:13px;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="documentsPrevPage">Previous</button>
+          <button type="button" class="btn-outline-custom btn-sm-custom" id="documentsNextPage">Next</button>
+        </div>
+      </div>
     </div>
   `;
 
-  document.getElementById('searchInput').addEventListener('input', debounce(loadDocuments, 300));
-  document.getElementById('filterType').addEventListener('change', loadDocuments);
+  document.getElementById('searchInput').addEventListener('input', debounce(() => {
+    documentsPage = 1;
+    loadDocuments();
+  }, 300));
+  document.getElementById('filterType').addEventListener('change', () => {
+    documentsPage = 1;
+    loadDocuments();
+  });
+  document.getElementById('documentsPrevPage')?.addEventListener('click', () => {
+    if (documentsPage <= 1) return;
+    documentsPage -= 1;
+    loadDocuments();
+  });
+  document.getElementById('documentsNextPage')?.addEventListener('click', () => {
+    if (documentsPage >= documentsPagination.totalPages) return;
+    documentsPage += 1;
+    loadDocuments();
+  });
   initActionMenus();
   initDocumentsTableSelection();
   await loadDocuments();
@@ -39,7 +65,10 @@ async function initDocumentsPage() {
 }
 
 async function loadDocuments() {
-  const params = {};
+  const params = {
+    page: documentsPage,
+    limit: DOCUMENTS_PAGE_SIZE
+  };
   const search = document.getElementById('searchInput')?.value;
   const type = document.getElementById('filterType')?.value;
   if (search) params.search = search;
@@ -48,10 +77,46 @@ async function loadDocuments() {
   try {
     const res = await API.getDocuments(params);
     documents = res?.data || [];
+    const pagination = res?.pagination || {};
+    documentsPagination = {
+      total: Number(pagination.total ?? documents.length),
+      page: Number(pagination.page ?? documentsPage),
+      limit: Number(pagination.limit ?? DOCUMENTS_PAGE_SIZE),
+      totalPages: Number(pagination.totalPages ?? 1)
+    };
+    documentsPage = documentsPagination.page;
+
+    if (!documents.length && documentsPagination.total > 0 && documentsPage > documentsPagination.totalPages) {
+      documentsPage = documentsPagination.totalPages;
+      return loadDocuments();
+    }
+
     renderDocuments();
+    renderDocumentsPagination();
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+function renderDocumentsPagination() {
+  const bar = document.getElementById('documentsPaginationBar');
+  const info = document.getElementById('documentsPageInfo');
+  const prevBtn = document.getElementById('documentsPrevPage');
+  const nextBtn = document.getElementById('documentsNextPage');
+  if (!bar || !info || !prevBtn || !nextBtn) return;
+
+  const { total, page, limit, totalPages } = documentsPagination;
+  if (!total) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  const start = (page - 1) * limit + 1;
+  const end = Math.min(page * limit, total);
+  info.textContent = `Showing ${start}–${end} of ${total}`;
+  prevBtn.disabled = page <= 1;
+  nextBtn.disabled = page >= totalPages;
+  bar.style.display = 'flex';
 }
 
 function initDocumentsTableSelection() {

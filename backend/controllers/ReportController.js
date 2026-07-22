@@ -14,9 +14,18 @@ const {
   validateConsumableFilter,
   shouldExcludeConsumableFromLists
 } = require('../utils/assetClassification');
-const { getReportAccessScope, applyReportDepartmentScope } = require('../utils/roleHelpers');
+const {
+  getReportAccessScope,
+  getInventoryAccessScope,
+  applyReportDepartmentScope
+} = require('../utils/roleHelpers');
 const { buildReportPayload, buildReportSummary, resolveDepartmentLabel } = require('../utils/reportSummaryService');
 const { CONDITION_OPTIONS } = require('../utils/conditionOptions');
+const {
+  emptyListResult,
+  queryWithOptionalPagination,
+  parseListPagination
+} = require('../utils/listPagination');
 
 const INVENTORY_REPORT_DATE_EXPR = 'COALESCE(i.acquisition_date, DATE(i.created_at))';
 
@@ -57,16 +66,90 @@ function getInventoryReportFilters(query, user) {
   if (shouldExcludeConsumableFromLists()) {
     filters.exclude_consumable = true;
   }
-  const scope = getReportAccessScope(user);
+  // Same visibility as Inventory page: custodians by assigned custodian_id (any department).
+  const scope = getInventoryAccessScope(user);
   filters.scope = scope;
   applyReportDepartmentScope(filters, scope);
   filters.date_column = INVENTORY_REPORT_DATE_EXPR;
   return filters;
 }
 
+function normalizeListRows(result) {
+  return Array.isArray(result) ? result : (result?.data || []);
+}
+
 async function sendReportSuccess(res, reportType, rows, filters = {}) {
   const payload = await buildReportPayload(reportType, rows, filters);
   sendSuccess(res, payload);
+}
+
+function wantsReportPagination(query = {}) {
+  return query.page !== undefined && query.page !== null && query.page !== '';
+}
+
+async function sendPaginatedListReport(res, reportType, filters, query, {
+  fetchRows,
+  fetchAggregates = null
+}) {
+  if (filters?.department_scope_mismatch) {
+    await sendReportSuccess(res, reportType, [], filters);
+    return;
+  }
+
+  if (!wantsReportPagination(query)) {
+    const result = await fetchRows(filters);
+    await sendReportSuccess(res, reportType, normalizeListRows(result), filters);
+    return;
+  }
+
+  filters.paginated = true;
+  filters.page = query.page;
+  filters.limit = query.limit || 25;
+
+  const [pageResult, aggregates, departmentLabel] = await Promise.all([
+    fetchRows(filters),
+    fetchAggregates
+      ? fetchAggregates(filters)
+      : Promise.resolve(null),
+    resolveDepartmentLabel(filters)
+  ]);
+
+  const rows = normalizeListRows(pageResult);
+  const total = aggregates?.total != null
+    ? Number(aggregates.total)
+    : Number(pageResult?.total ?? rows.length);
+  const page = Number(pageResult?.page || parseListPagination(filters)?.page || 1);
+  const limit = Number(pageResult?.limit || parseListPagination(filters)?.limit || 25);
+  const totalPages = Math.max(1, Math.ceil(total / limit) || 1);
+
+  const summary = buildReportSummary(reportType, [], filters, {
+    departmentLabel,
+    total_records: total,
+    status_breakdown: aggregates?.status_breakdown || {},
+    department_breakdown: aggregates?.department_breakdown || {}
+  });
+
+  if (reportType === 'custodians' && aggregates?.total_assigned_assets != null) {
+    summary.total_assigned_assets = aggregates.total_assigned_assets;
+  }
+  if (reportType === 'departments' && aggregates?.total_assets != null) {
+    summary.total_assets = aggregates.total_assets;
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Success',
+    data: { rows, summary },
+    pagination: { total, page, limit, totalPages }
+  });
+}
+
+/** Inventory / asset-status preview: page of rows + full-filter summary aggregates. Exports omit page. */
+async function sendPaginatedInventoryReport(res, reportType, filters, query) {
+  return sendPaginatedListReport(res, reportType, filters, query, {
+    fetchRows: (f) => InventoryModel.getAll(f),
+    fetchAggregates: (f) => InventoryModel.getFilterAggregates(f)
+  });
 }
 
 /** Custodian selected a department outside their scope — match inventory empty behavior. */
@@ -130,8 +213,7 @@ const ReportController = {
   async getInventoryReport(req, res) {
     try {
       const filters = getInventoryReportFilters(req.query, req.session.user);
-      const items = await InventoryModel.getAll(filters);
-      await sendReportSuccess(res, 'inventory', rowsForReportFilters(filters, items), filters);
+      await sendPaginatedInventoryReport(res, 'inventory', filters, req.query);
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
     }
@@ -140,8 +222,10 @@ const ReportController = {
   async getBorrowReport(req, res) {
     try {
       const filters = getBorrowReportFilters(req.query, req.session.user);
-      const data = filters.department_scope_mismatch ? [] : await BorrowModel.getAll(filters);
-      await sendReportSuccess(res, 'borrow', data, filters);
+      await sendPaginatedListReport(res, 'borrow', filters, req.query, {
+        fetchRows: (f) => BorrowModel.getAll(f),
+        fetchAggregates: (f) => BorrowModel.getReportAggregates(f)
+      });
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
     }
@@ -150,8 +234,10 @@ const ReportController = {
   async getReturnReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = filters.department_scope_mismatch ? [] : await ReturnModel.getAll(filters);
-      await sendReportSuccess(res, 'return', data, filters);
+      await sendPaginatedListReport(res, 'return', filters, req.query, {
+        fetchRows: (f) => ReturnModel.getAll(f),
+        fetchAggregates: (f) => ReturnModel.getReportAggregates(f)
+      });
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
     }
@@ -172,8 +258,10 @@ const ReportController = {
       if (filters.supplier_name && !filters.name) {
         filters.name = filters.supplier_name;
       }
-      const suppliers = await SupplierModel.getAll(filters);
-      await sendReportSuccess(res, 'supplier', suppliers, filters);
+      await sendPaginatedListReport(res, 'supplier', filters, req.query, {
+        fetchRows: (f) => SupplierModel.getAll(f),
+        fetchAggregates: (f) => SupplierModel.getReportAggregates(f)
+      });
     } catch (err) {
       sendError(res, err.message, err.statusCode || 500);
     }
@@ -182,114 +270,201 @@ const ReportController = {
   async getTransferReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = filters.department_scope_mismatch ? [] : await TransferModel.getAll(filters);
-      await sendReportSuccess(res, 'transfers', data, filters);
+      await sendPaginatedListReport(res, 'transfers', filters, req.query, {
+        fetchRows: (f) => TransferModel.getAll(f),
+        fetchAggregates: (f) => TransferModel.getReportAggregates(f)
+      });
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getMaintenanceReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = filters.department_scope_mismatch ? [] : await MaintenanceModel.getAll(filters);
-      await sendReportSuccess(res, 'maintenance', data, filters);
+      await sendPaginatedListReport(res, 'maintenance', filters, req.query, {
+        fetchRows: (f) => MaintenanceModel.getAll(f),
+        fetchAggregates: (f) => MaintenanceModel.getReportAggregates(f)
+      });
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getDisposalReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      const data = filters.department_scope_mismatch ? [] : await DisposalModel.getAll(filters);
-      await sendReportSuccess(res, 'disposals', data, filters);
+      await sendPaginatedListReport(res, 'disposals', filters, req.query, {
+        fetchRows: (f) => DisposalModel.getAll(f),
+        fetchAggregates: (f) => DisposalModel.getReportAggregates(f)
+      });
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getDepartmentReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      if (filters.department_scope_mismatch) {
-        await sendReportSuccess(res, 'departments', [], filters);
-        return;
-      }
-      const scope = filters.scope;
-      let sql = `
-        SELECT d.*, u.full_name AS custodian_name,
-               (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id AND i.is_archived = 0 AND i.status != 'Disposed') AS asset_count
-        FROM departments d LEFT JOIN users u ON d.custodian_id = u.id
-        WHERE d.is_archived = 0`;
-      const params = [];
-      if (scope?.type === 'department' && scope.departmentId) {
-        sql += ' AND d.id = ?';
-        params.push(scope.departmentId);
-      }
-      if (filters.department_id) {
-        sql += ' AND d.id = ?';
-        params.push(filters.department_id);
-      }
-      if (filters.name) {
-        sql += ' AND d.name LIKE ?';
-        params.push(`%${filters.name}%`);
-      }
-      if (filters.code) {
-        sql += ' AND d.code LIKE ?';
-        params.push(`%${filters.code}%`);
-      }
-      if (filters.department_head) {
-        sql += ' AND d.department_head LIKE ?';
-        params.push(`%${filters.department_head}%`);
-      }
-      sql += ' ORDER BY d.name';
-      const [rows] = await pool.query(sql, params);
-      await sendReportSuccess(res, 'departments', rows, filters);
+
+      const fetchDepartmentRows = async (f) => {
+        if (f.department_scope_mismatch) return emptyListResult(f);
+        const scope = f.scope;
+        let whereSql = ' WHERE d.is_archived = 0';
+        const params = [];
+        if (scope?.type === 'department' && scope.departmentId) {
+          whereSql += ' AND d.id = ?';
+          params.push(scope.departmentId);
+        }
+        if (f.department_id) {
+          whereSql += ' AND d.id = ?';
+          params.push(f.department_id);
+        }
+        if (f.name) {
+          whereSql += ' AND d.name LIKE ?';
+          params.push(`%${f.name}%`);
+        }
+        if (f.code) {
+          whereSql += ' AND d.code LIKE ?';
+          params.push(`%${f.code}%`);
+        }
+        if (f.department_head) {
+          whereSql += ' AND d.department_head LIKE ?';
+          params.push(`%${f.department_head}%`);
+        }
+        const joins = `
+          FROM departments d
+          LEFT JOIN users u ON d.custodian_id = u.id`;
+        const selectSql = `
+          SELECT d.*, u.full_name AS custodian_name,
+                 (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id AND i.is_archived = 0 AND i.status != 'Disposed') AS asset_count
+          ${joins}${whereSql}`;
+        const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+        return queryWithOptionalPagination(pool, {
+          selectSql,
+          countSql,
+          params,
+          orderBy: 'ORDER BY d.name',
+          filters: f
+        });
+      };
+
+      const fetchDepartmentAggregates = async (f) => {
+        const rows = normalizeListRows(await fetchDepartmentRows({
+          ...f,
+          paginated: false,
+          page: undefined,
+          limit: undefined
+        }));
+        const status_breakdown = {};
+        const department_breakdown = {};
+        let total_assets = 0;
+        rows.forEach((row) => {
+          const status = row.status || 'Unspecified';
+          status_breakdown[status] = (status_breakdown[status] || 0) + 1;
+          const name = row.name || 'Unspecified';
+          department_breakdown[name] = (department_breakdown[name] || 0) + 1;
+          total_assets += Number(row.asset_count || 0);
+        });
+        return {
+          total: rows.length,
+          status_breakdown,
+          department_breakdown,
+          total_assets
+        };
+      };
+
+      await sendPaginatedListReport(res, 'departments', filters, req.query, {
+        fetchRows: fetchDepartmentRows,
+        fetchAggregates: fetchDepartmentAggregates
+      });
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getAssetStatusReport(req, res) {
     try {
       const filters = getInventoryReportFilters(req.query, req.session.user);
-      const items = await InventoryModel.getAll(filters);
-      await sendReportSuccess(res, 'asset-status', rowsForReportFilters(filters, items), filters);
+      await sendPaginatedInventoryReport(res, 'asset-status', filters, req.query);
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 
   async getCustodianReport(req, res) {
     try {
       const filters = getScopedReportFilters(req.query, req.session.user);
-      if (filters.department_scope_mismatch) {
-        await sendReportSuccess(res, 'custodians', [], filters);
-        return;
-      }
-      const scope = filters.scope;
-      let sql = `
-        SELECT u.full_name AS custodian_name, u.email,
-               COUNT(i.id) AS assigned_assets
-        FROM inventory_items i
-        JOIN users u ON i.custodian_id = u.id
-        WHERE i.status != 'Disposed'`;
-      const params = [];
-      if (scope?.type === 'department' && scope.departmentId) {
-        sql += ' AND i.department_id = ?';
-        params.push(scope.departmentId);
-      }
-      if (filters.department_id) {
-        sql += ' AND i.department_id = ?';
-        params.push(filters.department_id);
-      }
-      if (filters.custodian_name) {
-        sql += ' AND u.full_name LIKE ?';
-        params.push(`%${filters.custodian_name}%`);
-      }
-      if (filters.custodian_id) {
-        sql += ' AND u.id = ?';
-        params.push(filters.custodian_id);
-      }
-      if (filters.email) {
-        sql += ' AND u.email LIKE ?';
-        params.push(`%${filters.email}%`);
-      }
-      sql += ` GROUP BY u.id, u.full_name, u.email
-        ORDER BY assigned_assets DESC`;
-      const [rows] = await pool.query(sql, params);
-      await sendReportSuccess(res, 'custodians', rows, filters);
+
+      const buildCustodianParts = (f) => {
+        let whereSql = ' WHERE i.status != \'Disposed\'';
+        const params = [];
+        const scope = f.scope;
+        if (scope?.type === 'department' && scope.departmentId) {
+          whereSql += ' AND i.department_id = ?';
+          params.push(scope.departmentId);
+        }
+        if (f.department_id) {
+          whereSql += ' AND i.department_id = ?';
+          params.push(f.department_id);
+        }
+        if (f.custodian_name) {
+          whereSql += ' AND u.full_name LIKE ?';
+          params.push(`%${f.custodian_name}%`);
+        }
+        if (f.custodian_id) {
+          whereSql += ' AND u.id = ?';
+          params.push(f.custodian_id);
+        }
+        if (f.email) {
+          whereSql += ' AND u.email LIKE ?';
+          params.push(`%${f.email}%`);
+        }
+        const joins = `
+          FROM inventory_items i
+          JOIN users u ON i.custodian_id = u.id`;
+        return { joins, whereSql, params };
+      };
+
+      const fetchCustodianRows = async (f) => {
+        if (f.department_scope_mismatch) return emptyListResult(f);
+        const { joins, whereSql, params } = buildCustodianParts(f);
+        const selectSql = `
+          SELECT u.full_name AS custodian_name, u.email,
+                 COUNT(i.id) AS assigned_assets
+          ${joins}${whereSql}
+          GROUP BY u.id, u.full_name, u.email`;
+        // Count grouped custodians
+        const countSql = `
+          SELECT COUNT(*) AS total FROM (
+            SELECT u.id ${joins}${whereSql} GROUP BY u.id
+          ) scoped_custodians`;
+        return queryWithOptionalPagination(pool, {
+          selectSql,
+          countSql,
+          params,
+          orderBy: 'ORDER BY assigned_assets DESC',
+          filters: f
+        });
+      };
+
+      const fetchCustodianAggregates = async (f) => {
+        if (f.department_scope_mismatch) {
+          return { total: 0, status_breakdown: {}, department_breakdown: {}, total_assigned_assets: 0 };
+        }
+        const { joins, whereSql, params } = buildCustodianParts(f);
+        const [countRows] = await pool.query(
+          `SELECT COUNT(*) AS total FROM (
+             SELECT u.id ${joins}${whereSql} GROUP BY u.id
+           ) scoped_custodians`,
+          params
+        );
+        const [assetRows] = await pool.query(
+          `SELECT COUNT(i.id) AS total_assets ${joins}${whereSql}`,
+          params
+        );
+        return {
+          total: Number(countRows[0]?.total || 0),
+          status_breakdown: {},
+          department_breakdown: {},
+          total_assigned_assets: Number(assetRows[0]?.total_assets || 0)
+        };
+      };
+
+      await sendPaginatedListReport(res, 'custodians', filters, req.query, {
+        fetchRows: fetchCustodianRows,
+        fetchAggregates: fetchCustodianAggregates
+      });
     } catch (err) { sendError(res, err.message, err.statusCode || 500); }
   },
 

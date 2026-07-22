@@ -92,13 +92,20 @@ setInterval(cleanupExpiredPreviews, 10 * 60 * 1000).unref?.();
 
 function cellToString(value) {
   if (value == null || value === '') return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return value.toISOString().slice(0, 10);
+  }
   if (typeof value === 'object') {
     if (value.text != null) return String(value.text).trim();
-    if (value.result != null) return String(value.result).trim();
-    if (value.richText && Array.isArray(value.richText)) {
-      return value.richText.map((part) => part.text || '').join('').trim();
+    // Formula / shared-formula cells: result may be Date, number, or string.
+    if (Object.prototype.hasOwnProperty.call(value, 'result')) {
+      return cellToString(value.result);
     }
-    if (value instanceof Date) return value;
+    if (value.richText && Array.isArray(value.richText)) {
+      return value.richText.map((part) => String(part.text || '')).join('').trim();
+    }
+    if (value.error != null) return String(value.error).trim();
   }
   return String(value).trim();
 }
@@ -605,13 +612,36 @@ async function commitValidRows(validRows, userId) {
   let parsGenerated = 0;
   const failures = [];
 
+  // Scan property-tag max at most once per import for consecutive auto-tag rows.
+  // Advance only after a successful create so rollbacks do not skip sequences.
+  // Invalidate after rows that did not auto-generate tags (manual tags / consumable)
+  // so the next auto row re-reads max — same as the previous per-row scan behavior.
+  let nextPropertyTagSequence = null;
+
   for (const row of validRows) {
     try {
       const body = { ...row.payload };
       delete body.item_code;
       body.item_code = await generateNextItemCode(body.department_id);
-      const result = await InventoryModel.create(body);
+
+      let allocatedNextSequence = null;
+      const createOptions = {
+        onPropertyTagsAllocated: (nextSequence) => {
+          allocatedNextSequence = nextSequence;
+        }
+      };
+      if (nextPropertyTagSequence != null) {
+        createOptions.propertyTagStartSequence = nextPropertyTagSequence;
+      }
+
+      const result = await InventoryModel.create(body, createOptions);
       if (result?.created_count) imported += result.created_count;
+
+      if (allocatedNextSequence != null) {
+        nextPropertyTagSequence = allocatedNextSequence;
+      } else {
+        nextPropertyTagSequence = null;
+      }
 
       // Same rule as Add Item: 1 asset = 1 PAR for Durable / Semi-Durable.
       // Components (parent_asset_id set) are not created via import.

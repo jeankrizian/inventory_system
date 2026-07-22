@@ -172,31 +172,52 @@ const DocumentModel = {
   },
 
   async getAll(filters = {}) {
-    let sql = `
-      SELECT d.*, u.full_name AS generated_by_name
-      FROM document_history d
-      LEFT JOIN users u ON d.generated_by = u.id
-      WHERE 1=1`;
+    const listSelect = `
+      d.id, d.document_type, d.document_number, d.related_module, d.related_transaction_id,
+      d.generated_by, d.status, d.generated_at, u.full_name AS generated_by_name`;
+    let whereSql = ' WHERE 1=1';
     const params = [];
 
     if (filters.document_type) {
-      sql += ' AND d.document_type = ?';
+      whereSql += ' AND d.document_type = ?';
       params.push(filters.document_type);
     }
     if (filters.search) {
-      sql += ' AND (d.document_number LIKE ? OR d.related_module LIKE ?)';
+      whereSql += ' AND (d.document_number LIKE ? OR d.related_module LIKE ?)';
       const term = `%${filters.search}%`;
       params.push(term, term);
     }
 
-    sql += ' ORDER BY d.generated_at DESC';
+    const joins = `
+      FROM document_history d
+      LEFT JOIN users u ON d.generated_by = u.id`;
+    const orderBy = ' ORDER BY d.generated_at DESC';
+
+    if (filters.paginated) {
+      const page = Math.max(1, parseInt(filters.page, 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 25));
+      const offset = (page - 1) * limit;
+
+      const [countRows] = await pool.query(
+        `SELECT COUNT(*) AS total ${joins}${whereSql}`,
+        params
+      );
+      const total = Number(countRows[0]?.total || 0);
+      const [rows] = await pool.query(
+        `SELECT ${listSelect} ${joins}${whereSql}${orderBy} LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      );
+      return { data: rows, total, page, limit };
+    }
+
+    let sql = `SELECT d.*, u.full_name AS generated_by_name ${joins}${whereSql}${orderBy}`;
     if (filters.limit) {
       sql += ' LIMIT ?';
       params.push(parseInt(filters.limit, 10));
     }
 
     const [rows] = await pool.query(sql, params);
-    return rows.map(row => {
+    return rows.map((row) => {
       if (typeof row.payload === 'string') {
         try { row.payload = JSON.parse(row.payload); } catch { row.payload = {}; }
       }

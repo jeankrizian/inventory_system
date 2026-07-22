@@ -3,42 +3,91 @@ const { generateCode } = require('../utils/helpers');
 const { appendInventoryScopeSql } = require('../utils/roleHelpers');
 const { appendDateRangeSql } = require('../utils/reportFilters');
 const { appendInventoryItemFieldFilters, inventoryFieldFilters } = require('../utils/inventoryReportFilterSql');
+const {
+  emptyListResult,
+  breakdownFromRows,
+  queryWithOptionalPagination
+} = require('../utils/listPagination');
+
+function buildDisposalListParts(filters = {}) {
+  let whereSql = ' WHERE 1=1';
+  const params = [];
+  if (filters.inventory_item_id) { whereSql += ' AND d.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
+  if (filters.status) { whereSql += ' AND d.status = ?'; params.push(filters.status); }
+  whereSql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'dept' });
+  if (filters.transaction_code) { whereSql += ' AND d.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
+  if (filters.disposal_method) { whereSql += ' AND d.disposal_method LIKE ?'; params.push(`%${filters.disposal_method}%`); }
+  if (filters.requested_by_name) { whereSql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
+  if (filters.reason) { whereSql += ' AND d.reason LIKE ?'; params.push(`%${filters.reason}%`); }
+  if (filters.search) {
+    whereSql += ' AND (d.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR i.property_tag LIKE ?)';
+    const term = `%${filters.search}%`;
+    params.push(term, term, term, term);
+  }
+  whereSql += appendDateRangeSql(filters, 'DATE(d.created_at)', params);
+  const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
+  if (scopeFilter.denied) {
+    return { denied: true, joins: '', whereSql: '', params: [] };
+  }
+  whereSql += scopeFilter.clause;
+  params.push(...scopeFilter.params);
+
+  const joins = `
+    FROM disposal_requests d
+    JOIN inventory_items i ON d.inventory_item_id = i.id
+    LEFT JOIN departments dept ON i.department_id = dept.id
+    LEFT JOIN suppliers s ON i.supplier_id = s.id
+    JOIN users u ON d.requested_by = u.id
+    LEFT JOIN users ins ON d.inspected_by = ins.id
+    LEFT JOIN users app ON d.approved_by = app.id`;
+
+  return { denied: false, joins, whereSql, params };
+}
 
 const DisposalModel = {
   async getAll(filters = {}) {
-    let sql = `
+    const parts = buildDisposalListParts(filters);
+    if (parts.denied) return emptyListResult(filters);
+    const { joins, whereSql, params } = parts;
+    const selectSql = `
       SELECT d.*, i.item_code, i.item_name, i.property_tag, dept.name AS department_name,
              u.full_name AS requested_by_name,
              ins.full_name AS inspected_by_name, app.full_name AS approved_by_name
-      FROM disposal_requests d
-      JOIN inventory_items i ON d.inventory_item_id = i.id
-      LEFT JOIN departments dept ON i.department_id = dept.id
-      LEFT JOIN suppliers s ON i.supplier_id = s.id
-      JOIN users u ON d.requested_by = u.id
-      LEFT JOIN users ins ON d.inspected_by = ins.id
-      LEFT JOIN users app ON d.approved_by = app.id
-      WHERE 1=1`;
-    const params = [];
-    if (filters.inventory_item_id) { sql += ' AND d.inventory_item_id = ?'; params.push(filters.inventory_item_id); }
-    if (filters.status) { sql += ' AND d.status = ?'; params.push(filters.status); }
-    sql += appendInventoryItemFieldFilters(inventoryFieldFilters(filters), 'i', params, { supplierAlias: 's', departmentAlias: 'dept' });
-    if (filters.transaction_code) { sql += ' AND d.transaction_code LIKE ?'; params.push(`%${filters.transaction_code}%`); }
-    if (filters.disposal_method) { sql += ' AND d.disposal_method LIKE ?'; params.push(`%${filters.disposal_method}%`); }
-    if (filters.requested_by_name) { sql += ' AND u.full_name LIKE ?'; params.push(`%${filters.requested_by_name}%`); }
-    if (filters.reason) { sql += ' AND d.reason LIKE ?'; params.push(`%${filters.reason}%`); }
-    if (filters.search) {
-      sql += ' AND (d.transaction_code LIKE ? OR i.item_name LIKE ? OR i.item_code LIKE ? OR i.property_tag LIKE ?)';
-      const term = `%${filters.search}%`;
-      params.push(term, term, term, term);
+      ${joins}${whereSql}`;
+    const countSql = `SELECT COUNT(*) AS total ${joins}${whereSql}`;
+    return queryWithOptionalPagination(pool, {
+      selectSql,
+      countSql,
+      params,
+      orderBy: 'ORDER BY d.created_at DESC',
+      filters
+    });
+  },
+
+  async getReportAggregates(filters = {}) {
+    const parts = buildDisposalListParts(filters);
+    if (parts.denied) {
+      return { total: 0, status_breakdown: {}, department_breakdown: {} };
     }
-    sql += appendDateRangeSql(filters, 'DATE(d.created_at)', params);
-    const scopeFilter = appendInventoryScopeSql(filters.scope, 'i');
-    if (scopeFilter.denied) return [];
-    sql += scopeFilter.clause;
-    params.push(...scopeFilter.params);
-    sql += ' ORDER BY d.created_at DESC';
-    const [rows] = await pool.query(sql, params);
-    return rows;
+    const { joins, whereSql, params } = parts;
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total ${joins}${whereSql}`, params);
+    const [statusRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(d.status), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(d.status), ''), 'Unspecified')`,
+      params
+    );
+    const [deptRows] = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(dept.name), ''), 'Unspecified') AS label, COUNT(*) AS cnt
+       ${joins}${whereSql}
+       GROUP BY COALESCE(NULLIF(TRIM(dept.name), ''), 'Unspecified')`,
+      params
+    );
+    return {
+      total: Number(countRows[0]?.total || 0),
+      status_breakdown: breakdownFromRows(statusRows),
+      department_breakdown: breakdownFromRows(deptRows)
+    };
   },
 
   async findById(id) {

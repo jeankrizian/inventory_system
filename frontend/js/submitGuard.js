@@ -47,12 +47,25 @@ async function withSubmitGuard(button, asyncFn, options = {}) {
 
 const guardLocks = new Map();
 
+/** Clear a named async-action lock (e.g. after modal reset so Validate cannot stay stuck). */
+function clearGuardLock(lockKey) {
+  if (!lockKey) return;
+  guardLocks.delete(lockKey);
+}
+
+function isGuardLocked(lockKey) {
+  if (!lockKey) return false;
+  return guardLocks.get(lockKey) === true;
+}
+
 async function guardAsyncAction(asyncFn, options = {}) {
   const { button, loadingText = 'Processing...', lockKey } = options;
   if (button) return withSubmitGuard(button, asyncFn, { loadingText });
 
   const key = lockKey || 'global';
-  if (guardLocks.get(key)) return;
+  if (guardLocks.get(key)) {
+    return { skipped: true, reason: 'locked' };
+  }
 
   guardLocks.set(key, true);
   try {

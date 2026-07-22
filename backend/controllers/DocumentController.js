@@ -5,11 +5,33 @@ const { sendSuccess, sendError } = require('../utils/response');
 const DocumentController = {
   async getAll(req, res) {
     try {
-      const data = await DocumentService.listDocuments({
+      const paginated = req.query.page !== undefined && req.query.page !== null && req.query.page !== '';
+      const filters = {
         document_type: req.query.document_type,
         search: req.query.search,
         limit: req.query.limit
-      });
+      };
+
+      if (paginated) {
+        filters.paginated = true;
+        filters.page = req.query.page;
+        filters.limit = req.query.limit || 25;
+        const result = await DocumentService.listDocuments(filters);
+        const totalPages = Math.max(1, Math.ceil(result.total / result.limit) || 1);
+        return res.status(200).json({
+          success: true,
+          message: 'Success',
+          data: result.data,
+          pagination: {
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages
+          }
+        });
+      }
+
+      const data = await DocumentService.listDocuments(filters);
       sendSuccess(res, data);
     } catch (err) {
       sendError(res, err.message, 500);
