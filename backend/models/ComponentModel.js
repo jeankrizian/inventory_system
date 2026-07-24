@@ -92,6 +92,31 @@ const ComponentModel = {
     return result.insertId;
   },
 
+  /**
+   * Update editable component detail fields only.
+   * Does not change parent_asset_id, inventory_item_id, status, or created_by.
+   */
+  async updateDetails(id, data, conn = pool) {
+    const [result] = await conn.query(
+      `UPDATE asset_components
+       SET component_name = ?,
+           brand = ?,
+           model = ?,
+           serial_number = ?,
+           remarks = ?
+       WHERE id = ? AND status = 'Active'`,
+      [
+        data.component_name,
+        data.brand || null,
+        data.model || null,
+        data.serial_number || null,
+        data.remarks || null,
+        id
+      ]
+    );
+    return result.affectedRows > 0;
+  },
+
   async markReplaced(id, conn = pool) {
     const [result] = await conn.query(
       `UPDATE asset_components SET status = 'Replaced' WHERE id = ? AND status = 'Active'`,

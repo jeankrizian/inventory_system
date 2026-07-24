@@ -13,34 +13,20 @@ const REPORTS = [
 ];
 
 const REPORT_FILTER_FIELD_IDS = [
-  'reportFilterItemCode',
-  'reportFilterItemName',
-  'reportFilterPropertyTag',
-  'reportFilterBatchId',
+  'reportSearchInput',
   'reportFilterDepartment',
-  'reportFilterCustodian',
-  'reportFilterStatus',
-  'reportFilterCondition',
-  'reportFilterUnitCost',
-  'reportFilterSupplier',
-  'reportFilterMaterial',
-  'reportFilterAcquisitionDate',
-  'reportFilterDateFrom',
-  'reportFilterDateTo'
+  'reportFilterLocation',
+  'reportFilterClassification',
+  'reportFilterStatus'
 ];
 
 let activeReportType = null;
 let currentUser = null;
 let departments = [];
+let locations = [];
 let lastReportFilterParams = {};
 let reportPage = 1;
 let reportPagination = { total: 0, page: 1, limit: 25, totalPages: 1 };
-let filterOptions = {
-  materials: ['Metal', 'Plastic', 'Wood', 'Paper', 'Glass', 'Fabric', 'Rubber', 'Electronic', 'Composite', 'Other'],
-  statuses: ['Available', 'Borrowed', 'Under Maintenance', 'Disposed'],
-  conditions: ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'For Repair', 'Damaged', 'Unserviceable'],
-  custodians: []
-};
 
 const REPORT_PAGE_SIZE = 25;
 const PAGINATED_REPORT_TYPES = new Set([
@@ -56,10 +42,6 @@ const PAGINATED_REPORT_TYPES = new Set([
   'custodians'
 ]);
 
-const REPORT_STATUS_LABELS = {
-  'Under Maintenance': 'For Maintenance'
-};
-
 function getVisibleReports(user) {
   return REPORTS.filter((report) => canAccessReportType(user, report.type));
 }
@@ -74,41 +56,23 @@ function getReportConfig(type) {
 
 function getReportFilterParams() {
   const params = {};
-  const itemCode = document.getElementById('reportFilterItemCode')?.value?.trim();
-  const itemName = document.getElementById('reportFilterItemName')?.value?.trim();
-  const propertyTag = document.getElementById('reportFilterPropertyTag')?.value?.trim();
-  const batchId = document.getElementById('reportFilterBatchId')?.value?.trim();
+  const search = document.getElementById('reportSearchInput')?.value?.trim();
   const department = document.getElementById('reportFilterDepartment')?.value;
-  const custodian = document.getElementById('reportFilterCustodian')?.value;
+  const location = document.getElementById('reportFilterLocation')?.value;
+  const classification = document.getElementById('reportFilterClassification')?.value;
   const status = document.getElementById('reportFilterStatus')?.value;
-  const condition = document.getElementById('reportFilterCondition')?.value;
-  const unitCost = document.getElementById('reportFilterUnitCost')?.value?.trim();
-  const supplier = document.getElementById('reportFilterSupplier')?.value?.trim();
-  const material = document.getElementById('reportFilterMaterial')?.value;
-  const acquisitionDate = document.getElementById('reportFilterAcquisitionDate')?.value;
-  const dateFrom = document.getElementById('reportFilterDateFrom')?.value;
-  const dateTo = document.getElementById('reportFilterDateTo')?.value;
 
-  if (itemCode) params.item_code = itemCode;
-  if (itemName) params.item_name = itemName;
-  if (propertyTag) params.property_tag = propertyTag;
-  if (batchId) params.batch_id = batchId;
+  if (search) params.search = search;
   if (department) {
     const departmentId = parseInt(department, 10);
     if (!Number.isNaN(departmentId)) params.department_id = departmentId;
   }
-  if (custodian) {
-    const custodianId = parseInt(custodian, 10);
-    if (!Number.isNaN(custodianId)) params.custodian_id = custodianId;
+  if (location) {
+    const locationId = parseInt(location, 10);
+    if (!Number.isNaN(locationId)) params.location_id = locationId;
   }
+  if (classification) params.asset_classification = classification;
   if (status) params.status = status;
-  if (condition) params.condition = condition;
-  if (unitCost) params.unit_cost = unitCost;
-  if (supplier) params.supplier_name = supplier;
-  if (material) params.material = material;
-  if (acquisitionDate) params.acquisition_date = acquisitionDate;
-  if (dateFrom) params.date_from = dateFrom;
-  if (dateTo) params.date_to = dateTo;
 
   return params;
 }
@@ -126,28 +90,27 @@ function clearReportFilters() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+
+  if (typeof refreshSearchableSelects === 'function') {
+    refreshSearchableSelects(
+      REPORT_FILTER_FIELD_IDS
+        .map((id) => document.getElementById(id))
+        .filter((el) => el && el.tagName === 'SELECT')
+    );
+  }
 }
 
 async function loadReportFilterData() {
-  const [deptRes, filterRes] = await Promise.allSettled([
-    API.getDepartments(),
-    API.getReportFilterOptions()
+  const [deptRes, locRes] = await Promise.allSettled([
+    API.getCategories(),
+    API.getLocations()
   ]);
 
-  if (filterRes.status === 'fulfilled' && filterRes.value?.data) {
-    filterOptions = {
-      materials: filterRes.value.data.materials || filterOptions.materials,
-      statuses: filterRes.value.data.statuses || filterOptions.statuses,
-      conditions: filterRes.value.data.conditions || filterOptions.conditions,
-      custodians: filterRes.value.data.custodians || filterOptions.custodians
-    };
-    if (Array.isArray(filterRes.value.data.departments) && filterRes.value.data.departments.length) {
-      departments = filterRes.value.data.departments;
-    }
-  }
-
-  if (!departments.length && deptRes.status === 'fulfilled' && Array.isArray(deptRes.value?.data)) {
+  if (deptRes.status === 'fulfilled' && Array.isArray(deptRes.value?.data)) {
     departments = deptRes.value.data;
+  }
+  if (locRes.status === 'fulfilled' && Array.isArray(locRes.value?.data)) {
+    locations = locRes.value.data;
   }
 }
 
@@ -161,71 +124,61 @@ async function renderReportFilters(type) {
     return;
   }
 
-  if (!departments.length) {
+  if (!departments.length || !locations.length) {
     await loadReportFilterData();
   }
 
-  const deptOptions = departments.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
-  const custodianOptions = filterOptions.custodians.map((c) => `<option value="${c.id}">${c.full_name}</option>`).join('');
-  const statusOptions = filterOptions.statuses.map((s) => `<option value="${s}">${REPORT_STATUS_LABELS[s] || s}</option>`).join('');
-  const conditionOptions = filterOptions.conditions.map((c) => `<option value="${c}">${c}</option>`).join('');
-  const materialOptions = filterOptions.materials.map((m) => `<option value="${m}">${m}</option>`).join('');
+  const classificationOptions = (typeof getFilterClassifications === 'function'
+    ? getFilterClassifications()
+    : ['Semi-Durable', 'Durable']
+  ).map((c) => `<option value="${c}">${c}</option>`).join('');
 
-  bar.style.display = 'grid';
-  bar.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))';
-  bar.style.gap = '8px';
-  bar.style.alignItems = 'end';
+  const deptOptions = departments.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+  const locationOptions = locations.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+
+  // Match Inventory filters-bar layout and controls.
+  bar.style.display = '';
+  bar.style.gridTemplateColumns = '';
+  bar.style.gap = '';
+  bar.style.alignItems = '';
 
   bar.innerHTML = `
-    <input type="text" class="form-control-custom" id="reportFilterItemCode" placeholder="Item Code" title="Item Code">
-    <input type="text" class="form-control-custom" id="reportFilterItemName" placeholder="Item Name" title="Item Name">
-    <input type="text" class="form-control-custom" id="reportFilterPropertyTag" placeholder="Property Tag" title="Property Tag">
-    <input type="text" class="form-control-custom" id="reportFilterBatchId" placeholder="Batch ID" title="Batch ID">
-    <select class="form-control-custom" id="reportFilterDepartment" title="Department / Category">
+    <input type="text" class="form-control-custom" id="reportSearchInput" placeholder="Search items...">
+    <select class="form-control-custom" id="reportFilterDepartment">
       <option value="">All Departments</option>
       ${deptOptions}
     </select>
-    <select class="form-control-custom" id="reportFilterCustodian" title="Custodian">
-      <option value="">All Custodians</option>
-      ${custodianOptions}
+    <select class="form-control-custom" id="reportFilterLocation">
+      <option value="">All Locations</option>
+      ${locationOptions}
     </select>
-    <select class="form-control-custom" id="reportFilterStatus" title="Status">
+    <select class="form-control-custom" id="reportFilterClassification">
+      <option value="">All Classifications</option>
+      ${classificationOptions}
+    </select>
+    <select class="form-control-custom" id="reportFilterStatus">
       <option value="">All Status</option>
-      ${statusOptions}
+      <option>Available</option>
+      <option>Borrowed</option>
+      <option>Under Maintenance</option>
+      <option>Disposed</option>
     </select>
-    <select class="form-control-custom" id="reportFilterCondition" title="Condition">
-      <option value="">All Conditions</option>
-      ${conditionOptions}
-    </select>
-    <input type="number" class="form-control-custom" id="reportFilterUnitCost" placeholder="Unit Cost" title="Unit Cost" min="0" step="0.01">
-    <input type="text" class="form-control-custom" id="reportFilterSupplier" placeholder="Supplier" title="Supplier">
-    <select class="form-control-custom" id="reportFilterMaterial" title="Material">
-      <option value="">All Materials</option>
-      ${materialOptions}
-    </select>
-    <input type="date" class="form-control-custom" id="reportFilterAcquisitionDate" title="Acquisition Date">
-    <input type="date" class="form-control-custom" id="reportFilterDateFrom" title="Date From">
-    <input type="date" class="form-control-custom" id="reportFilterDateTo" title="Date To">
-    <div style="display:flex;gap:8px;grid-column:1/-1;">
-      <button class="btn-primary-custom btn-sm-custom" type="button" id="reportApplyFilters"><i class="bi bi-funnel"></i> Apply Filters</button>
-      <button class="btn-outline-custom btn-sm-custom" type="button" id="reportClearFilters">Clear</button>
-    </div>
+    <button type="button" class="btn-outline-custom btn-sm-custom" id="reportClearFilters">Clear Filters</button>
   `;
 
-  document.getElementById('reportApplyFilters')?.addEventListener('click', () => loadReportData(type, { resetPage: true }));
+  const reloadReport = () => loadReportData(type, { resetPage: true });
+  const debouncedReload = debounce(reloadReport, 300);
+
   document.getElementById('reportClearFilters')?.addEventListener('click', () => {
     clearReportFilters();
-    loadReportData(type, { resetPage: true });
+    reloadReport();
   });
 
-  bar.querySelectorAll('input').forEach((input) => {
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        loadReportData(type, { resetPage: true });
-      }
-    });
-  });
+  document.getElementById('reportSearchInput')?.addEventListener('input', debouncedReload);
+  document.getElementById('reportFilterDepartment')?.addEventListener('change', reloadReport);
+  document.getElementById('reportFilterLocation')?.addEventListener('change', reloadReport);
+  document.getElementById('reportFilterClassification')?.addEventListener('change', reloadReport);
+  document.getElementById('reportFilterStatus')?.addEventListener('change', reloadReport);
 
   initSearchableSelects(bar);
 }

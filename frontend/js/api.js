@@ -138,6 +138,76 @@ const API = {
   },
   confirmInventoryImport: (previewToken) => API.post('/inventory/import/confirm', { preview_token: previewToken }),
 
+  downloadAssetWithComponentsTemplate: async () => {
+    const response = await fetch('/api/inventory/import/with-components/template', { credentials: 'include' });
+    if (response.status === 401) {
+      if (typeof clearAuthCache === 'function') clearAuthCache();
+      window.location.href = '/index.html';
+      return null;
+    }
+    if (response.status === 403) {
+      throw new Error('Inventory management requires Administrator or Property Manager access');
+    }
+    if (!response.ok) {
+      let message = 'Unable to download template';
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
+    return response.blob();
+  },
+  previewAssetWithComponentsImport: (file, options = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return API.request('/inventory/import/with-components/preview', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+      signal: options.signal
+    });
+  },
+  confirmAssetWithComponentsImport: (previewToken) =>
+    API.post('/inventory/import/with-components/confirm', { preview_token: previewToken }),
+
+  downloadComponentImportTemplate: async () => {
+    const response = await fetch('/api/components/import/template', { credentials: 'include' });
+    if (response.status === 401) {
+      if (typeof clearAuthCache === 'function') clearAuthCache();
+      window.location.href = '/index.html';
+      return null;
+    }
+    if (response.status === 403) {
+      throw new Error('Inventory management requires Administrator or Property Manager access');
+    }
+    if (!response.ok) {
+      let message = 'Unable to download template';
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
+    return response.blob();
+  },
+  previewComponentImport: (file, options = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return API.request('/components/import/preview', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+      signal: options.signal
+    });
+  },
+  confirmComponentImport: (previewToken) =>
+    API.post('/components/import/confirm', { preview_token: previewToken }),
+
   getCategories: () => API.get('/categories'),
   createCategory: (data) => API.post('/categories', data),
   updateCategory: (id, data) => API.put(`/categories/${id}`, data),
@@ -238,6 +308,7 @@ const API = {
 
   getComponents: (parentId) => API.get(`/components/parent/${parentId}`),
   createAssetComponent: (data) => API.post('/components', data),
+  updateAssetComponent: (id, data) => API.put(`/components/${id}`, data),
   replaceAssetComponent: (id, data) => API.post(`/components/${id}/replace`, data),
   createComponentReplacement: (data) => API.post('/components', data),
 

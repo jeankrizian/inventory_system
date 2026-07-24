@@ -119,6 +119,37 @@
               <div class="form-group"><label>Unit Cost</label><input type="number" class="form-control-custom" id="itemUnitCost" min="0" step="0.01" placeholder="0.00"></div>
             </div>
           </div>
+
+          <div class="form-section" id="editComponentsSection" style="display:none;margin-top:20px;margin-bottom:0;border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 6px;">Component Details</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Edit existing linked components. Changes are saved with this item. Parent asset, Property Tag, and Item Code are not changed.</p>
+            <div id="editComponentsList"></div>
+          </div>
+
+          <div class="form-section" id="systemUnitComponentsSection" style="display:none;margin-top:20px;margin-bottom:0;border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 6px;">System Unit Components</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Optional. Fill any fields to create components with this System Unit. Leave blank to create the inventory item only. You can still add components later from the item.</p>
+            <div class="form-row">
+              <div class="form-group"><label>Processor</label><input type="text" class="form-control-custom" id="suCompProcessor" placeholder="Optional"></div>
+              <div class="form-group"><label>RAM</label><input type="text" class="form-control-custom" id="suCompRam" placeholder="Optional"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Storage</label><input type="text" class="form-control-custom" id="suCompStorage" placeholder="Optional"></div>
+              <div class="form-group"><label>Motherboard</label><input type="text" class="form-control-custom" id="suCompMotherboard" placeholder="Optional"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Power Supply</label><input type="text" class="form-control-custom" id="suCompPowerSupply" placeholder="Optional"></div>
+              <div class="form-group"><label>Graphics Card</label><input type="text" class="form-control-custom" id="suCompGraphicsCard" placeholder="Optional"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Monitor</label><input type="text" class="form-control-custom" id="suCompMonitor" placeholder="Optional"></div>
+              <div class="form-group"><label>Keyboard</label><input type="text" class="form-control-custom" id="suCompKeyboard" placeholder="Optional"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Mouse</label><input type="text" class="form-control-custom" id="suCompMouse" placeholder="Optional"></div>
+              <div class="form-group"><label>Remarks</label><input type="text" class="form-control-custom" id="suCompRemarks" placeholder="Optional remarks for components"></div>
+            </div>
+          </div>
         </div>
         <div class="modal-footer-custom">
           <button type="button" class="btn-outline-custom" onclick="closeModal('itemModal')">Cancel</button>
@@ -365,6 +396,80 @@
       <div class="modal-footer-custom" id="inventoryImportFooter">
         <button type="button" class="btn-outline-custom" onclick="closeInventoryImportModal()">Cancel</button>
         <button type="button" class="btn-primary-custom" id="inventoryImportValidateBtn">
+          <i class="bi bi-file-earmark-check"></i> Validate File
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="componentImportModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Import Components (Existing Assets)</h3>
+        <button class="btn-icon" type="button" title="Close" aria-label="Close" onclick="closeComponentImportModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="modal-body-custom">
+        <div id="componentImportUploadStep">
+          <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px;">
+            Upload an Excel file (.xlsx) to add components to existing assets by Property Tag.
+            Download the Components Template (Existing Assets) first. This does not change existing components.
+          </p>
+          <div class="form-group">
+            <label>Excel File *</label>
+            <input type="file" class="form-control-custom" id="componentImportFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+          </div>
+        </div>
+        <div id="componentImportPreviewStep" style="display:none;">
+          <div id="componentImportSummary" style="margin-bottom:14px;"></div>
+          <div id="componentImportReasons" style="margin-bottom:14px;"></div>
+          <div class="table-responsive" id="componentImportInvalidTable" style="max-height:240px;overflow:auto;"></div>
+        </div>
+        <div id="componentImportResultStep" style="display:none;">
+          <div id="componentImportResultSummary"></div>
+        </div>
+      </div>
+      <div class="modal-footer-custom" id="componentImportFooter">
+        <button type="button" class="btn-outline-custom" onclick="closeComponentImportModal()">Cancel</button>
+        <button type="button" class="btn-primary-custom" id="componentImportValidateBtn">
+          <i class="bi bi-file-earmark-check"></i> Validate File
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="awcImportModal">
+    <div class="modal-content-custom" style="max-width:720px;">
+      <div class="modal-header-custom">
+        <h3>Import Asset with Components</h3>
+        <button class="btn-icon" type="button" title="Close" aria-label="Close" onclick="closeAssetWithComponentsImportModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="modal-body-custom">
+        <div id="awcImportUploadStep">
+          <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px;">
+            Upload an Excel file (.xlsx) to create inventory items and optional components in one import.
+            Download the Asset with Components Template first.
+          </p>
+          <div class="form-group">
+            <label>Excel File *</label>
+            <input type="file" class="form-control-custom" id="awcImportFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+          </div>
+        </div>
+        <div id="awcImportPreviewStep" style="display:none;">
+          <div id="awcImportSummary" style="margin-bottom:14px;"></div>
+          <div id="awcImportReasons" style="margin-bottom:14px;"></div>
+          <div class="table-responsive" id="awcImportInvalidTable" style="max-height:240px;overflow:auto;"></div>
+        </div>
+        <div id="awcImportResultStep" style="display:none;">
+          <div id="awcImportResultSummary"></div>
+        </div>
+      </div>
+      <div class="modal-footer-custom" id="awcImportFooter">
+        <button type="button" class="btn-outline-custom" onclick="closeAssetWithComponentsImportModal()">Cancel</button>
+        <button type="button" class="btn-primary-custom" id="awcImportValidateBtn">
           <i class="bi bi-file-earmark-check"></i> Validate File
         </button>
       </div>

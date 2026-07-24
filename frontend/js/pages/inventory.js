@@ -438,8 +438,48 @@ async function initInventoryPage() {
   const permissions = getInventoryPermissions(currentUser);
   const actionButtons = [];
   if (permissions.canImportInventory) {
-    actionButtons.push(`<button type="button" class="btn-outline-custom" id="downloadImportTemplateBtn"><i class="bi bi-download"></i> Download Excel Template</button>`);
-    actionButtons.push(`<button type="button" class="btn-secondary-custom" id="importInventoryBtn"><i class="bi bi-file-earmark-excel"></i> Import Inventory</button>`);
+    actionButtons.push(`
+      <div class="toolbar-dropdown" id="downloadToolbarDropdown">
+        <button type="button" class="btn-outline-custom" id="downloadToolbarBtn" aria-haspopup="true" aria-expanded="false">
+          <i class="bi bi-download"></i> Download <i class="bi bi-chevron-down" style="font-size:11px;margin-left:2px;"></i>
+        </button>
+        <div class="dropdown-menu-custom" id="downloadToolbarMenu" role="menu">
+          <button type="button" class="toolbar-dropdown-item" id="downloadImportTemplateBtn" role="menuitem">
+            <strong>Inventory Template</strong>
+            <span>For importing inventory items only.</span>
+          </button>
+          <button type="button" class="toolbar-dropdown-item" id="downloadAssetWithComponentsTemplateBtn" role="menuitem">
+            <strong>Asset with Components Template</strong>
+            <span>For importing inventory items together with their replaceable components.</span>
+          </button>
+          <button type="button" class="toolbar-dropdown-item" id="downloadComponentImportTemplateBtn" role="menuitem">
+            <strong>Components Template (Existing Assets)</strong>
+            <span>For adding components to assets that already have Property Tags.</span>
+          </button>
+        </div>
+      </div>
+    `);
+    actionButtons.push(`
+      <div class="toolbar-dropdown" id="importToolbarDropdown">
+        <button type="button" class="btn-secondary-custom" id="importToolbarBtn" aria-haspopup="true" aria-expanded="false">
+          <i class="bi bi-file-earmark-excel"></i> Import <i class="bi bi-chevron-down" style="font-size:11px;margin-left:2px;"></i>
+        </button>
+        <div class="dropdown-menu-custom" id="importToolbarMenu" role="menu">
+          <button type="button" class="toolbar-dropdown-item" id="importInventoryBtn" role="menuitem">
+            <strong>Inventory Import</strong>
+            <span>Import inventory items only.</span>
+          </button>
+          <button type="button" class="toolbar-dropdown-item" id="importAssetWithComponentsBtn" role="menuitem">
+            <strong>Asset with Components Import</strong>
+            <span>Create inventory items and their components in one upload.</span>
+          </button>
+          <button type="button" class="toolbar-dropdown-item" id="importComponentsBtn" role="menuitem">
+            <strong>Components Import (Existing Assets)</strong>
+            <span>Add components to existing assets by Property Tag.</span>
+          </button>
+        </div>
+      </div>
+    `);
   }
   if (permissions.canManageInventory) {
     actionButtons.push(`<button type="button" class="btn-primary-custom" id="addItemBtn"><i class="bi bi-plus-lg"></i> Add Item</button>`);
@@ -467,6 +507,7 @@ async function initInventoryPage() {
           <option>Available</option><option>Borrowed</option>
           <option>Under Maintenance</option><option>Disposed</option>
         </select>
+        <button type="button" class="btn-outline-custom btn-sm-custom" id="clearInventoryFiltersBtn">Clear Filters</button>
       </div>
       <div class="table-responsive" id="inventoryTable">
         <div class="loading-spinner"><i class="bi bi-arrow-repeat"></i> Loading...</div>
@@ -482,12 +523,48 @@ async function initInventoryPage() {
   `;
 
   document.getElementById('addItemBtn')?.addEventListener('click', openAddModal);
-  document.getElementById('downloadImportTemplateBtn')?.addEventListener('click', downloadInventoryImportTemplate);
-  document.getElementById('importInventoryBtn')?.addEventListener('click', openInventoryImportModal);
+  document.getElementById('downloadImportTemplateBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    downloadInventoryImportTemplate();
+  });
+  document.getElementById('downloadAssetWithComponentsTemplateBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    downloadAssetWithComponentsTemplate();
+  });
+  document.getElementById('downloadComponentImportTemplateBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    downloadComponentImportTemplate();
+  });
+  document.getElementById('importInventoryBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    openInventoryImportModal();
+  });
+  document.getElementById('importAssetWithComponentsBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    openAssetWithComponentsImportModal();
+  });
+  document.getElementById('importComponentsBtn')?.addEventListener('click', () => {
+    closeToolbarDropdowns();
+    openComponentImportModal();
+  });
+  document.getElementById('downloadToolbarBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleToolbarDropdown('downloadToolbarMenu', 'downloadToolbarBtn');
+  });
+  document.getElementById('importToolbarBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleToolbarDropdown('importToolbarMenu', 'importToolbarBtn');
+  });
   document.getElementById('inventoryImportValidateBtn')?.addEventListener('click', validateInventoryImportFile);
+  document.getElementById('componentImportValidateBtn')?.addEventListener('click', validateComponentImportFile);
+  document.getElementById('awcImportValidateBtn')?.addEventListener('click', validateAssetWithComponentsImportFile);
   document.getElementById('componentShowAddBtn')?.addEventListener('click', () => showComponentForm('add'));
   document.getElementById('componentShowListBtn')?.addEventListener('click', showComponentListPanel);
   document.getElementById('componentCancelFormBtn')?.addEventListener('click', showComponentListPanel);
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.toolbar-dropdown')) closeToolbarDropdowns();
+  });
 
   await loadDropdowns();
   populateClassificationFilter();
@@ -502,6 +579,10 @@ async function initInventoryPage() {
   document.getElementById('filterLocation').addEventListener('change', () => loadItems({ resetPage: true }));
   document.getElementById('filterClassification').addEventListener('change', () => loadItems({ resetPage: true }));
   document.getElementById('filterStatus').addEventListener('change', () => loadItems({ resetPage: true }));
+  document.getElementById('clearInventoryFiltersBtn')?.addEventListener('click', () => {
+    clearInventoryFilters();
+    loadItems({ resetPage: true });
+  });
   document.getElementById('inventoryPrevPage')?.addEventListener('click', () => {
     if (inventoryPage <= 1) return;
     inventoryPage -= 1;
@@ -512,7 +593,11 @@ async function initInventoryPage() {
     inventoryPage += 1;
     loadItems();
   });
-  document.getElementById('itemClassification').addEventListener('change', applyClassificationFormState);
+  document.getElementById('itemClassification').addEventListener('change', () => {
+    applyClassificationFormState();
+    syncSystemUnitComponentsSection();
+  });
+  document.getElementById('itemName')?.addEventListener('input', syncSystemUnitComponentsSection);
   document.getElementById('itemQuantity').addEventListener('input', syncCreatePreviewDisplay);
   bindGuardedFormSubmit(document.getElementById('itemForm'), saveItem, { loadingText: 'Saving...' });
   bindGuardedFormSubmit(document.getElementById('transferForm'), submitTransfer, { loadingText: 'Submitting...' });
@@ -556,6 +641,21 @@ async function loadDropdowns() {
   populateSelect(document.getElementById('transferLocation'), locations);
   populateSelect(document.getElementById('transferDepartment'), categories);
   syncItemFormSearchableSelects();
+}
+
+function clearInventoryFilters() {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = '';
+
+  const filterIds = ['filterCategory', 'filterLocation', 'filterClassification', 'filterStatus'];
+  filterIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  if (typeof refreshSearchableSelects === 'function') {
+    refreshSearchableSelects(filterIds.map((id) => document.getElementById(id)).filter(Boolean));
+  }
 }
 
 async function loadItems(options = {}) {
@@ -745,6 +845,9 @@ function openAddModal() {
   setAssetFormMode(false);
   syncClassificationOptions('');
   applyClassificationFormState();
+  resetSystemUnitComponentFields();
+  syncSystemUnitComponentsSection();
+  clearEditComponentsSection();
   syncItemFormSearchableSelects();
   openModal('itemModal');
 }
@@ -783,11 +886,149 @@ async function editItem(id) {
     document.getElementById('itemNextMaintenance').value = item.next_maintenance_date ? item.next_maintenance_date.split('T')[0] : '';
     document.getElementById('itemServiceProvider').value = item.service_provider || '';
     applyClassificationFormState();
+    resetSystemUnitComponentFields();
+    syncSystemUnitComponentsSection();
     syncItemFormSearchableSelects();
     openModal('itemModal');
+    await loadEditComponentsForItem(item);
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+function escapeHtmlAttr(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function clearEditComponentsSection() {
+  const section = document.getElementById('editComponentsSection');
+  const list = document.getElementById('editComponentsList');
+  if (list) list.innerHTML = '';
+  if (section) section.style.display = 'none';
+}
+
+function renderEditComponentsList(components = []) {
+  const section = document.getElementById('editComponentsSection');
+  const list = document.getElementById('editComponentsList');
+  if (!section || !list) return;
+
+  if (!components.length) {
+    clearEditComponentsSection();
+    return;
+  }
+
+  list.innerHTML = components.map((c) => {
+    const id = Number(c.id);
+    const name = c.component_name || '';
+    const brand = c.brand || '';
+    const model = c.model || '';
+    const serial = c.serial_number || '';
+    const remarks = c.remarks || '';
+    return `
+      <div class="edit-component-block" data-component-id="${id}"
+           data-original-name="${escapeHtmlAttr(name)}"
+           data-original-brand="${escapeHtmlAttr(brand)}"
+           data-original-model="${escapeHtmlAttr(model)}"
+           data-original-serial="${escapeHtmlAttr(serial)}"
+           data-original-remarks="${escapeHtmlAttr(remarks)}"
+           style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-color,#e5e7eb);">
+        <h5 style="font-size:13px;font-weight:600;margin:0 0 10px;">${escapeHtmlAttr(name || 'Component')}</h5>
+        <div class="form-group">
+          <label>Component Name</label>
+          <input type="text" class="form-control-custom edit-comp-name" value="${escapeHtmlAttr(name)}" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Brand</label><input type="text" class="form-control-custom edit-comp-brand" value="${escapeHtmlAttr(brand)}" placeholder="Optional"></div>
+          <div class="form-group"><label>Model / Capacity</label><input type="text" class="form-control-custom edit-comp-model" value="${escapeHtmlAttr(model)}" placeholder="Optional"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Serial Number</label><input type="text" class="form-control-custom edit-comp-serial" value="${escapeHtmlAttr(serial)}" placeholder="Optional"></div>
+          <div class="form-group"><label>Remarks</label><input type="text" class="form-control-custom edit-comp-remarks" value="${escapeHtmlAttr(remarks)}" placeholder="Optional"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  section.style.display = '';
+}
+
+async function loadEditComponentsForItem(item) {
+  clearEditComponentsSection();
+  if (!item?.id) return;
+  if (!canReplaceComponent(item.asset_classification)) return;
+  if (!canManageInventory(currentUser)) return;
+
+  try {
+    const res = await API.getComponents(item.id);
+    const components = Array.isArray(res?.data?.components) ? res.data.components : [];
+    renderEditComponentsList(components);
+  } catch (err) {
+    // Parent may not support components; keep edit item usable.
+    clearEditComponentsSection();
+  }
+}
+
+function collectEditedComponentUpdates() {
+  const blocks = document.querySelectorAll('#editComponentsList .edit-component-block');
+  const updates = [];
+  for (const block of blocks) {
+    const id = parseInt(block.getAttribute('data-component-id'), 10);
+    if (!id) continue;
+    const name = block.querySelector('.edit-comp-name')?.value.trim() || '';
+    const brand = block.querySelector('.edit-comp-brand')?.value.trim() || '';
+    const model = block.querySelector('.edit-comp-model')?.value.trim() || '';
+    const serial = block.querySelector('.edit-comp-serial')?.value.trim() || '';
+    const remarks = block.querySelector('.edit-comp-remarks')?.value.trim() || '';
+
+    if (!name) {
+      return { error: 'Component name is required for all listed components' };
+    }
+
+    const original = {
+      name: block.getAttribute('data-original-name') || '',
+      brand: block.getAttribute('data-original-brand') || '',
+      model: block.getAttribute('data-original-model') || '',
+      serial: block.getAttribute('data-original-serial') || '',
+      remarks: block.getAttribute('data-original-remarks') || ''
+    };
+
+    const changed = name !== original.name
+      || brand !== original.brand
+      || model !== original.model
+      || serial !== original.serial
+      || remarks !== original.remarks;
+
+    if (!changed) continue;
+
+    updates.push({
+      id,
+      component_name: name,
+      brand: brand || null,
+      model: model || null,
+      serial_number: serial || null,
+      remarks: remarks || null
+    });
+  }
+  return { updates };
+}
+
+async function saveEditedComponents() {
+  const collected = collectEditedComponentUpdates();
+  if (collected.error) {
+    throw new Error(collected.error);
+  }
+  const updates = collected.updates || [];
+  let saved = 0;
+  for (const payload of updates) {
+    const { id, ...data } = payload;
+    await API.updateAssetComponent(id, data);
+    saved += 1;
+  }
+  return saved;
 }
 
 function getItemFormData() {
@@ -826,6 +1067,95 @@ function getItemFormData() {
   return data;
 }
 
+/** Optional inline component fields shown only when adding a System Unit. */
+const SYSTEM_UNIT_COMPONENT_FIELDS = [
+  { id: 'suCompProcessor', name: 'Processor' },
+  { id: 'suCompRam', name: 'RAM' },
+  { id: 'suCompStorage', name: 'Storage' },
+  { id: 'suCompMotherboard', name: 'Motherboard' },
+  { id: 'suCompPowerSupply', name: 'Power Supply' },
+  { id: 'suCompGraphicsCard', name: 'Graphics Card' },
+  { id: 'suCompMonitor', name: 'Monitor' },
+  { id: 'suCompKeyboard', name: 'Keyboard' },
+  { id: 'suCompMouse', name: 'Mouse' }
+];
+
+function isSystemUnitItemName(value) {
+  return String(value || '').trim().toLowerCase() === 'system unit';
+}
+
+function resetSystemUnitComponentFields() {
+  SYSTEM_UNIT_COMPONENT_FIELDS.forEach(({ id }) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const remarks = document.getElementById('suCompRemarks');
+  if (remarks) remarks.value = '';
+}
+
+function syncSystemUnitComponentsSection() {
+  const section = document.getElementById('systemUnitComponentsSection');
+  if (!section) return;
+  const isEdit = Boolean(document.getElementById('itemId')?.value);
+  const show = !isEdit && isSystemUnitItemName(document.getElementById('itemName')?.value);
+  section.style.display = show ? '' : 'none';
+  if (!show) resetSystemUnitComponentFields();
+}
+
+/**
+ * Collect filled System Unit component fields for create-on-save shortcut.
+ * Each filled field becomes one component via the existing Add Component API.
+ */
+function getFilledSystemUnitComponents() {
+  const remarks = document.getElementById('suCompRemarks')?.value.trim() || null;
+  const filled = [];
+  SYSTEM_UNIT_COMPONENT_FIELDS.forEach(({ id, name }) => {
+    const value = document.getElementById(id)?.value.trim();
+    if (!value) return;
+    filled.push({
+      component_name: name,
+      brand: value,
+      remarks
+    });
+  });
+  return filled;
+}
+
+/**
+ * After a System Unit is created, reuse existing POST /api/components for each filled field.
+ * Does not change Add Component modal behavior.
+ */
+async function createSystemUnitComponentsForParents(parentIds, components, options = {}) {
+  const dateInstalled = options.dateInstalled || new Date().toISOString().split('T')[0];
+  const condition = options.condition || 'Good';
+  let created = 0;
+  let failed = 0;
+
+  for (const parentId of parentIds) {
+    for (const component of components) {
+      try {
+        await API.createAssetComponent({
+          parent_asset_id: parentId,
+          component_name: component.component_name,
+          asset_classification: 'Semi-Durable',
+          brand: component.brand || null,
+          model: null,
+          serial_number: null,
+          date_installed: dateInstalled,
+          condition,
+          remarks: component.remarks || null
+        });
+        created += 1;
+      } catch (err) {
+        failed += 1;
+        console.error(`Failed to create component "${component.component_name}" for parent ${parentId}:`, err.message);
+      }
+    }
+  }
+
+  return { created, failed };
+}
+
 async function saveItem(e) {
   e.preventDefault();
   const id = document.getElementById('itemId').value;
@@ -850,17 +1180,63 @@ async function saveItem(e) {
     return;
   }
 
+  const inlineComponents = (!id && isSystemUnitItemName(data.item_name))
+    ? getFilledSystemUnitComponents()
+    : [];
+
+  if (inlineComponents.length && !isFixedAssetClassification(classification)) {
+    showToast('System Unit components require Durable classification', 'error');
+    return;
+  }
+
   try {
     if (id) {
       await API.updateInventoryItem(id, data);
-      showToast('Item updated successfully');
+      let componentSaved = 0;
+      try {
+        componentSaved = await saveEditedComponents();
+      } catch (compErr) {
+        showToast(compErr.message || 'Item saved, but component update failed', 'error');
+        closeModal('itemModal');
+        loadItems();
+        return;
+      }
+      showToast(
+        componentSaved > 0
+          ? `Item updated successfully · ${componentSaved} component(s) updated`
+          : 'Item updated successfully'
+      );
     } else {
       const res = await API.createInventoryItem(data);
       const createdCount = res?.data?.created_count || 1;
       const parCount = res?.data?.generated_par_count || 0;
-      const baseMessage = res?.message || (createdCount > 1 ? `${createdCount} assets created successfully` : 'Item created successfully');
-      showToast(parCount > 1 ? `${baseMessage} (${parCount} PARs generated)` : baseMessage);
+      let baseMessage = res?.message || (createdCount > 1 ? `${createdCount} assets created successfully` : 'Item created successfully');
       const generated = res?.data?.generated_document || res?.data?.custodian_par;
+
+      if (inlineComponents.length) {
+        const parentIds = Array.isArray(res?.data?.created_ids) && res.data.created_ids.length
+          ? res.data.created_ids
+          : (res?.data?.id ? [res.data.id] : []);
+        if (parentIds.length) {
+          const componentResult = await createSystemUnitComponentsForParents(parentIds, inlineComponents, {
+            dateInstalled: data.acquisition_date || new Date().toISOString().split('T')[0],
+            condition: data.condition || 'Good'
+          });
+          if (componentResult.created > 0) {
+            baseMessage += ` · ${componentResult.created} component(s) added`;
+          }
+          if (componentResult.failed > 0) {
+            showToast(`${baseMessage}. ${componentResult.failed} component(s) could not be added — use Add Component on the item.`, 'error');
+          } else {
+            showToast(parCount > 1 ? `${baseMessage} (${parCount} PARs generated)` : baseMessage);
+          }
+        } else {
+          showToast(parCount > 1 ? `${baseMessage} (${parCount} PARs generated)` : baseMessage);
+        }
+      } else {
+        showToast(parCount > 1 ? `${baseMessage} (${parCount} PARs generated)` : baseMessage);
+      }
+
       if (generated) {
         openGeneratedDocument(generated, generated.document_type || 'PAR');
       }
@@ -1826,6 +2202,449 @@ async function confirmInventoryImport() {
     showToast(res.message || 'Import completed');
     await loadItems();
   }, { loadingText: 'Importing...', lockKey: 'inventory-import-confirm' });
+}
+
+let componentImportPreviewToken = null;
+let componentImportPreviewData = null;
+
+function resetComponentImportModal() {
+  componentImportPreviewToken = null;
+  componentImportPreviewData = null;
+  if (typeof clearGuardLock === 'function') {
+    clearGuardLock('component-import-preview');
+  }
+  const fileInput = document.getElementById('componentImportFile');
+  if (fileInput) fileInput.value = '';
+  const uploadStep = document.getElementById('componentImportUploadStep');
+  const previewStep = document.getElementById('componentImportPreviewStep');
+  const resultStep = document.getElementById('componentImportResultStep');
+  if (uploadStep) uploadStep.style.display = 'block';
+  if (previewStep) previewStep.style.display = 'none';
+  if (resultStep) resultStep.style.display = 'none';
+  const footer = document.getElementById('componentImportFooter');
+  if (footer) {
+    footer.innerHTML = `
+      <button type="button" class="btn-outline-custom" onclick="closeComponentImportModal()">Cancel</button>
+      <button type="button" class="btn-primary-custom" id="componentImportValidateBtn">
+        <i class="bi bi-file-earmark-check"></i> Validate File
+      </button>
+    `;
+    document.getElementById('componentImportValidateBtn')?.addEventListener('click', validateComponentImportFile);
+  }
+}
+
+function openComponentImportModal() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  resetComponentImportModal();
+  openModal('componentImportModal');
+}
+
+function closeComponentImportModal() {
+  closeModal('componentImportModal');
+  resetComponentImportModal();
+}
+
+async function downloadComponentImportTemplate() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  try {
+    const blob = await API.downloadComponentImportTemplate();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'asset-components-import-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('Asset Components template downloaded');
+  } catch (err) {
+    showToast(err.message || 'Unable to download template', 'error');
+  }
+}
+
+function renderComponentImportPreview(data) {
+  const summary = data.summary || {};
+  const reasons = summary.reason_summary || [];
+  const invalidRows = data.invalid_rows || [];
+
+  document.getElementById('componentImportUploadStep').style.display = 'none';
+  document.getElementById('componentImportResultStep').style.display = 'none';
+  document.getElementById('componentImportPreviewStep').style.display = 'block';
+
+  document.getElementById('componentImportSummary').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+      <div><strong>Total Records</strong><div>${summary.total_rows || 0}</div></div>
+      <div><strong>Valid Records</strong><div>${summary.valid_records || 0}</div></div>
+      <div><strong>Invalid Records</strong><div>${summary.invalid_records || 0}</div></div>
+    </div>
+  `;
+
+  document.getElementById('componentImportReasons').innerHTML = reasons.length
+    ? `<strong>Reasons</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+    : '<p style="margin:0;color:var(--text-secondary);font-size:13px;">All rows passed validation.</p>';
+
+  if (!(summary.valid_records > 0) && (summary.invalid_records > 0)) {
+    document.getElementById('componentImportReasons').insertAdjacentHTML(
+      'beforeend',
+      `<p style="margin:10px 0 0;color:var(--danger);font-size:13px;">
+        No valid rows to import. Fix Property Tag / Component Type issues, then validate again.
+      </p>`
+    );
+  }
+
+  document.getElementById('componentImportInvalidTable').innerHTML = invalidRows.length
+    ? `<table class="data-table"><thead><tr><th>Row</th><th>Property Tag</th><th>Reasons</th></tr></thead><tbody>
+        ${invalidRows.map((row) => `<tr><td>${row.row_number}</td><td>${row.property_tag || '—'}</td><td>${(row.reasons || []).join('; ')}</td></tr>`).join('')}
+      </tbody></table>`
+    : '';
+
+  const footer = document.getElementById('componentImportFooter');
+  const canImport = (summary.valid_records || 0) > 0;
+  footer.innerHTML = `
+    <button type="button" class="btn-outline-custom" onclick="closeComponentImportModal()">Cancel</button>
+    <button type="button" class="btn-primary-custom" id="componentImportConfirmBtn" ${canImport ? '' : 'disabled'}>
+      <i class="bi bi-cloud-upload"></i> Import Valid Records
+    </button>
+  `;
+  document.getElementById('componentImportConfirmBtn')?.addEventListener('click', confirmComponentImport);
+}
+
+function renderComponentImportResult(data) {
+  document.getElementById('componentImportUploadStep').style.display = 'none';
+  document.getElementById('componentImportPreviewStep').style.display = 'none';
+  document.getElementById('componentImportResultStep').style.display = 'block';
+
+  const reasons = data.reason_summary || [];
+  const failures = data.import_failures || [];
+  document.getElementById('componentImportResultSummary').innerHTML = `
+    <h4 style="margin:0 0 12px;">Import Completed</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
+      <div><strong>Total Rows</strong><div>${data.total_rows || 0}</div></div>
+      <div><strong>Successfully Imported</strong><div>${data.successfully_imported || 0}</div></div>
+      <div><strong>Skipped</strong><div>${data.skipped || 0}</div></div>
+    </div>
+    ${reasons.length
+      ? `<strong>Reason Summary</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+      : ''}
+    ${failures.length
+      ? `<div style="margin-top:12px;"><strong>Import Failures</strong>
+          <div class="table-responsive" style="max-height:180px;overflow:auto;margin-top:8px;">
+            <table class="data-table"><thead><tr><th>Row</th><th>Property Tag</th><th>Reason</th></tr></thead><tbody>
+              ${failures.map((f) => `<tr><td>${f.row_number}</td><td>${f.property_tag || '—'}</td><td>${f.reason || '—'}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+        </div>`
+      : ''}
+  `;
+
+  document.getElementById('componentImportFooter').innerHTML = `
+    <button type="button" class="btn-primary-custom" onclick="closeComponentImportModal()">Done</button>
+  `;
+}
+
+async function validateComponentImportFile() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+
+  const fileInput = document.getElementById('componentImportFile');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('Please choose an Excel file first', 'error');
+    return;
+  }
+
+  const name = String(file.name || '').toLowerCase();
+  if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+    showToast('Only .xlsx or .xls files are allowed', 'error');
+    return;
+  }
+
+  const button = document.getElementById('componentImportValidateBtn');
+  await withSubmitGuard(button, async () => {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), 120000)
+      : null;
+    try {
+      const res = await API.previewComponentImport(
+        file,
+        controller ? { signal: controller.signal } : {}
+      );
+      if (!res?.data) {
+        showToast('Unable to validate file. Please try again.', 'error');
+        return;
+      }
+      componentImportPreviewToken = res.data.preview_token;
+      componentImportPreviewData = res.data;
+      renderComponentImportPreview(res.data);
+    } catch (err) {
+      const aborted = err?.name === 'AbortError'
+        || (typeof err?.message === 'string' && /abort/i.test(err.message));
+      showToast(
+        aborted
+          ? 'Validation timed out. Please try again.'
+          : (err.message || 'Unable to validate file. Please try again.'),
+        'error'
+      );
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, { loadingText: 'Validating...' });
+}
+
+async function confirmComponentImport() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  if (!componentImportPreviewToken) {
+    showToast('Please validate a file first', 'error');
+    return;
+  }
+
+  await guardAsyncAction(async () => {
+    const res = await API.confirmComponentImport(componentImportPreviewToken);
+    componentImportPreviewToken = null;
+    renderComponentImportResult(res.data || {});
+    showToast(res.message || 'Import completed');
+  }, { loadingText: 'Importing...', lockKey: 'component-import-confirm' });
+}
+
+function closeToolbarDropdowns() {
+  ['downloadToolbarMenu', 'importToolbarMenu'].forEach((id) => {
+    document.getElementById(id)?.classList.remove('show');
+  });
+  ['downloadToolbarBtn', 'importToolbarBtn'].forEach((id) => {
+    document.getElementById(id)?.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function toggleToolbarDropdown(menuId, buttonId) {
+  const menu = document.getElementById(menuId);
+  const button = document.getElementById(buttonId);
+  if (!menu || !button) return;
+  const willOpen = !menu.classList.contains('show');
+  closeToolbarDropdowns();
+  if (willOpen) {
+    menu.classList.add('show');
+    button.setAttribute('aria-expanded', 'true');
+  }
+}
+
+async function downloadAssetWithComponentsTemplate() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  try {
+    const blob = await API.downloadAssetWithComponentsTemplate();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'asset-with-components-import-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('Asset with Components template downloaded');
+  } catch (err) {
+    showToast(err.message || 'Unable to download template', 'error');
+  }
+}
+
+let awcImportPreviewToken = null;
+
+function resetAssetWithComponentsImportModal() {
+  awcImportPreviewToken = null;
+  if (typeof clearGuardLock === 'function') {
+    clearGuardLock('awc-import-preview');
+  }
+  const fileInput = document.getElementById('awcImportFile');
+  if (fileInput) fileInput.value = '';
+  const uploadStep = document.getElementById('awcImportUploadStep');
+  const previewStep = document.getElementById('awcImportPreviewStep');
+  const resultStep = document.getElementById('awcImportResultStep');
+  if (uploadStep) uploadStep.style.display = 'block';
+  if (previewStep) previewStep.style.display = 'none';
+  if (resultStep) resultStep.style.display = 'none';
+  const footer = document.getElementById('awcImportFooter');
+  if (footer) {
+    footer.innerHTML = `
+      <button type="button" class="btn-outline-custom" onclick="closeAssetWithComponentsImportModal()">Cancel</button>
+      <button type="button" class="btn-primary-custom" id="awcImportValidateBtn">
+        <i class="bi bi-file-earmark-check"></i> Validate File
+      </button>
+    `;
+    document.getElementById('awcImportValidateBtn')?.addEventListener('click', validateAssetWithComponentsImportFile);
+  }
+}
+
+function openAssetWithComponentsImportModal() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  resetAssetWithComponentsImportModal();
+  openModal('awcImportModal');
+}
+
+function closeAssetWithComponentsImportModal() {
+  closeModal('awcImportModal');
+  resetAssetWithComponentsImportModal();
+}
+
+function renderAssetWithComponentsImportPreview(data) {
+  const summary = data.summary || {};
+  const reasons = summary.reason_summary || [];
+  const invalidRows = data.invalid_rows || [];
+
+  document.getElementById('awcImportUploadStep').style.display = 'none';
+  document.getElementById('awcImportResultStep').style.display = 'none';
+  document.getElementById('awcImportPreviewStep').style.display = 'block';
+
+  document.getElementById('awcImportSummary').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+      <div><strong>Total Records</strong><div>${summary.total_rows || 0}</div></div>
+      <div><strong>Valid Records</strong><div>${summary.valid_records || 0}</div></div>
+      <div><strong>Invalid Records</strong><div>${summary.invalid_records || 0}</div></div>
+      <div><strong>Components Planned</strong><div>${summary.components_planned || 0}</div></div>
+    </div>
+  `;
+
+  document.getElementById('awcImportReasons').innerHTML = reasons.length
+    ? `<strong>Reasons</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+    : '<p style="margin:0;color:var(--text-secondary);font-size:13px;">All rows passed validation.</p>';
+
+  document.getElementById('awcImportInvalidTable').innerHTML = invalidRows.length
+    ? `<table class="data-table"><thead><tr><th>Row</th><th>Item Name</th><th>Reasons</th></tr></thead><tbody>
+        ${invalidRows.map((row) => `<tr><td>${row.row_number}</td><td>${row.item_name || '—'}</td><td>${(row.reasons || []).join('; ')}</td></tr>`).join('')}
+      </tbody></table>`
+    : '';
+
+  const footer = document.getElementById('awcImportFooter');
+  const canImport = (summary.valid_records || 0) > 0;
+  footer.innerHTML = `
+    <button type="button" class="btn-outline-custom" onclick="closeAssetWithComponentsImportModal()">Cancel</button>
+    <button type="button" class="btn-primary-custom" id="awcImportConfirmBtn" ${canImport ? '' : 'disabled'}>
+      <i class="bi bi-cloud-upload"></i> Import Valid Records
+    </button>
+  `;
+  document.getElementById('awcImportConfirmBtn')?.addEventListener('click', confirmAssetWithComponentsImport);
+}
+
+function renderAssetWithComponentsImportResult(data) {
+  document.getElementById('awcImportUploadStep').style.display = 'none';
+  document.getElementById('awcImportPreviewStep').style.display = 'none';
+  document.getElementById('awcImportResultStep').style.display = 'block';
+
+  const reasons = data.reason_summary || [];
+  const failures = data.import_failures || [];
+  document.getElementById('awcImportResultSummary').innerHTML = `
+    <h4 style="margin:0 0 12px;">Import Completed</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
+      <div><strong>Total Rows</strong><div>${data.total_rows || 0}</div></div>
+      <div><strong>Assets Imported</strong><div>${data.successfully_imported || 0}</div></div>
+      <div><strong>Components Imported</strong><div>${data.components_imported || 0}</div></div>
+      <div><strong>PAR Documents Generated</strong><div>${data.pars_generated || 0}</div></div>
+      <div><strong>Skipped</strong><div>${data.skipped || 0}</div></div>
+    </div>
+    ${reasons.length
+      ? `<strong>Reason Summary</strong><ul style="margin:8px 0 0;padding-left:18px;">${reasons.map((r) => `<li>${r.reason} (${r.count})</li>`).join('')}</ul>`
+      : ''}
+    ${failures.length
+      ? `<div style="margin-top:12px;"><strong>Import Failures</strong>
+          <div class="table-responsive" style="max-height:180px;overflow:auto;margin-top:8px;">
+            <table class="data-table"><thead><tr><th>Row</th><th>Item</th><th>Reason</th></tr></thead><tbody>
+              ${failures.map((f) => `<tr><td>${f.row_number}</td><td>${f.item_name || '—'}</td><td>${f.reason || '—'}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+        </div>`
+      : ''}
+  `;
+
+  document.getElementById('awcImportFooter').innerHTML = `
+    <button type="button" class="btn-primary-custom" onclick="closeAssetWithComponentsImportModal()">Done</button>
+  `;
+}
+
+async function validateAssetWithComponentsImportFile() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+
+  const fileInput = document.getElementById('awcImportFile');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('Please choose an Excel file first', 'error');
+    return;
+  }
+
+  const name = String(file.name || '').toLowerCase();
+  if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+    showToast('Only .xlsx or .xls files are allowed', 'error');
+    return;
+  }
+
+  const button = document.getElementById('awcImportValidateBtn');
+  await withSubmitGuard(button, async () => {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), 120000)
+      : null;
+    try {
+      const res = await API.previewAssetWithComponentsImport(
+        file,
+        controller ? { signal: controller.signal } : {}
+      );
+      if (!res?.data) {
+        showToast('Unable to validate file. Please try again.', 'error');
+        return;
+      }
+      awcImportPreviewToken = res.data.preview_token;
+      renderAssetWithComponentsImportPreview(res.data);
+    } catch (err) {
+      const aborted = err?.name === 'AbortError'
+        || (typeof err?.message === 'string' && /abort/i.test(err.message));
+      showToast(
+        aborted
+          ? 'Validation timed out. Please try again.'
+          : (err.message || 'Unable to validate file. Please try again.'),
+        'error'
+      );
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, { loadingText: 'Validating...' });
+}
+
+async function confirmAssetWithComponentsImport() {
+  if (!canManageInventory(currentUser)) {
+    showToast('Administrator or Property Manager access required', 'error');
+    return;
+  }
+  if (!awcImportPreviewToken) {
+    showToast('Please validate a file first', 'error');
+    return;
+  }
+
+  await guardAsyncAction(async () => {
+    const res = await API.confirmAssetWithComponentsImport(awcImportPreviewToken);
+    awcImportPreviewToken = null;
+    renderAssetWithComponentsImportResult(res.data || {});
+    showToast(res.message || 'Import completed');
+    await loadItems();
+  }, { loadingText: 'Importing...', lockKey: 'awc-import-confirm' });
 }
 
 document.addEventListener('DOMContentLoaded', initInventoryPage);

@@ -1,92 +1,15 @@
 const ComponentModel = require('../models/ComponentModel');
-const InventoryModel = require('../models/InventoryModel');
 const { sendSuccess, sendError } = require('../utils/response');
 const { logActivity } = require('../utils/activityLogger');
-const { canManageComponents, normalizeClassification, isFixedAsset, isSemiDurable } = require('../utils/assetClassification');
-const { normalizeCondition, isValidCondition } = require('../utils/conditionOptions');
-const { generateNextItemCode } = require('../utils/itemCodeGenerator');
-
-function trimOrNull(value) {
-  if (value == null) return null;
-  const text = String(value).trim();
-  return text || null;
-}
-
-function normalizeComponentBody(body = {}) {
-  return {
-    component_name: trimOrNull(body.component_name),
-    asset_classification: normalizeClassification(body.asset_classification),
-    brand: trimOrNull(body.brand),
-    model: trimOrNull(body.model),
-    serial_number: trimOrNull(body.serial_number),
-    date_installed: trimOrNull(body.date_installed),
-    condition: normalizeCondition(body.condition),
-    remarks: trimOrNull(body.remarks)
-  };
-}
-
-function resolveComponentClassification(value) {
-  const classification = normalizeClassification(value);
-  if (isFixedAsset(classification) || isSemiDurable(classification)) {
-    return classification;
-  }
-  return null;
-}
-
-async function assertDurableParent(parentId) {
-  const parent = await InventoryModel.findById(parentId);
-  if (!parent || Number(parent.is_archived) === 1) {
-    return { error: { status: 404, message: 'Parent asset not found' } };
-  }
-  if (!canManageComponents(parent.asset_classification)) {
-    return {
-      error: {
-        status: 400,
-        message: 'Components management is only available for Durable assets'
-      }
-    };
-  }
-  return { parent };
-}
-
-/**
- * Create an inventory record linked to the Durable parent.
- * Classification is chosen by the user (Durable or Semi-Durable).
- * Components get their own property tag but do NOT generate a PAR while linked to a parent.
- */
-async function createComponentInventoryItem(parent, fields, conn = null) {
-  const classification = resolveComponentClassification(fields.asset_classification);
-  if (!classification) {
-    throw new Error('Classification must be Durable or Semi-Durable');
-  }
-
-  const itemCode = await generateNextItemCode(parent.department_id, conn || undefined);
-  const result = await InventoryModel.create({
-    item_code: itemCode,
-    item_name: fields.component_name,
-    description: fields.remarks || `Component of ${parent.item_name || parent.item_code}`,
-    department_id: parent.department_id,
-    asset_classification: classification,
-    material: parent.material || null,
-    serial_number: fields.serial_number || null,
-    custodian_id: parent.custodian_id || null,
-    parent_asset_id: parent.id,
-    brand: fields.brand || null,
-    model: fields.model || null,
-    supplier_id: parent.supplier_id || null,
-    acquisition_date: fields.date_installed || null,
-    condition: fields.condition || 'Good',
-    location_id: parent.location_id || null,
-    asset_count: 1
-  });
-
-  const inventoryId = result.first_id;
-  if (!inventoryId) {
-    throw new Error('Unable to create component inventory record');
-  }
-
-  return inventoryId;
-}
+const { isValidCondition } = require('../utils/conditionOptions');
+const {
+  trimOrNull,
+  normalizeComponentBody,
+  resolveComponentClassification,
+  assertDurableParent,
+  createComponentInventoryItem,
+  createComponentForParent
+} = require('../utils/componentCreateHelper');
 
 const ComponentController = {
   async getByParent(req, res) {
@@ -144,30 +67,71 @@ const ComponentController = {
         return sendError(res, 'Invalid condition value', 400);
       }
 
-      const inventoryItemId = await createComponentInventoryItem(check.parent, fields);
-
-      const id = await ComponentModel.createComponent({
-        ...fields,
-        parent_asset_id: parentId,
-        inventory_item_id: inventoryItemId,
-        created_by: req.session.user.id
+      const { component } = await createComponentForParent(check.parent, fields, {
+        userId: req.session.user.id,
+        ip: req.ip,
+        log: true
       });
+
+      sendSuccess(res, component, 'Component added successfully', 201);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  /**
+   * Update editable details of an existing Active component.
+   * Does not change parent, inventory link, status, Property Tags, or Item Codes.
+   */
+  async update(req, res) {
+    try {
+      const componentId = parseInt(req.params.id, 10);
+      if (!componentId) return sendError(res, 'Component id is required', 400);
+
+      const existing = await ComponentModel.findComponentById(componentId);
+      if (!existing) return sendError(res, 'Component not found', 404);
+      if (existing.status !== 'Active') {
+        return sendError(res, 'Only active components can be edited', 400);
+      }
+
+      const check = await assertDurableParent(existing.parent_asset_id);
+      if (check.error) return sendError(res, check.error.message, check.error.status);
+
+      const componentName = trimOrNull(req.body.component_name);
+      if (!componentName) {
+        return sendError(res, 'Component name is required', 400);
+      }
+
+      const details = {
+        component_name: componentName,
+        brand: trimOrNull(req.body.brand),
+        model: trimOrNull(req.body.model),
+        serial_number: trimOrNull(req.body.serial_number),
+        remarks: trimOrNull(req.body.remarks)
+      };
+
+      const updated = await ComponentModel.updateDetails(componentId, details);
+      if (!updated) {
+        return sendError(res, 'Unable to update component', 400);
+      }
 
       await logActivity(
         req.session.user.id,
-        'CREATE',
+        'UPDATE',
         'Component',
-        `Added component "${fields.component_name}" to ${check.parent.item_code}`,
+        `Updated component "${details.component_name}" on ${check.parent.item_code}`,
         req.ip,
         {
           entity_type: 'inventory_item',
-          entity_id: parentId,
-          reference_code: check.parent.property_tag || check.parent.item_code
+          entity_id: existing.parent_asset_id,
+          reference_code: check.parent.property_tag || check.parent.item_code,
+          old_value: existing.component_name,
+          new_value: details.component_name
         }
       );
 
-      const component = await ComponentModel.findComponentById(id);
-      sendSuccess(res, component, 'Component added successfully', 201);
+      const component = await ComponentModel.findComponentById(componentId);
+      sendSuccess(res, component, 'Component updated successfully');
     } catch (err) {
       sendError(res, err.message, 500);
     }
@@ -208,17 +172,11 @@ const ComponentController = {
 
       try {
         await connection.beginTransaction();
-
         const marked = await ComponentModel.markReplaced(componentId, connection);
-        if (!marked) {
-          throw new Error('Component is no longer active');
-        }
-
-        // Detach old linked inventory so it is not orphaned under the parent
+        if (!marked) throw new Error('Component is no longer active');
         if (existing.inventory_item_id) {
           await ComponentModel.detachInventoryItem(existing.inventory_item_id, connection);
         }
-
         await connection.commit();
       } catch (err) {
         await connection.rollback();
@@ -227,9 +185,6 @@ const ComponentController = {
         connection.release();
       }
 
-      // Create new inventory + component outside the replace txn
-      // (InventoryModel.create manages its own connection/transaction)
-      // No PAR is generated while the item remains a linked component.
       newInventoryItemId = await createComponentInventoryItem(check.parent, {
         ...fields,
         date_installed: fields.date_installed || replacementDate
@@ -238,7 +193,6 @@ const ComponentController = {
       const connection2 = await pool.getConnection();
       try {
         await connection2.beginTransaction();
-
         newComponentId = await ComponentModel.createComponent({
           ...fields,
           parent_asset_id: existing.parent_asset_id,
@@ -294,6 +248,102 @@ const ComponentController = {
         new_component_id: newComponentId,
         new_inventory_item_id: newInventoryItemId
       }, 'Component replaced successfully');
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async downloadImportTemplate(req, res) {
+    try {
+      const { buildTemplateBuffer } = require('../utils/componentImportService');
+      const buffer = await buildTemplateBuffer();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="asset-components-import-template.xlsx"');
+      res.send(buffer);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async previewImport(req, res) {
+    try {
+      const {
+        parseWorkbookBuffer,
+        validateImportRows,
+        storePreview
+      } = require('../utils/componentImportService');
+
+      if (!req.file?.buffer?.length) {
+        return sendError(res, 'Excel file is required', 400);
+      }
+
+      const originalName = String(req.file.originalname || '').toLowerCase();
+      const isXlsx = originalName.endsWith('.xlsx')
+        || req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const isXls = originalName.endsWith('.xls');
+      if (!isXlsx && !isXls) {
+        return sendError(res, 'Only .xlsx or .xls files are allowed', 400);
+      }
+      if (isXls && !isXlsx) {
+        return sendError(res, 'Legacy .xls format is not supported. Please save the file as .xlsx and try again.', 400);
+      }
+
+      const rawRows = await parseWorkbookBuffer(req.file.buffer);
+      const validation = await validateImportRows(rawRows);
+      const previewToken = storePreview(req.session.user.id, validation);
+
+      sendSuccess(res, {
+        preview_token: previewToken,
+        summary: validation.summary,
+        invalid_rows: validation.invalidRows.slice(0, 100),
+        valid_preview: validation.validRows.slice(0, 20).map((row) => ({
+          row_number: row.row_number,
+          property_tag: row.property_tag,
+          component_type: row.component_type,
+          component_name: row.payload.component_name,
+          brand: row.payload.brand
+        }))
+      }, 'Import preview ready');
+    } catch (err) {
+      sendError(res, err.message || 'Unable to preview import', 400);
+    }
+  },
+
+  async confirmImport(req, res) {
+    try {
+      const {
+        takePreview,
+        commitValidRows
+      } = require('../utils/componentImportService');
+
+      const token = String(req.body?.preview_token || '').trim();
+      if (!token) return sendError(res, 'Preview token is required', 400);
+
+      const preview = takePreview(token, req.session.user.id);
+      if (!preview) {
+        return sendError(res, 'Import preview expired or not found. Please upload the file again.', 400);
+      }
+      if (!preview.validRows.length) {
+        return sendError(res, 'No valid records to import', 400);
+      }
+
+      const { imported, failures } = await commitValidRows(preview.validRows, req.session.user.id);
+
+      await logActivity(
+        req.session.user.id,
+        'IMPORT',
+        'Component',
+        `Imported ${imported} component(s) from Excel (${preview.summary.total_rows} rows, ${preview.summary.invalid_records} skipped)`,
+        req.ip
+      );
+
+      sendSuccess(res, {
+        total_rows: preview.summary.total_rows,
+        successfully_imported: imported,
+        skipped: preview.summary.invalid_records + failures.length,
+        reason_summary: preview.summary.reason_summary,
+        import_failures: failures
+      }, 'Import completed');
     } catch (err) {
       sendError(res, err.message, 500);
     }

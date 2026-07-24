@@ -560,6 +560,125 @@ const InventoryController = {
     } catch (err) {
       sendError(res, err.message, 500);
     }
+  },
+
+  async downloadAssetWithComponentsTemplate(req, res) {
+    try {
+      const { buildTemplateBuffer: buildCombinedTemplate } = require('../utils/assetWithComponentsImportService');
+      const buffer = await buildCombinedTemplate();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="asset-with-components-import-template.xlsx"');
+      res.send(buffer);
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
+  },
+
+  async previewAssetWithComponentsImport(req, res) {
+    try {
+      const {
+        parseWorkbookBuffer: parseCombinedWorkbook,
+        validateImportRowsWithComponents,
+        storePreview: storeCombinedPreview
+      } = require('../utils/assetWithComponentsImportService');
+
+      if (!req.file?.buffer?.length) {
+        return sendError(res, 'Excel file is required', 400);
+      }
+
+      const originalName = String(req.file.originalname || '').toLowerCase();
+      const isXlsx = originalName.endsWith('.xlsx')
+        || req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const isXls = originalName.endsWith('.xls');
+      if (!isXlsx && !isXls) {
+        return sendError(res, 'Only .xlsx or .xls files are allowed', 400);
+      }
+      if (isXls && !isXlsx) {
+        return sendError(res, 'Legacy .xls format is not supported. Please save the file as .xlsx and try again.', 400);
+      }
+
+      const rawRows = await parseCombinedWorkbook(req.file.buffer);
+      const validation = await validateImportRowsWithComponents(rawRows);
+      const previewToken = storeCombinedPreview(req.session.user.id, validation);
+
+      sendSuccess(res, {
+        preview_token: previewToken,
+        summary: {
+          ...validation.summary,
+          components_planned: validation.validRows.reduce(
+            (sum, row) => sum + (Array.isArray(row.components) ? row.components.length : 0),
+            0
+          )
+        },
+        invalid_rows: validation.invalidRows.slice(0, 100),
+        valid_preview: validation.validRows.slice(0, 20).map((row) => ({
+          row_number: row.row_number,
+          item_name: row.payload.item_name,
+          department_id: row.payload.department_id,
+          asset_count: row.payload.asset_count,
+          components_count: Array.isArray(row.components) ? row.components.length : 0
+        }))
+      }, 'Import preview ready');
+    } catch (err) {
+      sendError(res, err.message || 'Unable to preview import', 400);
+    }
+  },
+
+  async confirmAssetWithComponentsImport(req, res) {
+    try {
+      const {
+        takePreview: takeCombinedPreview,
+        commitValidRowsWithComponents
+      } = require('../utils/assetWithComponentsImportService');
+
+      const token = String(req.body?.preview_token || '').trim();
+      if (!token) {
+        return sendError(res, 'Preview token is required', 400);
+      }
+
+      const preview = takeCombinedPreview(token, req.session.user.id);
+      if (!preview) {
+        return sendError(res, 'Import preview expired or not found. Please upload the file again.', 400);
+      }
+
+      if (!preview.validRows.length) {
+        return sendError(res, 'No valid records to import', 400);
+      }
+
+      const {
+        imported,
+        parsGenerated,
+        componentsImported,
+        failures
+      } = await commitValidRowsWithComponents(preview.validRows, req.session.user.id);
+
+      await logActivity(
+        req.session.user.id,
+        'IMPORT',
+        'Inventory',
+        `Imported ${imported} asset(s) with ${componentsImported} component(s) from Excel (${preview.summary.total_rows} rows, ${preview.summary.invalid_records} skipped)`,
+        req.ip
+      );
+
+      await notifyPropertyManagers({
+        title: 'Asset with Components Import Completed',
+        message: `${imported} asset(s) and ${componentsImported} component(s) imported from Excel${parsGenerated ? ` (${parsGenerated} PAR generated)` : ''}.`,
+        type: 'inventory_added',
+        link_url: '/pages/inventory.html'
+      }, actorExcludeOptions(req));
+
+      sendSuccess(res, {
+        total_rows: preview.summary.total_rows,
+        successfully_imported: imported,
+        components_imported: componentsImported,
+        pars_generated: parsGenerated,
+        skipped: preview.summary.invalid_records + failures.length,
+        reason_summary: preview.summary.reason_summary,
+        import_failures: failures
+      }, 'Import completed');
+    } catch (err) {
+      sendError(res, err.message, 500);
+    }
   }
 };
 
